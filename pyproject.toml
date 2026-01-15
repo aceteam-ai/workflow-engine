@@ -1,7 +1,7 @@
 [project]
-name = "workflow-engine"
-version = "0.3.3"
-description = "A simple engine to execute workflows defined as JSON graphs"
+name = "aceteam-workflow-engine"
+version = "1.0.0"
+description = "A powerful workflow orchestration engine for composing complex computational tasks from modular, type-safe nodes"
 readme = "README.md"
 license = "MIT"
 authors = [
@@ -10,12 +10,43 @@ authors = [
     { name = "Justin Xu", email = "xu.justin.j@gmail.com" },
 ]
 requires-python = ">=3.10,<4.0"
+keywords = [
+    "workflow",
+    "orchestration",
+    "dag",
+    "pipeline",
+    "automation",
+    "async",
+    "graph",
+    "execution",
+]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Typing :: Typed",
+    "Framework :: Pydantic :: 2",
+]
 dependencies = [
     "dotenv>=0.9.9",
     "networkx>=3.4.2,<4.0.0",
     "overrides>=7.7.0",
     "pydantic>=2.11.1,<3.0.0",
 ]
+
+[project.urls]
+Homepage = "https://aceteam.ai/workflow-engine"
+Documentation = "https://aceteam.ai/workflow-engine"
+Repository = "https://github.com/aceteam-ai/workflow-engine"
+Issues = "https://github.com/aceteam-ai/workflow-engine/issues"
+Changelog = "https://github.com/aceteam-ai/workflow-engine/releases"
 
 [project.optional-dependencies]
 dev = [
@@ -25,6 +56,7 @@ dev = [
     "pytest-mock>=3.14.0",
     "python-dotenv>=1.1.0",
     "ruff>=0.11.8",
+    "twine>=6.0.0",
 ]
 
 [build-system]

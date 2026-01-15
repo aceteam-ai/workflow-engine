@@ -14,7 +14,7 @@ The Workflow Engine enables you to:
 ## Installation
 
 ```bash
-pip install aceteam-workflow-engine  # TODO: Package name to be finalized
+pip install aceteam-workflow-engine
 ```
 
 ## Example
