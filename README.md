@@ -69,6 +69,12 @@ Check the `examples` directory for more sample workflows in JSON form:
 - **Local**: File-system based storage for development
 - **In-Memory**: Lightweight storage for testing
 
+### Value Type Casting
+
+The workflow engine supports automatic type casting between Value types. The graph below shows all available casting paths:
+
+![Value Typecasting Graph](docs/typecast_graph.svg)
+
 ## Architecture
 
 ```
