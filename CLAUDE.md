@@ -10,25 +10,25 @@ Aceteam Workflow Engine is a Python library for building and executing graph-bas
 
 ```bash
 # Install dependencies
-poetry install
+uv sync
 
 # Run all tests
-poetry run pytest
+uv run pytest
 
 # Run specific test markers
-poetry run pytest -m unit          # Unit tests only
-poetry run pytest -m integration   # Integration tests only
+uv run pytest -m unit          # Unit tests only
+uv run pytest -m integration   # Integration tests only
 
 # Run a single test file or function
-poetry run pytest tests/test_addition.py
-poetry run pytest tests/test_value.py::TestValue::test_cast
+uv run pytest tests/test_addition.py
+uv run pytest tests/test_value.py::TestValue::test_cast
 
 # Linting and formatting
-poetry run ruff check .            # Check for lint errors
-poetry run ruff format .           # Auto-format code
+uv run ruff check .            # Check for lint errors
+uv run ruff format .           # Auto-format code
 
 # Type checking
-poetry run pyright
+uv run pyright
 ```
 
 ## Architecture
