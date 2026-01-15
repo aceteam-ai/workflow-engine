@@ -3,6 +3,16 @@ from .context import Context
 from .edge import Edge, InputEdge, OutputEdge
 from .error import NodeException, UserException, WorkflowErrors
 from .execution import ExecutionAlgorithm
+from .migration import (
+    Migration,
+    MigrationError,
+    MigrationNotFoundError,
+    MigrationRegistry,
+    MigrationRunner,
+    MigrationValidationError,
+    migration_registry,
+    migration_runner,
+)
 from .node import Empty, Node, NodeTypeInfo, Params
 from .values import (
     JSON,
@@ -44,6 +54,12 @@ __all__ = [
     "IntegerValue",
     "JSON",
     "JSONValue",
+    "Migration",
+    "MigrationError",
+    "MigrationNotFoundError",
+    "MigrationRegistry",
+    "MigrationRunner",
+    "MigrationValidationError",
     "Node",
     "NodeException",
     "NodeTypeInfo",
@@ -61,4 +77,6 @@ __all__ = [
     "Workflow",
     "WorkflowErrors",
     "WorkflowValue",
+    "migration_registry",
+    "migration_runner",
 ]

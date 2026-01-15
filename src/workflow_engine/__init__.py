@@ -17,6 +17,10 @@ from .core import (
     IntegerValue,
     JSON,
     JSONValue,
+    Migration,
+    MigrationError,
+    MigrationNotFoundError,
+    MigrationValidationError,
     Node,
     NodeException,
     NullValue,
@@ -32,6 +36,7 @@ from .core import (
     Workflow,
     WorkflowErrors,
     WorkflowValue,
+    migration_registry,
 )
 
 __all__ = [
@@ -51,6 +56,10 @@ __all__ = [
     "IntegerValue",
     "JSON",
     "JSONValue",
+    "Migration",
+    "MigrationError",
+    "MigrationNotFoundError",
+    "MigrationValidationError",
     "Node",
     "NodeException",
     "NullValue",
@@ -66,4 +75,5 @@ __all__ = [
     "Workflow",
     "WorkflowErrors",
     "WorkflowValue",
+    "migration_registry",
 ]
