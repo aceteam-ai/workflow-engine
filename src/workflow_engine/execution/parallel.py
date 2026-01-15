@@ -25,11 +25,14 @@ class NodeResult(NamedTuple):
 
 class ParallelExecutionAlgorithm(ExecutionAlgorithm):
     """
-    Executes workflow nodes in parallel using asyncio.
+    Executes workflow nodes in parallel using asyncio with eager dispatch.
 
-    All nodes whose dependencies are satisfied are executed concurrently.
-    When a node expands into a sub-workflow, the algorithm completes the
-    current batch, expands the node, and continues with the new graph.
+    Nodes are dispatched as soon as their dependencies are satisfied, without
+    waiting for other concurrent nodes to complete. This maximizes parallelism
+    when nodes have varying execution times.
+
+    When a node expands into a sub-workflow, the expansion is processed and
+    newly ready nodes are dispatched immediately.
 
     Args:
         error_handling: How to handle node errors (default: FAIL_FAST)
@@ -64,51 +67,73 @@ class ParallelExecutionAlgorithm(ExecutionAlgorithm):
 
         node_outputs: dict[str, DataMapping] = {}
         failed_nodes: set[str] = set()  # Track nodes that failed to avoid re-executing
+        running_tasks: dict[asyncio.Task[NodeResult], str] = {}  # task -> node_id
         errors = WorkflowErrors()
 
         try:
-            ready_nodes = dict(workflow.get_ready_nodes(input=input))
+            # Initial dispatch - start all initially ready nodes
+            ready_nodes = workflow.get_ready_nodes(input=input)
+            for node_id, node_input in ready_nodes.items():
+                task = asyncio.create_task(
+                    self._execute_node(context, workflow, node_id, node_input, semaphore)
+                )
+                running_tasks[task] = node_id
 
-            while len(ready_nodes) > 0:
-                # Execute all ready nodes in parallel
-                results = await self._execute_batch(
-                    context=context,
-                    workflow=workflow,
-                    ready_nodes=ready_nodes,
-                    semaphore=semaphore,
-                    errors=errors,
+            # Main event loop - process completions eagerly
+            while running_tasks:
+                done, _ = await asyncio.wait(
+                    running_tasks.keys(),
+                    return_when=asyncio.FIRST_COMPLETED,
                 )
 
-                # Process results
-                expansion_pending: list[tuple[str, Workflow]] = []
+                # Process completed tasks
+                expansions_pending: list[tuple[str, Workflow]] = []
 
-                for node_result in results:
-                    if isinstance(node_result.result, Exception):
-                        # Track failed node to avoid re-executing
-                        failed_nodes.add(node_result.node_id)
+                for task in done:
+                    node_id = running_tasks.pop(task)
+
+                    try:
+                        node_result = task.result()
+                    except Exception as e:
+                        if self.error_handling == ErrorHandlingMode.FAIL_FAST:
+                            await self._cancel_all(running_tasks)
+                            raise
+                        errors.add(e)
+                        failed_nodes.add(node_id)
                         continue
-                    elif isinstance(node_result.result, Workflow):
-                        # Queue expansion (handle after processing all results)
-                        expansion_pending.append(
-                            (node_result.node_id, node_result.result)
-                        )
-                    else:
-                        # Normal output
-                        node_outputs[node_result.node_id] = node_result.result
 
-                # Handle node expansions
-                for node_id, subgraph in expansion_pending:
+                    if isinstance(node_result.result, Workflow):
+                        expansions_pending.append((node_id, node_result.result))
+                    elif isinstance(node_result.result, Exception):
+                        # Handle exception stored in NodeResult (shouldn't happen with current _execute_node)
+                        if self.error_handling == ErrorHandlingMode.FAIL_FAST:
+                            await self._cancel_all(running_tasks)
+                            raise node_result.result
+                        errors.add(node_result.result)
+                        failed_nodes.add(node_id)
+                    else:
+                        node_outputs[node_id] = node_result.result
+
+                # Process expansions sequentially (workflow is immutable)
+                for node_id, subgraph in expansions_pending:
                     workflow = workflow.expand_node(node_id, subgraph)
 
-                # Get next batch of ready nodes, excluding failed ones
+                # EAGERLY dispatch newly ready nodes
+                in_flight = set(running_tasks.values())
                 ready_nodes = {
-                    node_id: node_input
-                    for node_id, node_input in workflow.get_ready_nodes(
+                    nid: inp
+                    for nid, inp in workflow.get_ready_nodes(
                         input=input,
                         node_outputs=node_outputs,
                     ).items()
-                    if node_id not in failed_nodes
+                    if nid not in failed_nodes and nid not in in_flight
                 }
+
+                for node_id, node_input in ready_nodes.items():
+                    task = asyncio.create_task(
+                        self._execute_node(context, workflow, node_id, node_input, semaphore)
+                    )
+                    running_tasks[task] = node_id
 
             output = workflow.get_output(node_outputs)
 
@@ -142,44 +167,14 @@ class ParallelExecutionAlgorithm(ExecutionAlgorithm):
 
         return errors, output
 
-    async def _execute_batch(
-        self,
-        context: Context,
-        workflow: Workflow,
-        ready_nodes: dict[str, DataMapping],
-        semaphore: asyncio.Semaphore | None,
-        errors: WorkflowErrors,
-    ) -> list[NodeResult]:
-        """Execute a batch of nodes in parallel."""
-        tasks = [
-            self._execute_node(context, workflow, node_id, node_input, semaphore)
-            for node_id, node_input in ready_nodes.items()
-        ]
-
-        if self.error_handling == ErrorHandlingMode.FAIL_FAST:
-            # First exception cancels all and propagates up
-            return await asyncio.gather(*tasks)
-        else:
-            # CONTINUE mode: collect all results including exceptions
-            raw_results = await asyncio.gather(*tasks, return_exceptions=True)
-            processed_results: list[NodeResult] = []
-            node_ids = list(ready_nodes.keys())
-
-            for i, raw_result in enumerate(raw_results):
-                node_id = node_ids[i]
-                if isinstance(raw_result, BaseException):
-                    # BaseException includes SystemExit, KeyboardInterrupt, etc.
-                    # Re-raise non-Exception BaseExceptions
-                    if not isinstance(raw_result, Exception):
-                        raise raw_result
-                    errors.add(raw_result)
-                    processed_results.append(NodeResult(node_id, raw_result))
-                else:
-                    # raw_result is NodeResult when no exception occurred
-                    assert isinstance(raw_result, NodeResult)
-                    processed_results.append(raw_result)
-
-            return processed_results
+    async def _cancel_all(
+        self, running_tasks: dict[asyncio.Task[NodeResult], str]
+    ) -> None:
+        """Cancel all running tasks and wait for completion."""
+        for task in running_tasks:
+            task.cancel()
+        if running_tasks:
+            await asyncio.wait(running_tasks.keys(), return_when=asyncio.ALL_COMPLETED)
 
     async def _execute_node(
         self,

@@ -72,6 +72,43 @@ class SlowNode(Node[Empty, SlowNodeOutput, SlowNodeParams]):
         return cls(id=id, params=SlowNodeParams(delay_ms=IntegerValue(delay_ms)))
 
 
+# Test node that accepts input (to create dependencies) and delays
+class SlowPassthroughNodeInput(Data):
+    value: IntegerValue
+
+
+class SlowPassthroughNode(Node[SlowPassthroughNodeInput, SlowNodeOutput, SlowNodeParams]):
+    """A node that accepts input, delays, and outputs the input value."""
+
+    TYPE_INFO: ClassVar[NodeTypeInfo] = NodeTypeInfo.from_parameter_type(
+        name="SlowPassthroughNode",
+        display_name="Slow Passthrough Node",
+        description="A node that accepts input and delays before outputting it",
+        version="1.0.0",
+        parameter_type=SlowNodeParams,
+    )
+
+    type: Literal["SlowPassthroughNode"] = "SlowPassthroughNode"  # pyright: ignore[reportIncompatibleVariableOverride]
+
+    @property
+    def input_type(self) -> Type[SlowPassthroughNodeInput]:
+        return SlowPassthroughNodeInput
+
+    @property
+    def output_type(self) -> Type[SlowNodeOutput]:
+        return SlowNodeOutput
+
+    async def run(
+        self, context: Context, input: SlowPassthroughNodeInput
+    ) -> SlowNodeOutput:
+        await asyncio.sleep(self.params.delay_ms.root / 1000)
+        return SlowNodeOutput(value=input.value)
+
+    @classmethod
+    def from_delay(cls, id: str, delay_ms: int) -> "SlowPassthroughNode":
+        return cls(id=id, params=SlowNodeParams(delay_ms=IntegerValue(delay_ms)))
+
+
 @pytest.fixture
 def parallel_workflow() -> Workflow:
     """Create a workflow with independent nodes that can run in parallel."""
@@ -482,3 +519,54 @@ async def test_parallel_execution_matches_sequential_output():
     assert not par_errors.any()
     assert seq_output == par_output
     assert par_output == {"sum": 42 + 2025 + (-256)}
+
+
+@pytest.mark.asyncio
+async def test_parallel_execution_eager_dispatch():
+    """Test that dependent nodes start immediately when dependencies complete.
+
+    Graph:
+        A (50ms) -----> C (50ms passthrough)
+        B (200ms) (independent)
+
+    With eager dispatch: A finishes at 50ms, C starts immediately and finishes at ~100ms.
+    B finishes at 200ms. Total time ~200ms.
+
+    With batch dispatch: A+B batch completes at 200ms, then C runs, finishes at 250ms.
+    """
+    workflow = Workflow(
+        nodes=[
+            a := SlowNode.from_delay(id="a", delay_ms=50),
+            b := SlowNode.from_delay(id="b", delay_ms=200),
+            c := SlowPassthroughNode.from_delay(id="c", delay_ms=50),
+        ],
+        edges=[
+            Edge.from_nodes(source=a, source_key="value", target=c, target_key="value"),
+        ],
+        input_edges=[],
+        output_edges=[
+            OutputEdge(source_id="a", source_key="value", output_key="a"),
+            OutputEdge(source_id="b", source_key="value", output_key="b"),
+            OutputEdge(source_id="c", source_key="value", output_key="c"),
+        ],
+    )
+
+    context = InMemoryContext()
+    algorithm = ParallelExecutionAlgorithm()
+
+    start = asyncio.get_event_loop().time()
+    errors, output = await algorithm.execute(
+        context=context,
+        workflow=workflow,
+        input={},
+    )
+    elapsed = asyncio.get_event_loop().time() - start
+
+    assert not errors.any()
+    # Eager dispatch: ~200ms (B is bottleneck, C finishes at 100ms)
+    # Batch dispatch would be: ~250ms (A+B at 200ms, then C at 250ms)
+    # Using generous margin to avoid flaky tests
+    assert elapsed < 0.23, (
+        f"Expected ~200ms with eager dispatch, got {elapsed*1000:.0f}ms. "
+        f"This suggests batch-based execution instead of eager dispatch."
+    )
