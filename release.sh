@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-# Release script for workflow-engine
+# Release script for aceteam-workflow-engine
 # Usage: ./release.sh <version>
 # Example: ./release.sh 0.3.3
 
@@ -61,7 +61,7 @@ git push origin "v$VERSION"
 # Create GitHub release
 echo "Creating GitHub release..."
 gh release create "v$VERSION" \
-    --title "workflow-engine v$VERSION" \
+    --title "aceteam-workflow-engine v$VERSION" \
     --generate-notes
 
 echo "Released v$VERSION successfully!"
