@@ -99,18 +99,17 @@ src/workflow_engine/
 ### Setup
 
 ```bash
-# Using Poetry (recommended)
-poetry install
+# Using uv (recommended)
+uv sync
 
 # Using pip
-pip install -r requirements.txt
 pip install -e .
 ```
 
 ### Testing
 
 ```bash
-poetry run pytest  # Runs both unit and integration tests
+uv run pytest  # Runs both unit and integration tests
 ```
 
 ## Documentation
