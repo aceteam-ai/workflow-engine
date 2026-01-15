@@ -424,7 +424,7 @@ class NodeRegistry:
                     f'Node type "{type}" (class {cls.__name__}) is already registered to a different class ({conflict.__name__})'
                 )
         self.types[type] = cls
-        logger.info("Registering class %s as node type %s", cls.__name__, type)
+        logger.debug("Registering class %s as node type %s", cls.__name__, type)
 
     def get(self, type: str) -> Type[Node]:
         if type not in self.types:
@@ -434,7 +434,7 @@ class NodeRegistry:
     def register_base(self, cls: Type[Node]):
         if cls not in self.base_classes:
             self.base_classes.append(cls)
-            logger.info("Registering class %s as base node type", cls.__name__)
+            logger.debug("Registering class %s as base node type", cls.__name__)
 
     def is_base_class(self, cls: Type[Node]) -> bool:
         return cls in self.base_classes

@@ -296,7 +296,7 @@ class ValueRegistry:
                     f'Value type "{name}" (class {cls.__name__}) is already registered to a different class ({conflict.__name__})'
                 )
         self.types[name] = cls
-        logger.info("Registering class %s as value type %s", cls.__name__, name)
+        logger.debug("Registering class %s as value type %s", cls.__name__, name)
 
     def __contains__(self, name: str) -> bool:
         return name in self.types
