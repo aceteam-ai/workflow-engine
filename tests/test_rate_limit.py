@@ -6,6 +6,7 @@ import time
 from datetime import timedelta
 
 import pytest
+from pydantic import ValidationError
 
 from workflow_engine import (
     Edge,
@@ -49,7 +50,7 @@ class TestRateLimitConfig:
     def test_config_is_frozen(self):
         """Test that RateLimitConfig is immutable."""
         config = RateLimitConfig(max_concurrency=5)
-        with pytest.raises(AttributeError):
+        with pytest.raises(ValidationError):
             config.max_concurrency = 10  # type: ignore
 
 
