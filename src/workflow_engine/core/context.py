@@ -1,14 +1,11 @@
 # workflow_engine/core/context.py
 from abc import ABC, abstractmethod
-from typing import TYPE_CHECKING, TypeVar
+from typing import TypeVar
 
 from overrides import EnforceOverrides
 
-from .error import WorkflowErrors
+from .error import ShouldRetry, WorkflowErrors
 from .node import Node
-
-if TYPE_CHECKING:
-    from .error import ShouldRetry
 from .values import DataMapping, FileValue
 from .workflow import Workflow
 
@@ -84,7 +81,7 @@ class Context(ABC, EnforceOverrides):
         *,
         node: "Node",
         input: DataMapping,
-        exception: "ShouldRetry",
+        exception: ShouldRetry,
         attempt: int,
     ) -> None:
         """

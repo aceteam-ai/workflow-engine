@@ -7,12 +7,12 @@ Supports both concurrency limits and request rate limits per node type.
 
 import asyncio
 import time
-from dataclasses import dataclass, field
 from datetime import timedelta
 
+from ..utils.immutable import ImmutableBaseModel
 
-@dataclass(frozen=True)
-class RateLimitConfig:
+
+class RateLimitConfig(ImmutableBaseModel):
     """Configuration for rate limiting a node type."""
 
     max_concurrency: int | None = None
@@ -21,7 +21,7 @@ class RateLimitConfig:
     requests_per_window: int | None = None
     """Maximum requests within the time window. None = unlimited."""
 
-    window_duration: timedelta = field(default_factory=lambda: timedelta(seconds=60))
+    window_duration: timedelta = timedelta(seconds=60)
     """Time window for rate limiting (default: 60 seconds)."""
 
 

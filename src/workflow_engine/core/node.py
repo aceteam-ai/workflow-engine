@@ -7,6 +7,7 @@ from collections.abc import Mapping
 from functools import cached_property
 from typing import (
     TYPE_CHECKING,
+    Any,
     Awaitable,
     ClassVar,
     Generic,
@@ -207,7 +208,10 @@ class Node(ImmutableBaseModel, Generic[Input_contra, Output_co, Params_co]):
             cls = _registry.get(self.type)
             if cls is None:
                 raise ValueError(f'Node type "{self.type}" is not registered')
-            return cls.model_validate(self.model_dump())
+            data = self.model_dump()
+            # Attempt migration before dispatching to subclass
+            data = _migrate_node_data(data, cls)
+            return cls.model_validate(data)
         if self.__class__ is Node:
             warnings.warn(
                 f"Node validation for node {self} could not find a registered subclass to dispatch to."
@@ -272,10 +276,11 @@ class Node(ImmutableBaseModel, Generic[Input_contra, Output_co, Params_co]):
                 f"Node version {self.version} is newer than the latest version ({type_info.version}) supported by this workflow engine instance."
             )
         elif type_info.version_tuple > self.version_tuple:
+            # Migration was attempted in _to_subclass but no migration path exists.
+            # Issue a warning but allow the node to load (graceful degradation).
             warnings.warn(
                 f"Node version {self.version} is older than the latest version ({type_info.version}) supported by this workflow engine instance, and may need to be migrated."
             )
-            # TODO: a migration system
         return self
 
     # --------------------------------------------------------------------------
@@ -418,6 +423,74 @@ class Node(ImmutableBaseModel, Generic[Input_contra, Output_co, Params_co]):
                 raise NodeException(self.id) from e
 
 
+def _migrate_node_data(data: dict[str, Any], target_cls: Type["Node"]) -> dict[str, Any]:
+    """
+    Attempt to migrate node data to the target class's version.
+
+    This function is called during node deserialization, before the data
+    is validated by the target class. If migration is needed and a migration
+    path exists, the data is transformed. Otherwise, the original data is
+    returned (graceful degradation - validation warnings will be issued later).
+
+    Args:
+        data: Raw node data dict with 'type', 'version', 'id', 'params', etc.
+        target_cls: The concrete Node subclass to migrate to
+
+    Returns:
+        Migrated data dict, or original data if no migration needed/available
+    """
+    # Skip if target class doesn't have TYPE_INFO (shouldn't happen for concrete classes)
+    if not hasattr(target_cls, "TYPE_INFO"):
+        return data
+
+    current_version = data.get("version", LATEST_SEMANTIC_VERSION)
+
+    # Skip if using "latest" version (will be resolved to current version later)
+    if current_version == LATEST_SEMANTIC_VERSION:
+        return data
+
+    type_info = target_cls.TYPE_INFO
+    target_version = type_info.version
+
+    # Skip if versions match
+    if current_version == target_version:
+        return data
+
+    try:
+        current_tuple = parse_semantic_version(current_version)
+    except ValueError:
+        # Invalid version format, let validation handle it
+        return data
+
+    # Only migrate if current version is older
+    if current_tuple >= type_info.version_tuple:
+        return data
+
+    # Attempt migration
+    # Import here to avoid circular imports
+    from .migration import MigrationNotFoundError, migration_runner
+
+    try:
+        migrated_data = migration_runner.migrate(data, target_version)
+        logger.debug(
+            "Migrated node %s from version %s to %s",
+            data.get("id"),
+            current_version,
+            target_version,
+        )
+        return migrated_data
+    except MigrationNotFoundError:
+        # No migration path available - return original data
+        # Warning will be issued in validate_version
+        logger.debug(
+            "No migration path found for node %s from version %s to %s",
+            data.get("id"),
+            current_version,
+            target_version,
+        )
+        return data
+
+
 class NodeRegistry:
     def __init__(self):
         self.types: dict[str, Type[Node]] = {}
@@ -431,7 +504,7 @@ class NodeRegistry:
                     f'Node type "{type}" (class {cls.__name__}) is already registered to a different class ({conflict.__name__})'
                 )
         self.types[type] = cls
-        logger.info("Registering class %s as node type %s", cls.__name__, type)
+        logger.debug("Registering class %s as node type %s", cls.__name__, type)
 
     def get(self, type: str) -> Type[Node]:
         if type not in self.types:
@@ -441,7 +514,7 @@ class NodeRegistry:
     def register_base(self, cls: Type[Node]):
         if cls not in self.base_classes:
             self.base_classes.append(cls)
-            logger.info("Registering class %s as base node type", cls.__name__)
+            logger.debug("Registering class %s as base node type", cls.__name__)
 
     def is_base_class(self, cls: Type[Node]) -> bool:
         return cls in self.base_classes
