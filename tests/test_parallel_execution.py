@@ -537,7 +537,7 @@ async def test_parallel_execution_eager_dispatch():
     workflow = Workflow(
         nodes=[
             a := SlowNode.from_delay(id="a", delay_ms=50),
-            b := SlowNode.from_delay(id="b", delay_ms=200),
+            SlowNode.from_delay(id="b", delay_ms=200),  # Not referenced, only used by id
             c := SlowPassthroughNode.from_delay(id="c", delay_ms=50),
         ],
         edges=[
