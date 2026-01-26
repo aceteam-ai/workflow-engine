@@ -1,5 +1,7 @@
 # workflow_engine/__init__.py
 
+__version__ = "1.0.0rc1"
+
 from .core import (
     BooleanValue,
     Caster,
@@ -41,6 +43,7 @@ from .core import (
 )
 
 __all__ = [
+    "__version__",
     "BooleanValue",
     "Caster",
     "Context",
