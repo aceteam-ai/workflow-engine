@@ -32,5 +32,9 @@ ENV/
 # IDE
 .idea/
 
+# Nix
+.direnv/
+result
+
 # Output
 /local/
