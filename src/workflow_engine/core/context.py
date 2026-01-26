@@ -4,7 +4,7 @@ from typing import TypeVar
 
 from overrides import EnforceOverrides
 
-from .error import WorkflowErrors
+from .error import ShouldRetry, WorkflowErrors
 from .node import Node
 from .values import DataMapping, FileValue
 from .workflow import Workflow
@@ -75,6 +75,25 @@ class Context(ABC, EnforceOverrides):
         it can silence the error by returning an output.
         """
         return exception
+
+    async def on_node_retry(
+        self,
+        *,
+        node: "Node",
+        input: DataMapping,
+        exception: ShouldRetry,
+        attempt: int,
+    ) -> None:
+        """
+        A hook that is called when a node is scheduled for retry after raising
+        a ShouldRetry exception.
+
+        node: the node that will be retried
+        input: the input data to the node
+        exception: the ShouldRetry exception that was raised
+        attempt: the retry attempt number (1 for first retry, 2 for second, etc.)
+        """
+        pass
 
     async def on_node_finish(
         self,

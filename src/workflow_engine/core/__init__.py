@@ -1,7 +1,7 @@
 # workflow_engine/core/__init__.py
 from .context import Context
 from .edge import Edge, InputEdge, OutputEdge
-from .error import NodeException, UserException, WorkflowErrors
+from .error import NodeException, ShouldRetry, UserException, WorkflowErrors
 from .execution import ExecutionAlgorithm
 from .migration import (
     Migration,
@@ -67,6 +67,7 @@ __all__ = [
     "OutputEdge",
     "Params",
     "SequenceValue",
+    "ShouldRetry",
     "StringMapValue",
     "StringValue",
     "UserException",

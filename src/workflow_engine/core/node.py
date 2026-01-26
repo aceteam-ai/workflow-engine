@@ -100,6 +100,11 @@ class NodeTypeInfo(ImmutableBaseModel):
         default_factory=lambda: Empty.to_value_schema(),
         description="The schema for the parameters of the node type.",
     )
+    max_retries: int | None = Field(
+        default=None,
+        description="Maximum number of retry attempts for this node type. "
+        "None means use the execution algorithm's default.",
+    )
 
     @cached_property
     def version_tuple(self) -> tuple[int, int, int]:
@@ -114,6 +119,7 @@ class NodeTypeInfo(ImmutableBaseModel):
         description: str | None = None,
         version: str,
         parameter_type: Type[Params],
+        max_retries: int | None = None,
     ) -> Self:
         return cls(
             name=name,
@@ -121,6 +127,7 @@ class NodeTypeInfo(ImmutableBaseModel):
             description=description,
             version=version,
             parameter_schema=parameter_type.to_value_schema(),
+            max_retries=max_retries,
         )
 
 
