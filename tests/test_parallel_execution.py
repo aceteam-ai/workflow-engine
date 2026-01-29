@@ -77,7 +77,9 @@ class SlowPassthroughNodeInput(Data):
     value: IntegerValue
 
 
-class SlowPassthroughNode(Node[SlowPassthroughNodeInput, SlowNodeOutput, SlowNodeParams]):
+class SlowPassthroughNode(
+    Node[SlowPassthroughNodeInput, SlowNodeOutput, SlowNodeParams]
+):
     """A node that accepts input, delays, and outputs the input value."""
 
     TYPE_INFO: ClassVar[NodeTypeInfo] = NodeTypeInfo.from_parameter_type(
@@ -349,7 +351,9 @@ async def test_parallel_execution_with_node_expansion():
             InputEdge(input_key="sequence", target_id="foreach", target_key="sequence"),
         ],
         output_edges=[
-            OutputEdge(source_id="foreach", source_key="sequence", output_key="results"),
+            OutputEdge(
+                source_id="foreach", source_key="sequence", output_key="results"
+            ),
         ],
     )
 
@@ -481,13 +485,14 @@ async def test_parallel_execution_matches_sequential_output():
                 source=b, source_key="value", target=a_plus_b, target_key="b"
             ),
             Edge.from_nodes(
-                source=a_plus_b, source_key="sum", target=a_plus_b_plus_c, target_key="a"
+                source=a_plus_b,
+                source_key="sum",
+                target=a_plus_b_plus_c,
+                target_key="a",
             ),
         ],
         input_edges=[
-            InputEdge.from_node(
-                input_key="c", target=a_plus_b_plus_c, target_key="b"
-            ),
+            InputEdge.from_node(input_key="c", target=a_plus_b_plus_c, target_key="b"),
         ],
         output_edges=[
             OutputEdge.from_node(
@@ -537,7 +542,9 @@ async def test_parallel_execution_eager_dispatch():
     workflow = Workflow(
         nodes=[
             a := SlowNode.from_delay(id="a", delay_ms=50),
-            SlowNode.from_delay(id="b", delay_ms=200),  # Not referenced, only used by id
+            SlowNode.from_delay(
+                id="b", delay_ms=200
+            ),  # Not referenced, only used by id
             c := SlowPassthroughNode.from_delay(id="c", delay_ms=50),
         ],
         edges=[
@@ -567,6 +574,6 @@ async def test_parallel_execution_eager_dispatch():
     # Batch dispatch would be: ~250ms (A+B at 200ms, then C at 250ms)
     # Using generous margin to avoid flaky tests
     assert elapsed < 0.23, (
-        f"Expected ~200ms with eager dispatch, got {elapsed*1000:.0f}ms. "
+        f"Expected ~200ms with eager dispatch, got {elapsed * 1000:.0f}ms. "
         f"This suggests batch-based execution instead of eager dispatch."
     )

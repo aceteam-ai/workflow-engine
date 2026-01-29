@@ -128,7 +128,9 @@ class TestMigrationRegistry:
         assert path[1] is MockMigration_2_0_0_to_3_0_0
 
     @pytest.mark.unit
-    def test_get_migration_path_finds_available_route(self, registry: MigrationRegistry):
+    def test_get_migration_path_finds_available_route(
+        self, registry: MigrationRegistry
+    ):
         """Test that BFS finds available migration route."""
         # Register multi-step path
         registry.register(MockMigration_1_0_0_to_2_0_0)

@@ -77,7 +77,7 @@ The workflow engine supports automatic type casting between Value types. The gra
 
 ## Architecture
 
-```
+```text
 src/workflow_engine/
 ├── contexts/          # Storage backend implementations
 │   ├── in_memory.py   # In-memory storage

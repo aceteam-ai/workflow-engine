@@ -1,3 +1,4 @@
+from collections.abc import MutableMapping
 from typing import Any, Generic, Self, TypeVar
 from pydantic import BaseModel, ConfigDict, RootModel
 
@@ -44,6 +45,7 @@ class ImmutableBaseModel(BaseModel, _ImmutableMixin):
         To make it slightly safer, we validate the assignment via model_update.
         """
         updated = self.model_update(**kwargs)
+        assert isinstance(self.__dict__, MutableMapping)
         self.__dict__.update(updated.__dict__)
 
 

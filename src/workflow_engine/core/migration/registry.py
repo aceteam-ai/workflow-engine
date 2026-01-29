@@ -114,14 +114,10 @@ class MigrationRegistry:
         adj: dict[str, list[tuple[str, Type[Migration]]]] = {}
         for (ntype, fv), migration_cls in self._migrations.items():
             if ntype == node_type:
-                adj.setdefault(fv, []).append(
-                    (migration_cls.to_version, migration_cls)
-                )
+                adj.setdefault(fv, []).append((migration_cls.to_version, migration_cls))
 
         # BFS to find shortest path
-        queue: deque[tuple[str, list[Type[Migration]]]] = deque(
-            [(from_version, [])]
-        )
+        queue: deque[tuple[str, list[Type[Migration]]]] = deque([(from_version, [])])
         visited = {from_version}
 
         while queue:

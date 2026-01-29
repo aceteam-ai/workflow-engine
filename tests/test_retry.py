@@ -249,7 +249,9 @@ class TestRetryIntegration:
         workflow = Workflow(
             nodes=[
                 constant := ConstantStringNode.from_value(id="constant", value="input"),
-                retryable := RetryableNode.from_fail_count(id="retryable", fail_count=2),
+                retryable := RetryableNode.from_fail_count(
+                    id="retryable", fail_count=2
+                ),
             ],
             edges=[
                 Edge.from_nodes(
@@ -290,7 +292,9 @@ class TestRetryIntegration:
         workflow = Workflow(
             nodes=[
                 constant := ConstantStringNode.from_value(id="constant", value="input"),
-                retryable := RetryableNode.from_fail_count(id="retryable", fail_count=5),
+                retryable := RetryableNode.from_fail_count(
+                    id="retryable", fail_count=5
+                ),
             ],
             edges=[
                 Edge.from_nodes(
@@ -332,7 +336,9 @@ class TestRetryIntegration:
         workflow = Workflow(
             nodes=[
                 constant := ConstantStringNode.from_value(id="constant", value="input"),
-                retryable := RetryableNode.from_fail_count(id="retryable", fail_count=2),
+                retryable := RetryableNode.from_fail_count(
+                    id="retryable", fail_count=2
+                ),
             ],
             edges=[
                 Edge.from_nodes(
@@ -429,7 +435,9 @@ class TestRetryIntegration:
         workflow = Workflow(
             nodes=[
                 constant := ConstantStringNode.from_value(id="constant", value="input"),
-                retryable := RetryableNode.from_fail_count(id="retryable", fail_count=1),
+                retryable := RetryableNode.from_fail_count(
+                    id="retryable", fail_count=1
+                ),
             ],
             edges=[
                 Edge.from_nodes(
@@ -455,7 +463,9 @@ class TestRetryIntegration:
         rate_limits = RateLimitRegistry()
         rate_limits.configure("Retryable", RateLimitConfig(max_concurrency=1))
 
-        algorithm = TopologicalExecutionAlgorithm(max_retries=3, rate_limits=rate_limits)
+        algorithm = TopologicalExecutionAlgorithm(
+            max_retries=3, rate_limits=rate_limits
+        )
 
         errors, output = await algorithm.execute(
             context=context,
@@ -471,6 +481,7 @@ class TestRetryIntegration:
         # Verify rate limiter was properly released (can acquire again)
         limiter = rate_limits.get_limiter("Retryable")
         assert limiter is not None
+        assert limiter._semaphore is not None
         assert limiter._semaphore._value == 1  # Back to max value
 
     @pytest.mark.asyncio
@@ -498,7 +509,9 @@ class TestRetryIntegration:
             def output_type(self):
                 return RetryableOutput
 
-            async def run(self, context: Context, input: RetryableInput) -> RetryableOutput:
+            async def run(
+                self, context: Context, input: RetryableInput
+            ) -> RetryableOutput:
                 if self.id not in RetryableNode2._attempt_counts:
                     RetryableNode2._attempt_counts[self.id] = 0
                 RetryableNode2._attempt_counts[self.id] += 1

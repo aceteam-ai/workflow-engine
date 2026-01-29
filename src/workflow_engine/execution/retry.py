@@ -58,7 +58,9 @@ class RetryTracker:
         node_max_retries: the node-specific max retries, or None to use default
         """
         max_retries = (
-            node_max_retries if node_max_retries is not None else self.default_max_retries
+            node_max_retries
+            if node_max_retries is not None
+            else self.default_max_retries
         )
         state = self.get_state(node_id)
         return state.attempt < max_retries

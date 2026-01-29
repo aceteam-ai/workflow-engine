@@ -423,7 +423,9 @@ class Node(ImmutableBaseModel, Generic[Input_contra, Output_co, Params_co]):
                 raise NodeException(self.id) from e
 
 
-def _migrate_node_data(data: dict[str, Any], target_cls: Type["Node"]) -> dict[str, Any]:
+def _migrate_node_data(
+    data: dict[str, Any], target_cls: Type["Node"]
+) -> dict[str, Any]:
     """
     Attempt to migrate node data to the target class's version.
 

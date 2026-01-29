@@ -46,8 +46,9 @@ Repository = "https://github.com/aceteam-ai/workflow-engine"
 Issues = "https://github.com/aceteam-ai/workflow-engine/issues"
 Changelog = "https://github.com/aceteam-ai/workflow-engine/releases"
 
-[project.optional-dependencies]
+[dependency-groups]
 dev = [
+    "networkx>=3.6.1",
     "pydot>=3.0.0",
     "pyright>=1.1.403",
     "pytest>=8.3.5",
