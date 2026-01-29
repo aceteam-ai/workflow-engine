@@ -30,7 +30,8 @@
     {
       "source_id": "constant",
       "source_key": "value",
-      "output_key": "text"
+      "output_key": "text",
+      "output_schema": null
     }
   ]
 }
