@@ -1,9 +1,9 @@
-#!/usr/bin/env python3
 """Generate a visualization of the Value typecasting graph."""
 
 from pathlib import Path
 
 import networkx as nx
+import pydot
 
 # Import all value types to trigger registration
 import workflow_engine.core.values  # noqa: F401
@@ -24,9 +24,12 @@ def main():
     output_path = Path(__file__).parent.parent / "docs" / "typecast_graph.svg"
     output_path.parent.mkdir(exist_ok=True)
 
-    pydot_graph = nx.drawing.nx_pydot.to_pydot(G)
-    pydot_graph.set_rankdir("LR")  # Left to right layout
-    pydot_graph.write_svg(str(output_path))
+    pydot_graph: pydot.Dot = nx.drawing.nx_pydot.to_pydot(G)
+    # NOTE: pydot is horrible with types because it generates methods at runtime
+    pydot_graph.set_rankdir(  # pyright: ignore[reportAttributeAccessIssue]
+        "LR"
+    )  # Left to right layout
+    pydot_graph.write_svg(str(output_path))  # pyright: ignore[reportAttributeAccessIssue]
     print(f"Generated {output_path}")
 
 

@@ -38,7 +38,7 @@ class MigratableNode(Node[Empty, MigratableOutput, MigratableParams]):
         parameter_type=MigratableParams,
     )
 
-    type: Literal["MigratableNode"] = "MigratableNode"
+    type: Literal["MigratableNode"] = "MigratableNode"  # pyright: ignore[reportIncompatibleVariableOverride]
 
     @property
     def input_type(self) -> Type[Empty]:

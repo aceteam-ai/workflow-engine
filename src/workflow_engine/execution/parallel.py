@@ -159,7 +159,9 @@ class ParallelExecutionAlgorithm(ExecutionAlgorithm):
                         should_retry_error = node_result.should_retry
                         node = workflow.nodes_by_id[node_id]
                         node_max_retries = self._get_node_max_retries(node)
-                        node_input = node_result.result  # Input was stored in result for retry
+                        node_input = (
+                            node_result.result
+                        )  # Input was stored in result for retry
 
                         if retry_tracker.should_retry(node_id, node_max_retries):
                             retry_tracker.record_retry(node_id, should_retry_error)
@@ -216,7 +218,12 @@ class ParallelExecutionAlgorithm(ExecutionAlgorithm):
                 for node_id, node_input in ready_nodes.items():
                     task = asyncio.create_task(
                         self._execute_node(
-                            context, workflow, node_id, node_input, semaphore, retry_tracker
+                            context,
+                            workflow,
+                            node_id,
+                            node_input,
+                            semaphore,
+                            retry_tracker,
                         )
                     )
                     running_tasks[task] = node_id
