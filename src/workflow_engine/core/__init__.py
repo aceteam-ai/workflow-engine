@@ -10,6 +10,8 @@ from .migration import (
     MigrationRegistry,
     MigrationRunner,
     MigrationValidationError,
+    clean_edges_after_migration,
+    load_workflow_with_migration,
     migration_registry,
     migration_runner,
 )
@@ -78,6 +80,8 @@ __all__ = [
     "Workflow",
     "WorkflowErrors",
     "WorkflowValue",
+    "clean_edges_after_migration",
+    "load_workflow_with_migration",
     "migration_registry",
     "migration_runner",
 ]
