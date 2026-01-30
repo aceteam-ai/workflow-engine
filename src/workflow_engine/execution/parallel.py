@@ -1,10 +1,13 @@
 # workflow_engine/execution/parallel.py
 
 import asyncio
+import logging
 from enum import Enum
 from typing import NamedTuple
 
 from overrides import override
+
+logger = logging.getLogger(__name__)
 
 from ..core import Context, DataMapping, ExecutionAlgorithm, Workflow, WorkflowErrors
 from ..core.error import NodeException, ShouldRetry
@@ -150,6 +153,7 @@ class ParallelExecutionAlgorithm(ExecutionAlgorithm):
                         if self.error_handling == ErrorHandlingMode.FAIL_FAST:
                             await self._cancel_all(running_tasks)
                             raise
+                        logger.exception("Error in task for node %s", node_id)
                         errors.add(e)
                         failed_nodes.add(node_id)
                         continue
@@ -231,6 +235,7 @@ class ParallelExecutionAlgorithm(ExecutionAlgorithm):
             output = workflow.get_output(node_outputs)
 
         except Exception as e:
+            logger.exception("Error during workflow execution")
             errors.add(e)
             partial_output = workflow.get_output(node_outputs, partial=True)
             errors, partial_output = await context.on_workflow_error(

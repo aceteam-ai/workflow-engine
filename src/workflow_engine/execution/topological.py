@@ -4,8 +4,11 @@ Topological execution algorithm with retry and rate limiting support.
 """
 
 import asyncio
+import logging
 
 from overrides import override
+
+logger = logging.getLogger(__name__)
 
 from ..core import Context, DataMapping, ExecutionAlgorithm, Workflow, WorkflowErrors
 from ..core.error import NodeException, ShouldRetry
@@ -137,6 +140,7 @@ class TopologicalExecutionAlgorithm(ExecutionAlgorithm):
 
             output = workflow.get_output(node_outputs)
         except Exception as e:
+            logger.exception("Error during workflow execution")
             errors.add(e)
             partial_output = workflow.get_output(node_outputs, partial=True)
             errors, partial_output = await context.on_workflow_error(
