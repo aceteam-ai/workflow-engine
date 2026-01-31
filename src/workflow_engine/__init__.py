@@ -1,6 +1,6 @@
 # workflow_engine/__init__.py
 
-__version__ = "1.0.0rc2"
+__version__ = "1.1.0rc1"
 
 from .core import (
     BooleanValue,
