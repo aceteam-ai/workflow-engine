@@ -460,8 +460,13 @@ def _migrate_node_data(
 
     try:
         current_tuple = parse_semantic_version(current_version)
-    except ValueError:
+    except ValueError as e:
         # Invalid version format, let validation handle it
+        logger.warning(
+            "Invalid version format for node %s: %s",
+            data.get("id"),
+            e,
+        )
         return data
 
     # Only migrate if current version is older

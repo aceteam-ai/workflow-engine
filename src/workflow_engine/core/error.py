@@ -56,19 +56,10 @@ class NodeExpansionException(UserException):
     """
 
     def __init__(self, node_id: str, workflow: "Workflow"):
-        super().__init__(f"Error expanding node {node_id} into the workflow {workflow}")
+        message = f"Error expanding node {node_id} into the workflow {workflow}"
+        super().__init__(message)
         self.node_id = node_id
         self.workflow = workflow
-
-    @property
-    def message(self) -> str | None:
-        base_message = (
-            f"Error expanding node {self.node_id} into the workflow {self.workflow}"
-        )
-        if isinstance(self.__cause__, UserException):
-            return f"{base_message}, due to {self.__cause__}."
-        else:
-            return base_message
 
 
 class ShouldRetry(UserException):
