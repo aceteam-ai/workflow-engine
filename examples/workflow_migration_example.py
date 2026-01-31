@@ -35,7 +35,7 @@ workflow_data = {
 # and removes edges that became invalid due to field renames
 workflow = load_workflow_with_migration(workflow_data)
 print(f"✓ Workflow loaded with {len(workflow.nodes)} node(s)")
-print(f"  Nodes migrated if needed, invalid edges removed")
+print("  Nodes migrated if needed, invalid edges removed")
 
 # Example 2: Loading from JSON file
 json_data = """
@@ -56,7 +56,7 @@ json_data = """
 
 workflow_data = json.loads(json_data)
 workflow = load_workflow_with_migration(workflow_data)
-print(f"\n✓ Workflow loaded from JSON")
+print("\n✓ Workflow loaded from JSON")
 
 # Example 3: Strict validation (no migration support)
 # If you want strict validation without migration tolerance:

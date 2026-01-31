@@ -17,7 +17,6 @@ from workflow_engine.core import (
     load_workflow_with_migration,
     migration_registry,
 )
-from workflow_engine.contexts import InMemoryContext
 
 
 class _NodeParams(Params):
