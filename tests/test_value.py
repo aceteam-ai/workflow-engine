@@ -410,5 +410,228 @@ async def test_async_caster_registration_and_usage(context):
     assert result_from == "converted: hello world"
 
 
+@pytest.mark.unit
+async def test_json_value_to_null(context):
+    """Test JSONValue to NullValue casting."""
+    from workflow_engine.core import JSONValue, NullValue
+
+    # Successful cast
+    json_null = JSONValue(None)
+    null_val = await json_null.cast_to(NullValue, context=context)
+    assert isinstance(null_val, NullValue)
+    assert null_val.root is None
+
+    # Failed casts
+    with pytest.raises(ValueError, match="Expected null"):
+        await JSONValue(42).cast_to(NullValue, context=context)
+
+    with pytest.raises(ValueError, match="Expected null"):
+        await JSONValue("null").cast_to(NullValue, context=context)
+
+
+@pytest.mark.unit
+async def test_json_value_to_boolean(context):
+    """Test JSONValue to BooleanValue casting."""
+    from workflow_engine.core import BooleanValue, JSONValue
+
+    # Successful casts
+    json_true = JSONValue(True)
+    bool_val = await json_true.cast_to(BooleanValue, context=context)
+    assert isinstance(bool_val, BooleanValue)
+    assert bool_val.root is True
+
+    json_false = JSONValue(False)
+    bool_val = await json_false.cast_to(BooleanValue, context=context)
+    assert isinstance(bool_val, BooleanValue)
+    assert bool_val.root is False
+
+    # Failed casts - integers should not cast to boolean
+    with pytest.raises(ValueError, match="Expected bool"):
+        await JSONValue(1).cast_to(BooleanValue, context=context)
+
+    with pytest.raises(ValueError, match="Expected bool"):
+        await JSONValue(0).cast_to(BooleanValue, context=context)
+
+    with pytest.raises(ValueError, match="Expected bool"):
+        await JSONValue("true").cast_to(BooleanValue, context=context)
+
+
+@pytest.mark.unit
+async def test_json_value_to_integer(context):
+    """Test JSONValue to IntegerValue casting."""
+    from workflow_engine.core import IntegerValue, JSONValue
+
+    # Successful casts
+    json_int = JSONValue(42)
+    int_val = await json_int.cast_to(IntegerValue, context=context)
+    assert isinstance(int_val, IntegerValue)
+    assert int_val.root == 42
+
+    json_negative = JSONValue(-10)
+    int_val = await json_negative.cast_to(IntegerValue, context=context)
+    assert isinstance(int_val, IntegerValue)
+    assert int_val.root == -10
+
+    # Failed casts - bool should not cast to int (even though bool is subclass of int)
+    with pytest.raises(ValueError, match="Expected int"):
+        await JSONValue(True).cast_to(IntegerValue, context=context)
+
+    with pytest.raises(ValueError, match="Expected int"):
+        await JSONValue(False).cast_to(IntegerValue, context=context)
+
+    # Float should not cast to int
+    with pytest.raises(ValueError, match="Expected int"):
+        await JSONValue(3.14).cast_to(IntegerValue, context=context)
+
+    # String should not cast to int
+    with pytest.raises(ValueError, match="Expected int"):
+        await JSONValue("42").cast_to(IntegerValue, context=context)
+
+
+@pytest.mark.unit
+async def test_json_value_to_float(context):
+    """Test JSONValue to FloatValue casting."""
+    from workflow_engine.core import FloatValue, JSONValue
+
+    # Successful cast from float
+    json_float = JSONValue(3.14)
+    float_val = await json_float.cast_to(FloatValue, context=context)
+    assert isinstance(float_val, FloatValue)
+    assert float_val.root == 3.14
+
+    # Successful cast from int (int should be accepted for float)
+    json_int = JSONValue(42)
+    float_val = await json_int.cast_to(FloatValue, context=context)
+    assert isinstance(float_val, FloatValue)
+    assert float_val.root == 42.0
+
+    # Failed casts - bool should not cast to float
+    with pytest.raises(ValueError, match="Expected float or int"):
+        await JSONValue(True).cast_to(FloatValue, context=context)
+
+    with pytest.raises(ValueError, match="Expected float or int"):
+        await JSONValue(False).cast_to(FloatValue, context=context)
+
+    # String should not cast to float
+    with pytest.raises(ValueError, match="Expected float or int"):
+        await JSONValue("3.14").cast_to(FloatValue, context=context)
+
+
+@pytest.mark.unit
+async def test_json_value_to_sequence(context):
+    """Test JSONValue to SequenceValue casting."""
+    from workflow_engine.core import JSONValue, SequenceValue
+
+    # Successful cast with JSONValue elements
+    json_list = JSONValue([1, 2, 3])
+    seq_val = await json_list.cast_to(SequenceValue[JSONValue], context=context)
+    assert isinstance(seq_val, SequenceValue)
+    assert len(seq_val) == 3
+    assert [x.root for x in seq_val] == [1, 2, 3]
+
+    # Successful cast with nested conversion to IntegerValue
+    int_seq = await json_list.cast_to(SequenceValue[IntegerValue], context=context)
+    assert isinstance(int_seq, SequenceValue)
+    assert len(int_seq) == 3
+    assert all(isinstance(x, IntegerValue) for x in int_seq)
+    assert [x.root for x in int_seq] == [1, 2, 3]
+
+    # Successful cast with empty list
+    json_empty = JSONValue([])
+    empty_seq = await json_empty.cast_to(SequenceValue[JSONValue], context=context)
+    assert isinstance(empty_seq, SequenceValue)
+    assert len(empty_seq) == 0
+
+    # Failed casts - string should not be treated as sequence
+    with pytest.raises(ValueError, match="Expected sequence.*strings are not valid"):
+        await JSONValue("hello").cast_to(SequenceValue[JSONValue], context=context)
+
+    # Failed casts - mapping should not cast to sequence
+    with pytest.raises(ValueError, match="Expected sequence"):
+        await JSONValue({"a": 1}).cast_to(SequenceValue[JSONValue], context=context)
+
+    # Failed casts - primitive should not cast to sequence
+    with pytest.raises(ValueError, match="Expected sequence"):
+        await JSONValue(42).cast_to(SequenceValue[JSONValue], context=context)
+
+
+@pytest.mark.unit
+async def test_json_value_to_string_map(context):
+    """Test JSONValue to StringMapValue casting."""
+    from workflow_engine.core import JSONValue, StringMapValue
+
+    # Successful cast with JSONValue values
+    json_dict = JSONValue({"a": 1, "b": 2, "c": 3})
+    map_val = await json_dict.cast_to(StringMapValue[JSONValue], context=context)
+    assert isinstance(map_val, StringMapValue)
+    assert len(map_val) == 3
+    assert {k: v.root for k, v in map_val.items()} == {"a": 1, "b": 2, "c": 3}
+
+    # Successful cast with nested conversion to IntegerValue
+    int_map = await json_dict.cast_to(StringMapValue[IntegerValue], context=context)
+    assert isinstance(int_map, StringMapValue)
+    assert len(int_map) == 3
+    assert all(isinstance(v, IntegerValue) for v in int_map.values())
+    assert {k: v.root for k, v in int_map.items()} == {"a": 1, "b": 2, "c": 3}
+
+    # Successful cast with empty dict
+    json_empty = JSONValue({})
+    empty_map = await json_empty.cast_to(StringMapValue[JSONValue], context=context)
+    assert isinstance(empty_map, StringMapValue)
+    assert len(empty_map) == 0
+
+    # Failed casts - list should not cast to mapping
+    with pytest.raises(ValueError, match="Expected mapping"):
+        await JSONValue([1, 2, 3]).cast_to(StringMapValue[JSONValue], context=context)
+
+    # Failed casts - primitive should not cast to mapping
+    with pytest.raises(ValueError, match="Expected mapping"):
+        await JSONValue(42).cast_to(StringMapValue[JSONValue], context=context)
+
+
+@pytest.mark.unit
+async def test_json_value_complex_nested_casting(context):
+    """Test complex nested JSON structures."""
+    from workflow_engine.core import FloatValue, JSONValue, SequenceValue, StringMapValue
+
+    # Nested sequence of maps
+    json_data = JSONValue([{"x": 1.5, "y": 2.0}, {"x": 3.0, "y": 4.5}])
+    result = await json_data.cast_to(
+        SequenceValue[StringMapValue[FloatValue]], context=context
+    )
+    assert isinstance(result, SequenceValue)
+    assert len(result) == 2
+    assert all(isinstance(item, StringMapValue) for item in result)
+    first_map = result[0]
+    assert {k: v.root for k, v in first_map.items()} == {"x": 1.5, "y": 2.0}
+
+    # Map of sequences
+    json_data2 = JSONValue({"a": [1, 2, 3], "b": [4, 5, 6]})
+    result2 = await json_data2.cast_to(
+        StringMapValue[SequenceValue[IntegerValue]], context=context
+    )
+    assert isinstance(result2, StringMapValue)
+    assert len(result2) == 2
+    assert all(isinstance(v, SequenceValue) for v in result2.values())
+    a_seq = result2["a"]
+    assert [x.root for x in a_seq] == [1, 2, 3]
+
+
+@pytest.mark.unit
+async def test_json_value_type_checking_strictness(context):
+    """Test that type checking is strict and doesn't allow invalid conversions."""
+    from workflow_engine.core import BooleanValue, IntegerValue, JSONValue
+
+    # Python's bool is a subclass of int, but we should reject bool -> int
+    json_bool = JSONValue(True)
+    with pytest.raises(ValueError, match="Expected int"):
+        await json_bool.cast_to(IntegerValue, context=context)
+
+    # And reject int -> bool
+    json_int = JSONValue(1)
+    with pytest.raises(ValueError, match="Expected bool"):
+        await json_int.cast_to(BooleanValue, context=context)
+
+
 if __name__ == "__main__":
     pytest.main([__file__])
