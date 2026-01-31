@@ -1,5 +1,9 @@
 # Aceteam Workflow Engine
 
+[![PyPI version](https://img.shields.io/pypi/v/aceteam-workflow-engine)](https://pypi.org/project/aceteam-workflow-engine/)
+[![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-blue)](https://www.python.org/downloads/)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+
 A powerful, modular workflow orchestration system designed for composing complex computational tasks from smaller, configurable steps. This engine powers the workflow functionality in [Aceteam.ai](https://aceteam.ai/workflow-engine) and is now available as an open-source package.
 
 ## Overview
@@ -120,22 +124,17 @@ uv run pytest  # Runs both unit and integration tests
 
 ## Documentation
 
-- [Aceteam Workflow Documentation](https://aceteam.ai/workflow-engine)
-- [API Reference](https://aceteam.ai/docs/api) (TODO)
+- [Getting Started](docs/getting-started.md) - Installation and first workflow
+- [Architecture](docs/architecture.md) - Module structure and design decisions
+- [Nodes](docs/nodes.md) - Built-in node reference
+- [Values](docs/values.md) - Value type system and casting rules
+- [Execution](docs/execution.md) - Execution algorithms, retry, and rate limiting
+- [Contexts](docs/contexts.md) - Storage backends and lifecycle hooks
+- [Migrations](docs/MIGRATIONS.md) - Node versioning and migration system
+- [Workflow Loading](docs/WORKFLOW_LOADING.md) - Safe workflow loading with migration
 - [Examples](./examples)
-
-Available test suites:
-
-- `test_type_checking.py`: Type system validation
-- `test_workflow_validation.py`: Workflow validation tests
-
-## Future Enhancements
-
-- [ ] Support for iterative workflows and sub-workflows
-- [ ] Enhanced parallel execution capabilities
-- [ ] Additional storage backend implementations
-- [ ] Improved error recovery and retry mechanisms
-- [ ] Real-time workflow monitoring
+- [Changelog](CHANGELOG.md)
+- [Contributing](CONTRIBUTING.md)
 
 ## Contributing
 

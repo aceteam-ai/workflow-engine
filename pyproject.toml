@@ -1,6 +1,6 @@
 [project]
 name = "aceteam-workflow-engine"
-version = "1.0.0rc2"
+version = "1.1.0rc1"
 description = "A powerful workflow orchestration engine for composing complex computational tasks from modular, type-safe nodes"
 readme = "README.md"
 license = "MIT"
@@ -41,10 +41,10 @@ dependencies = [
 
 [project.urls]
 Homepage = "https://aceteam.ai/workflow-engine"
-Documentation = "https://aceteam.ai/workflow-engine"
+Documentation = "https://github.com/aceteam-ai/workflow-engine/tree/main/docs"
 Repository = "https://github.com/aceteam-ai/workflow-engine"
 Issues = "https://github.com/aceteam-ai/workflow-engine/issues"
-Changelog = "https://github.com/aceteam-ai/workflow-engine/releases"
+Changelog = "https://github.com/aceteam-ai/workflow-engine/blob/main/CHANGELOG.md"
 
 [dependency-groups]
 dev = [
