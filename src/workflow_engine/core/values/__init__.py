@@ -8,9 +8,11 @@ from .data import (
     get_data_fields,
     serialize_data_mapping,
 )
+from .extraction import Entity, ExtractionResult, ExtractionResultValue, Relation
 from .file import File, FileValue
 from .json import JSON, JSONValue
 from .mapping import StringMapValue
+from .model import ModelValue
 from .primitives import BooleanValue, FloatValue, IntegerValue, NullValue, StringValue
 from .schema import ValueSchema, ValueSchemaValue, validate_value_schema
 from .sequence import SequenceValue
@@ -24,6 +26,9 @@ __all__ = [
     "DataMapping",
     "DataValue",
     "dump_data_mapping",
+    "Entity",
+    "ExtractionResult",
+    "ExtractionResultValue",
     "File",
     "FileValue",
     "FloatValue",
@@ -32,7 +37,9 @@ __all__ = [
     "IntegerValue",
     "JSON",
     "JSONValue",
+    "ModelValue",
     "NullValue",
+    "Relation",
     "SequenceValue",
     "serialize_data_mapping",
     "StringMapValue",
