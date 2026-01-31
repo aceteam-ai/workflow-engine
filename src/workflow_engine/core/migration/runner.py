@@ -109,8 +109,9 @@ class MigrationRunner:
                 migration_cls.from_version,
                 migration_cls.to_version,
             )
-            result = migration.migrate(result)
-            result["version"] = migration_cls.to_version
+            migrated = migration.migrate(result)
+            # Create new dict with updated version (functional approach)
+            result = {**migrated, "version": migration_cls.to_version}
 
         return result
 

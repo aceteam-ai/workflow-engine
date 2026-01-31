@@ -9,6 +9,7 @@ from .exceptions import (
 from .migration import Migration
 from .registry import MigrationRegistry, migration_registry
 from .runner import MigrationRunner, migration_runner
+from .workflow_migration import clean_edges_after_migration, load_workflow_with_migration
 
 __all__ = [
     "Migration",
@@ -17,6 +18,8 @@ __all__ = [
     "MigrationRegistry",
     "MigrationRunner",
     "MigrationValidationError",
+    "clean_edges_after_migration",
+    "load_workflow_with_migration",
     "migration_registry",
     "migration_runner",
 ]
