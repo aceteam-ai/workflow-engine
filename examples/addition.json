@@ -53,14 +53,16 @@
     {
       "input_key": "c",
       "target_id": "a+b+c",
-      "target_key": "b"
+      "target_key": "b",
+      "input_schema": null
     }
   ],
   "output_edges": [
     {
       "source_id": "a+b+c",
       "source_key": "sum",
-      "output_key": "sum"
+      "output_key": "sum",
+      "output_schema": null
     }
   ]
 }

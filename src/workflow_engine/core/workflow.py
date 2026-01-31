@@ -1,8 +1,9 @@
 # workflow_engine/core/workflow.py
+import asyncio
 from collections.abc import Mapping, Sequence
 from functools import cached_property
 from itertools import chain
-from typing import Type
+from typing import TYPE_CHECKING, Type
 
 import networkx as nx
 from pydantic import ConfigDict, ValidationError, model_validator
@@ -12,6 +13,9 @@ from .edge import Edge, InputEdge, OutputEdge
 from .error import NodeExpansionException, UserException
 from .node import Node
 from .values import Data, DataMapping, Value, ValueType, build_data_type
+
+if TYPE_CHECKING:
+    from .context import Context
 
 
 class Workflow(ImmutableBaseModel):
@@ -50,19 +54,35 @@ class Workflow(ImmutableBaseModel):
 
     @cached_property
     def input_fields(self) -> Mapping[str, tuple[ValueType, bool]]:
+        """
+        Returns the input fields for this workflow.
+
+        If an InputEdge has an input_schema specified, that schema's type is used.
+        Otherwise, the type is inferred from the target node's input field.
+        """
         return {
-            edge.input_key: self.nodes_by_id[edge.target_id].input_fields[
-                edge.target_key
-            ]
+            edge.input_key: (
+                (edge.input_schema.to_value_cls(), True)
+                if edge.input_schema is not None
+                else self.nodes_by_id[edge.target_id].input_fields[edge.target_key]
+            )
             for edge in self.input_edges
         }
 
     @cached_property
     def output_fields(self) -> Mapping[str, tuple[ValueType, bool]]:
+        """
+        Returns the output fields for this workflow.
+
+        If an OutputEdge has an output_schema specified, that schema's type is used.
+        Otherwise, the type is inferred from the source node's output field.
+        """
         return {
-            edge.output_key: self.nodes_by_id[edge.source_id].output_fields[
-                edge.source_key
-            ]
+            edge.output_key: (
+                (edge.output_schema.to_value_cls(), True)
+                if edge.output_schema is not None
+                else self.nodes_by_id[edge.source_id].output_fields[edge.source_key]
+            )
             for edge in self.output_edges
         }
 
@@ -124,6 +144,66 @@ class Workflow(ImmutableBaseModel):
                 source=self.nodes_by_id[edge.source_id],
                 target=self.nodes_by_id[edge.target_id],
             )
+        return self
+
+    @model_validator(mode="after")
+    def _validate_input_edges(self):
+        """
+        Validate that input edges with schemas have compatible types.
+
+        For each InputEdge with input_schema, validates that the schema can cast
+        to the target node's input field type.
+        """
+        for edge in self.input_edges:
+            if edge.input_schema is not None:
+                target = self.nodes_by_id[edge.target_id]
+
+                if edge.target_key not in target.input_fields:
+                    raise ValueError(
+                        f"Target node {target.id} does not have input field '{edge.target_key}'"
+                    )
+
+                edge_input_type = edge.input_schema.to_value_cls()
+                target_input_type, _ = target.input_fields[edge.target_key]
+
+                # Validate: edge schema -> target input
+                if not edge_input_type.can_cast_to(target_input_type):
+                    raise TypeError(
+                        f"Input edge '{edge.input_key}' has invalid schema: "
+                        f"{edge_input_type} is not assignable to target "
+                        f"{target.id}.{edge.target_key} ({target_input_type})"
+                    )
+
+        return self
+
+    @model_validator(mode="after")
+    def _validate_output_edges(self):
+        """
+        Validate that output edges with schemas have compatible types.
+
+        For each OutputEdge with output_schema, validates that the source node's
+        output can cast to the schema type.
+        """
+        for edge in self.output_edges:
+            if edge.output_schema is not None:
+                source = self.nodes_by_id[edge.source_id]
+
+                if edge.source_key not in source.output_fields:
+                    raise ValueError(
+                        f"Source node {source.id} does not have output field '{edge.source_key}'"
+                    )
+
+                source_output_type, _ = source.output_fields[edge.source_key]
+                edge_output_type = edge.output_schema.to_value_cls()
+
+                # Validate: source output -> edge schema
+                if not source_output_type.can_cast_to(edge_output_type):
+                    raise TypeError(
+                        f"Output edge '{edge.output_key}' has invalid schema: "
+                        f"source {source.id}.{edge.source_key} ({source_output_type}) "
+                        f"is not assignable to {edge_output_type}"
+                    )
+
         return self
 
     @model_validator(mode="after")
@@ -211,19 +291,33 @@ class Workflow(ImmutableBaseModel):
                 )
         return ready_nodes
 
-    def get_output(
+    async def get_output(
         self,
+        *,
+        context: "Context",
         node_outputs: Mapping[str, DataMapping],
         partial: bool = False,
     ) -> DataMapping:
         """
-        Get the output of the workflow.
+        Get the output of the workflow, casting values to expected output types.
 
-        If partial is True, this method should never raise an exception, and the
-        output will only include nodes that have been executed, for which the
-        output field is available.
+        This method validates that all outputs can be cast to their expected types
+        and performs the casting in parallel.
+
+        Args:
+            node_outputs: Mapping from node IDs to their output data
+            context: Execution context used for casting operations
+            partial: If True, skip missing outputs instead of raising exceptions
+
+        Returns:
+            DataMapping with all outputs cast to their expected types
+
+        Raises:
+            UserException: If a required output is missing or cannot be cast
         """
-        output: DataMapping = {}
+        # First pass: Validate all outputs exist and can be cast
+        outputs_to_cast: list[tuple[str, Value, ValueType]] = []
+
         for edge in self.output_edges:
             if edge.source_id not in node_outputs:
                 if partial:
@@ -238,8 +332,39 @@ class Workflow(ImmutableBaseModel):
                 raise UserException(
                     f"Cannot get output from node {edge.source_id} at key '{edge.source_key}'.",
                 )
+
             output_field = node_output[edge.source_key]
-            output[edge.output_key] = output_field
+            expected_type, _ = self.output_fields[edge.output_key]
+
+            # Validate that the output can be cast to the expected type
+            if not output_field.can_cast_to(expected_type):
+                raise UserException(
+                    f"Output '{edge.output_key}' from node {edge.source_id}.{edge.source_key} "
+                    f"cannot be cast: {output_field} is not assignable to {expected_type}"
+                )
+
+            outputs_to_cast.append((edge.output_key, output_field, expected_type))
+
+        # Second pass: Cast all outputs in parallel
+        cast_tasks = [
+            output_field.cast_to(expected_type, context=context)
+            for _, output_field, expected_type in outputs_to_cast
+        ]
+
+        if len(cast_tasks) == 0:
+            return {}
+
+        casted_values = await asyncio.gather(*cast_tasks)
+
+        # Build the result dictionary
+        output: DataMapping = {}
+        for (output_key, _, _), casted_value in zip(
+            outputs_to_cast,
+            casted_values,
+            strict=True,
+        ):
+            output[output_key] = casted_value
+
         return output
 
     def expand_node(

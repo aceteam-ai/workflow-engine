@@ -2,7 +2,7 @@
 
 from ..utils.immutable import ImmutableBaseModel
 from .node import Node
-from .values import Value, ValueType
+from .values import Value, ValueType, ValueSchema
 
 
 class Edge(ImmutableBaseModel):
@@ -77,6 +77,7 @@ class InputEdge(ImmutableBaseModel):
     input_key: str
     target_id: str
     target_key: str
+    input_schema: ValueSchema | None = None
 
     @classmethod
     def from_node(
@@ -85,11 +86,13 @@ class InputEdge(ImmutableBaseModel):
         input_key: str,
         target: Node,
         target_key: str,
+        input_schema: ValueSchema | None = None,
     ) -> "InputEdge":
         return cls(
             input_key=input_key,
             target_id=target.id,
             target_key=target_key,
+            input_schema=input_schema,
         )
 
     def validate_types(self, input_type: ValueType, target: Node):
@@ -116,6 +119,7 @@ class OutputEdge(ImmutableBaseModel):
     source_id: str
     source_key: str
     output_key: str
+    output_schema: ValueSchema | None = None
 
     @classmethod
     def from_node(
@@ -124,11 +128,13 @@ class OutputEdge(ImmutableBaseModel):
         source: Node,
         source_key: str,
         output_key: str,
+        output_schema: ValueSchema | None = None,
     ) -> "OutputEdge":
         return cls(
             source_id=source.id,
             source_key=source_key,
             output_key=output_key,
+            output_schema=output_schema,
         )
 
     def validate_types(self, source: Node, output_type: ValueType):
