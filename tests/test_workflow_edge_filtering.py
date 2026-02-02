@@ -117,7 +117,9 @@ class TestWorkflowEdgeFiltering:
         assert len(workflow.edges) == 0
 
         # Verify warning was logged
-        assert any("Removing invalid edge" in record.message for record in caplog.records)
+        assert any(
+            "Removing invalid edge" in record.message for record in caplog.records
+        )
 
         # Verify nodes were migrated successfully
         assert len(workflow.nodes) == 2
@@ -157,7 +159,8 @@ class TestWorkflowEdgeFiltering:
 
         # Verify warning was logged
         assert any(
-            "Removing output edge" in record.message and "field does not exist" in record.message
+            "Removing output edge" in record.message
+            and "field does not exist" in record.message
             for record in caplog.records
         )
 

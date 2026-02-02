@@ -592,7 +592,12 @@ async def test_json_value_to_string_map(context):
 @pytest.mark.unit
 async def test_json_value_complex_nested_casting(context):
     """Test complex nested JSON structures."""
-    from workflow_engine.core import FloatValue, JSONValue, SequenceValue, StringMapValue
+    from workflow_engine.core import (
+        FloatValue,
+        JSONValue,
+        SequenceValue,
+        StringMapValue,
+    )
 
     # Nested sequence of maps
     json_data = JSONValue([{"x": 1.5, "y": 2.0}, {"x": 3.0, "y": 4.5}])

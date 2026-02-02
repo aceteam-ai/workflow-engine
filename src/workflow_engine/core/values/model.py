@@ -58,9 +58,13 @@ def cast_model_to_model(
     source_model_cls = source_args[0]
     target_model_cls = target_args[0]
 
-    if not (isinstance(source_model_cls, type) and issubclass(source_model_cls, BaseModel)):
+    if not (
+        isinstance(source_model_cls, type) and issubclass(source_model_cls, BaseModel)
+    ):
         return None
-    if not (isinstance(target_model_cls, type) and issubclass(target_model_cls, BaseModel)):
+    if not (
+        isinstance(target_model_cls, type) and issubclass(target_model_cls, BaseModel)
+    ):
         return None
 
     # Identity shortcut

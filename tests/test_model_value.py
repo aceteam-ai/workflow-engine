@@ -140,7 +140,9 @@ def test_can_cast_to_checks():
     assert JSONValue.can_cast_to(PersonValue)
     assert PersonValue.can_cast_to(JSONValue)
     assert PersonValue.can_cast_to(PersonValue)
-    assert PersonValue.can_cast_to(EmployeeValue)  # generic caster exists, validation at runtime
+    assert PersonValue.can_cast_to(
+        EmployeeValue
+    )  # generic caster exists, validation at runtime
     assert EmployeeValue.can_cast_to(PersonValue)
 
 
