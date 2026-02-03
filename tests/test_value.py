@@ -26,7 +26,7 @@ class AnswerValue(Value[Literal[42]]):
     pass
 
 
-class TestValue(Value[str]):
+class ExampleValue(Value[str]):
     pass
 
 
@@ -387,15 +387,15 @@ async def test_async_caster_registration_and_usage(context):
     import asyncio
 
     # Register an async caster
-    @TestValue.register_cast_to(StringValue)
-    async def cast_test_to_string(value: TestValue, context: Context) -> StringValue:
+    @ExampleValue.register_cast_to(StringValue)
+    async def cast_test_to_string(value: ExampleValue, context: Context) -> StringValue:
         await asyncio.sleep(0.001)  # Simulate async work
         return StringValue(f"converted: {value.root}")
 
-    test_value = TestValue("hello world")
+    test_value = ExampleValue("hello world")
 
     # The caster function should be a coroutine function
-    cast_fn = TestValue.get_caster(StringValue)
+    cast_fn = ExampleValue.get_caster(StringValue)
     assert cast_fn is not None
     result = cast_fn(test_value, context)
     assert hasattr(result, "__await__")
