@@ -31,7 +31,7 @@ from .primitives import (
     StringValue,
 )
 from .sequence import SequenceValue
-from .value import Value, ValueType, default_value_registry
+from .value import Value, ValueRegistry, ValueType
 
 
 def merge_defs(
@@ -125,8 +125,9 @@ class BaseValueSchema(ImmutableBaseModel):
         References, if any, are resolved using self.defs first, then any
         extra_defs in order of decreasing precedence.
         """
-        if self.title is not None and default_value_registry.has_name(self.title):
-            return default_value_registry.get_value_class(self.title)
+        value_cls = ValueRegistry.DEFAULT.load_value(self)
+        if value_cls is not None:
+            return value_cls
         return self.build_value_cls(*extra_defs)
 
     def build_value_cls(

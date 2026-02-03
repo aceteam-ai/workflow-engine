@@ -1,4 +1,6 @@
 # workflow_engine/core/node.py
+from __future__ import annotations
+
 import asyncio
 import logging
 import re
@@ -22,6 +24,7 @@ from typing import (
 
 from overrides import final, override
 from pydantic import ConfigDict, Field, ValidationError, model_validator
+from typing_extensions import overload
 
 from ..utils.immutable import ImmutableBaseModel
 from ..utils.semver import (
@@ -192,11 +195,11 @@ class Node(ImmutableBaseModel, Generic[Input_contra, Output_co, Params_co]):
             cls = cls.__base__
         type_annotation = cls.__annotations__.get("type", None)
         if type_annotation is None or get_origin(type_annotation) is not Literal:
-            _default_registry.register_base_node_class(cls)
+            NodeRegistry.DEFAULT.register_base_node_class(cls)
         else:
             (type_name,) = type_annotation.__args__
             assert isinstance(type_name, str), type_name
-            _default_registry.register_node_class(type_name, cls)
+            NodeRegistry.DEFAULT.register_node_class(type_name, cls)
 
     @model_validator(mode="after")  # type: ignore
     def _to_subclass(self):
@@ -205,8 +208,8 @@ class Node(ImmutableBaseModel, Generic[Input_contra, Output_co, Params_co]):
         """
         # HACK: This trick only works if the base class can be instantiated, so
         # we cannot make it an ABC even if it has unimplemented methods.
-        if _default_registry.is_base_node_class(self.__class__):
-            cls = _default_registry.get_node_class(self.type)
+        if NodeRegistry.DEFAULT.is_base_node_class(self.__class__):
+            cls = NodeRegistry.DEFAULT.get_node_class(self.type)
             if cls is None:
                 raise ValueError(f'Node type "{self.type}" is not registered')
             data = self.model_dump()
@@ -503,6 +506,8 @@ class NodeRegistry(ABC):
       but you may encounter more.
     """
 
+    DEFAULT: ClassVar[LazyNodeRegistry]
+
     @abstractmethod
     def get_node_class(self, name: str) -> Type[Node]:
         pass
@@ -510,6 +515,46 @@ class NodeRegistry(ABC):
     @abstractmethod
     def is_base_node_class(self, base_node_cls: Type[Node]) -> bool:
         pass
+
+    def load_node(self, node: Node) -> Node:
+        """
+        Load an untyped node into its concrete typed form.
+
+        If the node is already a concrete type (not a base class), returns it unchanged.
+        Otherwise, looks up the concrete type, applies migrations, and returns a typed instance.
+
+        Args:
+            node: An untyped node (base Node class instance)
+
+        Returns:
+            A typed node (concrete subclass instance)
+
+        Raises:
+            ValueError: If the node type is not registered
+        """
+        if not self.is_base_node_class(node.__class__):
+            return node
+
+        cls = self.get_node_class(node.type)
+        if cls is None:
+            raise ValueError(f'Node type "{node.type}" is not registered')
+
+        data = node.model_dump()
+        # Attempt migration before dispatching to subclass
+        data = _migrate_node_data(data, cls)
+        return cls.model_validate(data)
+
+    @overload
+    @staticmethod
+    def builder(*, lazy: Literal[True]) -> LazyNodeRegistry: ...
+
+    @overload
+    @staticmethod
+    def builder(*, lazy: Literal[False] = False) -> EagerNodeRegistryBuilder: ...
+
+    @staticmethod
+    def builder(*, lazy: bool = False):
+        return LazyNodeRegistry() if lazy else EagerNodeRegistryBuilder()
 
 
 class NodeRegistryBuilder(ABC):
@@ -678,7 +723,7 @@ class LazyNodeRegistry(NodeRegistry, NodeRegistryBuilder):
         return base_node_cls in self._base_node_classes
 
 
-_default_registry = LazyNodeRegistry()
+NodeRegistry.DEFAULT = NodeRegistry.builder(lazy=True)
 
 
 __all__ = [

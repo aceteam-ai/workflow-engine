@@ -16,7 +16,13 @@ from .model import ModelValue
 from .primitives import BooleanValue, FloatValue, IntegerValue, NullValue, StringValue
 from .schema import ValueSchema, ValueSchemaValue, validate_value_schema
 from .sequence import SequenceValue
-from .value import Caster, Value, ValueType, get_origin_and_args
+from .value import (
+    Caster,
+    Value,
+    ValueRegistry,
+    ValueType,
+    get_origin_and_args,
+)
 
 __all__ = [
     "BooleanValue",
@@ -46,6 +52,7 @@ __all__ = [
     "StringValue",
     "validate_value_schema",
     "Value",
+    "ValueRegistry",
     "ValueSchema",
     "ValueSchemaValue",
     "ValueType",

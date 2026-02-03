@@ -1,6 +1,7 @@
 # workflow_engine/core/__init__.py
 from .context import Context
 from .edge import Edge, InputEdge, OutputEdge
+from .engine import WorkflowEngine
 from .error import NodeException, ShouldRetry, UserException, WorkflowErrors
 from .execution import ExecutionAlgorithm
 from .migration import (
@@ -15,7 +16,13 @@ from .migration import (
     migration_registry,
     migration_runner,
 )
-from .node import Empty, Node, NodeTypeInfo, Params
+from .node import (
+    Empty,
+    Node,
+    NodeRegistry,
+    NodeTypeInfo,
+    Params,
+)
 from .values import (
     JSON,
     BooleanValue,
@@ -33,6 +40,7 @@ from .values import (
     StringMapValue,
     StringValue,
     Value,
+    ValueRegistry,
     ValueSchema,
     ValueSchemaValue,
     ValueType,
@@ -42,10 +50,12 @@ from .workflow import Workflow, WorkflowValue
 __all__ = [
     "BooleanValue",
     "Caster",
+    "clean_edges_after_migration",
     "Context",
     "Data",
     "DataMapping",
     "DataValue",
+    "default_node_registry",
     "Edge",
     "Empty",
     "ExecutionAlgorithm",
@@ -56,6 +66,9 @@ __all__ = [
     "IntegerValue",
     "JSON",
     "JSONValue",
+    "load_workflow_with_migration",
+    "migration_registry",
+    "migration_runner",
     "Migration",
     "MigrationError",
     "MigrationNotFoundError",
@@ -64,6 +77,7 @@ __all__ = [
     "MigrationValidationError",
     "Node",
     "NodeException",
+    "NodeRegistry",
     "NodeTypeInfo",
     "NullValue",
     "OutputEdge",
@@ -74,14 +88,12 @@ __all__ = [
     "StringValue",
     "UserException",
     "Value",
+    "ValueRegistry",
     "ValueSchema",
     "ValueSchemaValue",
     "ValueType",
     "Workflow",
+    "WorkflowEngine",
     "WorkflowErrors",
     "WorkflowValue",
-    "clean_edges_after_migration",
-    "load_workflow_with_migration",
-    "migration_registry",
-    "migration_runner",
 ]
