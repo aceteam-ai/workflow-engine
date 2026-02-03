@@ -3,7 +3,8 @@ import asyncio
 import logging
 import re
 import warnings
-from collections.abc import Mapping
+from abc import ABC, abstractmethod
+from collections.abc import Collection, Mapping
 from functools import cached_property
 from typing import (
     TYPE_CHECKING,
@@ -19,7 +20,7 @@ from typing import (
     get_origin,
 )
 
-from overrides import final
+from overrides import final, override
 from pydantic import ConfigDict, Field, ValidationError, model_validator
 
 from ..utils.immutable import ImmutableBaseModel
@@ -191,11 +192,11 @@ class Node(ImmutableBaseModel, Generic[Input_contra, Output_co, Params_co]):
             cls = cls.__base__
         type_annotation = cls.__annotations__.get("type", None)
         if type_annotation is None or get_origin(type_annotation) is not Literal:
-            _registry.register_base(cls)
+            _default_registry.register_base_node_class(cls)
         else:
             (type_name,) = type_annotation.__args__
             assert isinstance(type_name, str), type_name
-            _registry.register(type_name, cls)
+            _default_registry.register_node_class(type_name, cls)
 
     @model_validator(mode="after")  # type: ignore
     def _to_subclass(self):
@@ -204,8 +205,8 @@ class Node(ImmutableBaseModel, Generic[Input_contra, Output_co, Params_co]):
         """
         # HACK: This trick only works if the base class can be instantiated, so
         # we cannot make it an ABC even if it has unimplemented methods.
-        if _registry.is_base_class(self.__class__):
-            cls = _registry.get(self.type)
+        if _default_registry.is_base_node_class(self.__class__):
+            cls = _default_registry.get_node_class(self.type)
             if cls is None:
                 raise ValueError(f'Node type "{self.type}" is not registered')
             data = self.model_dump()
@@ -493,36 +494,191 @@ def _migrate_node_data(
         return data
 
 
-class NodeRegistry:
+class NodeRegistry(ABC):
+    """
+    An immutable registry of two types of registrations:
+    - Node types: A mapping from names to node classes.
+    - Base node classes: A class that should be polymorphically replaced with a
+      subtype from this registry. Obviously, `Node` itself is a base node class,
+      but you may encounter more.
+    """
+
+    @abstractmethod
+    def get_node_class(self, name: str) -> Type[Node]:
+        pass
+
+    @abstractmethod
+    def is_base_node_class(self, base_node_cls: Type[Node]) -> bool:
+        pass
+
+
+class NodeRegistryBuilder(ABC):
+    """
+    An immutable builder for a mapping from node types to node
+    classes, allowing us to replace base node classes with their subtypes by
+    looking up their identifiers.
+    """
+
+    @abstractmethod
+    def register_node_class(self, name: str, node_cls: Type[Node]) -> Self:
+        pass
+
+    @abstractmethod
+    def register_base_node_class(self, base_node_cls: Type[Node]) -> Self:
+        pass
+
+    @abstractmethod
+    def build(self) -> NodeRegistry:
+        pass
+
+
+class ImmutableNodeRegistry(NodeRegistry):
+    """
+    An ImmutableNodeRegistry is a NodeRegistry that is immutable after
+    construction; enforced by shallow copying the input data structures.
+    """
+
+    def __init__(
+        self,
+        *,
+        node_classes: Mapping[str, Type[Node]],
+        base_node_classes: Collection[Type[Node]],
+    ):
+        self._node_classes = dict(node_classes)
+        self._base_node_classes = tuple(base_node_classes)
+
+    @override
+    def get_node_class(self, name: str) -> Type[Node]:
+        return self._node_classes[name]
+
+    @override
+    def is_base_node_class(self, base_node_cls: Type[Node]) -> bool:
+        return base_node_cls in self._base_node_classes
+
+
+class EagerNodeRegistryBuilder(NodeRegistryBuilder):
     def __init__(self):
-        self.types: dict[str, Type[Node]] = {}
-        self.base_classes: list[Type[Node]] = []
+        self._node_classes: dict[str, Type[Node]] = {}
+        self._base_node_classes: list[Type[Node]] = []
 
-    def register(self, type: str, cls: Type[Node]):
-        if type in self.types:
-            conflict = self.types[type]
-            if cls is not conflict:
-                raise ValueError(
-                    f'Node type "{type}" (class {cls.__name__}) is already registered to a different class ({conflict.__name__})'
-                )
-        self.types[type] = cls
-        logger.debug("Registering class %s as node type %s", cls.__name__, type)
+    @override
+    def register_node_class(self, name: str, node_cls: Type[Node]) -> Self:
+        if name in self._node_classes:
+            raise ValueError(f'Node type "{name}" is already registered')
+        self._node_classes[name] = node_cls
+        return self
 
-    def get(self, type: str) -> Type[Node]:
-        if type not in self.types:
-            raise ValueError(f'Node type "{type}" is not registered')
-        return self.types[type]
+    @override
+    def register_base_node_class(self, base_node_cls: Type[Node]) -> Self:
+        if base_node_cls in self._base_node_classes:
+            raise ValueError(
+                f"Node base class {base_node_cls.__name__} is already registered"
+            )
+        self._base_node_classes.append(base_node_cls)
+        return self
 
-    def register_base(self, cls: Type[Node]):
-        if cls not in self.base_classes:
-            self.base_classes.append(cls)
-            logger.debug("Registering class %s as base node type", cls.__name__)
+    @override
+    def build(self) -> NodeRegistry:
+        return ImmutableNodeRegistry(
+            node_classes=self._node_classes,
+            base_node_classes=self._base_node_classes,
+        )
 
-    def is_base_class(self, cls: Type[Node]) -> bool:
-        return cls in self.base_classes
+
+class LazyNodeRegistry(NodeRegistry, NodeRegistryBuilder):
+    """
+    A LazyNodeRegistry is both a NodeRegistry and a NodeRegistryBuilder with a
+    2-part lifecycle:
+    1. Registration phase: acts as a NodeRegistryBuilder until .build() is
+       called.
+    2. Registry phase: acts as a NodeRegistry.
+
+    Validations are deferred until the registry is frozen; this allows for a
+    LazyNodeRegistry to exist as long as it is not used, making it suitable for
+    automatic node registration.
+    """
+
+    def __init__(self):
+        self._registrations: list[tuple[str | None, Type[Node]]] = []
+        self._frozen: bool = False
+
+        # initialized after freeze
+        self._node_classes: Mapping[str, Type[Node]]
+        self._base_node_classes: Collection[Type[Node]]
+
+    # REGISTRATION PHASE
+
+    @override
+    def register_node_class(self, name: str, node_cls: Type[Node]) -> Self:
+        if self._frozen:
+            raise ValueError("Node registry is frozen, cannot register new node types.")
+        self._registrations.append((name, node_cls))
+        return self
+
+    @override
+    def register_base_node_class(self, base_node_cls: Type[Node]) -> Self:
+        if self._frozen:
+            raise ValueError(
+                "Node registry is frozen, cannot register new base node types."
+            )
+        self._registrations.append((None, base_node_cls))
+        return self
+
+    @override
+    def build(self) -> NodeRegistry:
+        if self._frozen:
+            return self
+
+        self._frozen = True
+        _node_classes = {}
+        _base_node_classes = []
+        for name, node_cls in self._registrations:
+            if name is None:
+                if node_cls not in _base_node_classes:
+                    _base_node_classes.append(node_cls)
+                else:
+                    logger.warning(
+                        "Node base class %s is already registered, skipping registration",
+                        node_cls.__name__,
+                    )
+            else:
+                if name in _node_classes:
+                    conflict = _node_classes[name]
+                    if node_cls is conflict:
+                        logger.warning(
+                            "Node type %s is already registered to class %s, skipping registration",
+                            name,
+                            node_cls.__name__,
+                        )
+                    else:
+                        raise ValueError(
+                            f'Node type "{name}" (class {node_cls.__name__}) is already registered to a different class ({conflict.__name__})'
+                        )
+                else:
+                    _node_classes[name] = node_cls
+
+        del self._registrations  # just to be extra sure
+        self._node_classes = _node_classes
+        self._base_node_classes = tuple(_base_node_classes)
+
+        return self
+
+    # USE PHASE
+
+    @override
+    def get_node_class(self, name: str) -> Type[Node]:
+        self.build()
+        if name not in self._node_classes:
+            raise ValueError(f'Node type "{name}" is not registered')
+        return self._node_classes[name]
+
+    @override
+    def is_base_node_class(self, base_node_cls: Type[Node]) -> bool:
+        self.build()
+        return base_node_cls in self._base_node_classes
 
 
-_registry = NodeRegistry()
+_default_registry = LazyNodeRegistry()
 
 
 __all__ = [

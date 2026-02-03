@@ -1,6 +1,8 @@
 # workflow_engine/core/values/value.py
 import inspect
 import re
+from abc import ABC, abstractmethod
+from collections.abc import Mapping
 from functools import cached_property
 from hashlib import md5
 from logging import getLogger
@@ -16,6 +18,7 @@ from typing import (
     get_origin,
 )
 
+from overrides import override
 from pydantic import PrivateAttr
 
 from ...utils.immutable import ImmutableRootModel
@@ -147,7 +150,7 @@ class Value(ImmutableRootModel[T], Generic[T]):
             assert cls.__base__ is not None
             cls = cls.__base__
         if get_origin(cls) is None:
-            value_type_registry.register(cls.__name__, cls)
+            default_value_registry.register_value_class(cls.__name__, cls)
 
     @classmethod
     def _get_casters(cls) -> dict[str, GenericCaster]:
@@ -284,37 +287,177 @@ class Value(ImmutableRootModel[T], Generic[T]):
         return validate_value_schema(cls.model_json_schema())
 
 
-class ValueRegistry:
-    def __init__(self):
-        self.types: dict[str, ValueType] = {}
+class ValueRegistry(ABC):
+    """
+    An immutable registry of value types by name.
+    """
 
-    def register(self, name: str, cls: ValueType):
-        if name in self.types:
-            conflict = self.types[name]
-            if cls is not conflict:
-                raise ValueError(
-                    f'Value type "{name}" (class {cls.__name__}) is already registered to a different class ({conflict.__name__})'
-                )
-        self.types[name] = cls
-        logger.debug("Registering class %s as value type %s", cls.__name__, name)
+    @abstractmethod
+    def get_value_class(self, name: str) -> ValueType:
+        """Get a value type by name."""
+        pass
 
-    def __contains__(self, name: str) -> bool:
-        return name in self.types
+    @abstractmethod
+    def has_name(self, name: str) -> bool:
+        """Check if a value type name is registered."""
+        pass
 
-    def __getitem__(self, name: str) -> ValueType:
-        if name not in self.types:
+
+class ValueRegistryBuilder(ABC):
+    """
+    A builder for creating value registries.
+    """
+
+    @abstractmethod
+    def register_value_class(self, name: str, value_cls: ValueType) -> Self:
+        """Register a value type by name."""
+        pass
+
+    @abstractmethod
+    def build(self) -> ValueRegistry:
+        """Build and return the registry."""
+        pass
+
+
+class ImmutableValueRegistry(ValueRegistry):
+    """
+    An ImmutableValueRegistry is a ValueRegistry that is immutable after
+    construction; enforced by shallow copying the input data structures.
+    """
+
+    def __init__(self, *, value_classes: Mapping[str, ValueType]):
+        self._value_classes = dict(value_classes)
+
+    @override
+    def has_name(self, name: str) -> bool:
+        return name in self._value_classes
+
+    @override
+    def get_value_class(self, name: str) -> ValueType:
+        if name not in self._value_classes:
             raise ValueError(f'Value type "{name}" is not registered')
-        return self.types[name]
+        return self._value_classes[name]
 
 
-value_type_registry = ValueRegistry()
+class EagerValueRegistryBuilder(ValueRegistryBuilder):
+    """
+    A builder that validates registrations immediately.
+    """
+
+    def __init__(self):
+        self._value_classes: dict[str, ValueType] = {}
+
+    @override
+    def register_value_class(self, name: str, value_cls: ValueType) -> Self:
+        if name in self._value_classes:
+            conflict = self._value_classes[name]
+            if value_cls is not conflict:
+                raise ValueError(
+                    f'Value type "{name}" (class {value_cls.__name__}) is already '
+                    f"registered to a different class ({conflict.__name__})"
+                )
+        self._value_classes[name] = value_cls
+        logger.debug("Registering class %s as value type %s", value_cls.__name__, name)
+        return self
+
+    @override
+    def build(self) -> ValueRegistry:
+        return ImmutableValueRegistry(value_classes=self._value_classes)
+
+
+class LazyValueRegistry(ValueRegistry, ValueRegistryBuilder):
+    """
+    A LazyValueRegistry is both a ValueRegistry and a ValueRegistryBuilder with a
+    2-part lifecycle:
+    1. Registration phase: acts as a ValueRegistryBuilder until .build() is called.
+    2. Registry phase: acts as a ValueRegistry.
+
+    Validations are deferred until the registry is frozen; this allows for a
+    LazyValueRegistry to exist as long as it is not used, making it suitable for
+    automatic value registration.
+    """
+
+    def __init__(self):
+        self._registrations: list[tuple[str, ValueType]] = []
+        self._frozen: bool = False
+
+        # initialized after freeze
+        self._value_classes: Mapping[str, ValueType]
+
+    # REGISTRATION PHASE
+
+    @override
+    def register_value_class(self, name: str, value_cls: ValueType) -> Self:
+        if self._frozen:
+            # Allow re-registration of the same class (for testing/reloading)
+            if name in self._value_classes and self._value_classes[name] is value_cls:
+                logger.debug(
+                    "Value type %s already registered to class %s, skipping",
+                    name,
+                    value_cls.__name__,
+                )
+                return self
+            raise ValueError(
+                f"Value registry is frozen, cannot register new value type '{name}' (class {value_cls.__name__})"
+            )
+        self._registrations.append((name, value_cls))
+        return self
+
+    @override
+    def build(self) -> ValueRegistry:
+        if self._frozen:
+            return self
+
+        self._frozen = True
+        _value_classes = {}
+        for name, value_cls in self._registrations:
+            if name in _value_classes:
+                conflict = _value_classes[name]
+                if value_cls is conflict:
+                    logger.warning(
+                        "Value type %s is already registered to class %s, skipping registration",
+                        name,
+                        value_cls.__name__,
+                    )
+                else:
+                    raise ValueError(
+                        f'Value type "{name}" (class {value_cls.__name__}) is already '
+                        f"registered to a different class ({conflict.__name__})"
+                    )
+            else:
+                _value_classes[name] = value_cls
+                logger.debug(
+                    "Registering class %s as value type %s", value_cls.__name__, name
+                )
+
+        del self._registrations  # Memory optimization
+        self._value_classes = _value_classes
+
+        return self
+
+    # USE PHASE
+
+    @override
+    def has_name(self, name: str) -> bool:
+        self.build()
+        return name in self._value_classes
+
+    @override
+    def get_value_class(self, name: str) -> ValueType:
+        self.build()
+        if name not in self._value_classes:
+            raise ValueError(f'Value type "{name}" is not registered')
+        return self._value_classes[name]
+
+
+default_value_registry = LazyValueRegistry()
 
 
 __all__ = [
     "Caster",
+    "default_value_registry",
     "GenericCaster",
     "get_origin_and_args",
     "Value",
     "ValueType",
-    "value_type_registry",
 ]

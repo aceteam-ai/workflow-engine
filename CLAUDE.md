@@ -90,6 +90,50 @@ class MyNode(Node[MyInput, MyOutput, MyParams]):
 
 **Node Registration**: Nodes auto-register via `__init_subclass__` when they define a `type` discriminator field.
 
+### Coding Best Practices
+
+**Prefer Explicit Methods Over Dunder Method Overrides**
+
+Avoid clever dunder method overrides (`__contains__`, `__getitem__`, etc.) in favor of explicit named methods:
+
+```python
+# ❌ Avoid: Dunder methods are hard to trace with IDE tools
+class Registry:
+    def __contains__(self, name: str) -> bool:
+        return name in self._items
+
+    def __getitem__(self, name: str) -> Item:
+        return self._items[name]
+
+# Usage: hard to Ctrl+Click or find references
+if "foo" in registry:  # Where does this go? IDE can't tell
+    item = registry["foo"]  # Where does this go?
+
+# ✅ Prefer: Explicit methods are IDE-friendly
+class Registry:
+    def has_name(self, name: str) -> bool:
+        return name in self._items
+
+    def get_item(self, name: str) -> Item:
+        return self._items[name]
+
+# Usage: IDE can jump to definition, autocomplete works
+if registry.has_name("foo"):  # Ctrl+Click jumps to has_name()
+    item = registry.get_item("foo")  # Ctrl+Click jumps to get_item()
+```
+
+**Rationale:**
+- Explicit methods show up in IDE autocomplete
+- "Go to Definition" / Ctrl+Click works properly
+- Easier to search for all usages in codebase
+- More discoverable for new developers
+- Self-documenting code
+
+**Exceptions where dunder methods are appropriate:**
+- Core data structures (custom collections, numerical types)
+- Protocol implementations (context managers, iterators)
+- Pydantic model internals (`__init_subclass__`, `model_validator`)
+
 ### Execution Flow
 
 1. Load/build a `Workflow` (validates DAG structure, no cycles, types match)

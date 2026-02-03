@@ -79,6 +79,42 @@ class RetryableNode(Node[RetryableInput, RetryableOutput, RetryableParams]):
         return cls(id=id, params=RetryableParams(fail_count=fail_count))
 
 
+class RetryableNode2(Node[RetryableInput, RetryableOutput, RetryableParams]):
+    TYPE_INFO: ClassVar[NodeTypeInfo] = NodeTypeInfo.from_parameter_type(
+        name="Retryable2",
+        display_name="Retryable2",
+        description="Another retryable node.",
+        version="0.4.0",
+        parameter_type=RetryableParams,
+    )
+    type: Literal["Retryable2"] = "Retryable2"  # pyright: ignore[reportIncompatibleVariableOverride]
+    _attempt_counts: ClassVar[dict[str, int]] = {}
+
+    @property
+    def input_type(self):
+        return RetryableInput
+
+    @property
+    def output_type(self):
+        return RetryableOutput
+
+    async def run(self, context: Context, input: RetryableInput) -> RetryableOutput:
+        if self.id not in RetryableNode2._attempt_counts:
+            RetryableNode2._attempt_counts[self.id] = 0
+        RetryableNode2._attempt_counts[self.id] += 1
+
+        if RetryableNode2._attempt_counts[self.id] <= self.params.fail_count:
+            raise ShouldRetry(
+                message=f"Temporary failure (attempt {RetryableNode2._attempt_counts[self.id]})",
+                backoff=timedelta(milliseconds=10),
+            )
+        return RetryableOutput(result=StringValue(f"Node2: {input.value.root}"))
+
+    @classmethod
+    def from_fail_count(cls, id: str, fail_count: int) -> "RetryableNode2":
+        return cls(id=id, params=RetryableParams(fail_count=fail_count))
+
+
 # Node with custom max_retries in TYPE_INFO
 class CustomRetryNode(Node[RetryableInput, RetryableOutput, RetryableParams]):
     """A node with custom max_retries configured in TYPE_INFO."""
@@ -488,44 +524,6 @@ class TestRetryIntegration:
     async def test_multiple_retryable_nodes_in_sequence(self):
         """Test workflow with multiple nodes that can retry in sequence."""
         from workflow_engine.nodes import ConstantStringNode
-
-        # Create a second retryable node type to track separately
-        class RetryableNode2(Node[RetryableInput, RetryableOutput, RetryableParams]):
-            TYPE_INFO: ClassVar[NodeTypeInfo] = NodeTypeInfo.from_parameter_type(
-                name="Retryable2",
-                display_name="Retryable2",
-                description="Another retryable node.",
-                version="0.4.0",
-                parameter_type=RetryableParams,
-            )
-            type: Literal["Retryable2"] = "Retryable2"  # pyright: ignore[reportIncompatibleVariableOverride]
-            _attempt_counts: ClassVar[dict[str, int]] = {}
-
-            @property
-            def input_type(self):
-                return RetryableInput
-
-            @property
-            def output_type(self):
-                return RetryableOutput
-
-            async def run(
-                self, context: Context, input: RetryableInput
-            ) -> RetryableOutput:
-                if self.id not in RetryableNode2._attempt_counts:
-                    RetryableNode2._attempt_counts[self.id] = 0
-                RetryableNode2._attempt_counts[self.id] += 1
-
-                if RetryableNode2._attempt_counts[self.id] <= self.params.fail_count:
-                    raise ShouldRetry(
-                        message=f"Temporary failure (attempt {RetryableNode2._attempt_counts[self.id]})",
-                        backoff=timedelta(milliseconds=10),
-                    )
-                return RetryableOutput(result=StringValue(f"Node2: {input.value.root}"))
-
-            @classmethod
-            def from_fail_count(cls, id: str, fail_count: int) -> "RetryableNode2":
-                return cls(id=id, params=RetryableParams(fail_count=fail_count))
 
         # Reset counts
         RetryableNode2._attempt_counts = {}
