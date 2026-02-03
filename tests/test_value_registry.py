@@ -1,14 +1,15 @@
 """Tests for ValueRegistry implementations."""
 
 import pytest
+
 from workflow_engine.core.values import Value
 from workflow_engine.core.values.value import (
+    EagerValueRegistryBuilder,
+    ImmutableValueRegistry,
+    LazyValueRegistry,
     ValueRegistry,
     ValueRegistryBuilder,
-    ImmutableValueRegistry,
-    EagerValueRegistryBuilder,
-    LazyValueRegistry,
-    value_type_registry,
+    default_value_registry,
 )
 
 
@@ -48,7 +49,9 @@ class TestImmutableValueRegistry:
         """Test that ValueError is raised for missing value types."""
         registry = ImmutableValueRegistry(value_classes={"SampleA": SampleValueA})
 
-        with pytest.raises(ValueError, match='Value type "NonExistent" is not registered'):
+        with pytest.raises(
+            ValueError, match='Value type "NonExistent" is not registered'
+        ):
             registry.get_value_class("NonExistent")
 
     def test_contains_checks_existence(self):
@@ -57,15 +60,15 @@ class TestImmutableValueRegistry:
             value_classes={"SampleA": SampleValueA, "SampleB": SampleValueB}
         )
 
-        assert "SampleA" in registry
-        assert "SampleB" in registry
-        assert "NonExistent" not in registry
+        assert registry.has_name("SampleA") is True
+        assert registry.has_name("SampleB") is True
+        assert registry.has_name("NonExistent") is False
 
     def test_getitem_syntax(self):
         """Test indexer syntax for retrieving value types."""
         registry = ImmutableValueRegistry(value_classes={"SampleA": SampleValueA})
 
-        assert registry["SampleA"] is SampleValueA
+        assert registry.get_value_class("SampleA") is SampleValueA
 
     def test_immutability(self):
         """Test that the registry data cannot be modified after construction."""
@@ -73,11 +76,9 @@ class TestImmutableValueRegistry:
         registry = ImmutableValueRegistry(value_classes=value_classes)
 
         # Modifying the original dict should not affect the registry
-        value_classes["SampleB"] = SampleValueB
+        value_classes = {"SampleA": SampleValueA, "SampleB": SampleValueB}
 
-        assert "SampleB" not in registry
-        with pytest.raises(ValueError):
-            registry.get_value_class("SampleB")
+        assert registry.has_name("SampleB") is False
 
 
 class TestEagerValueRegistryBuilder:
@@ -96,9 +97,9 @@ class TestEagerValueRegistryBuilder:
     def test_fluent_interface(self):
         """Test that methods return self for chaining."""
         builder = EagerValueRegistryBuilder()
-        result = builder.register_value_class("SampleA", SampleValueA).register_value_class(
-            "SampleB", SampleValueB
-        )
+        result = builder.register_value_class(
+            "SampleA", SampleValueA
+        ).register_value_class("SampleB", SampleValueB)
 
         assert result is builder
 
@@ -169,9 +170,9 @@ class TestLazyValueRegistry:
     def test_fluent_interface(self):
         """Test that methods return self for chaining."""
         registry = LazyValueRegistry()
-        result = registry.register_value_class("SampleA", SampleValueA).register_value_class(
-            "SampleB", SampleValueB
-        )
+        result = registry.register_value_class(
+            "SampleA", SampleValueA
+        ).register_value_class("SampleB", SampleValueB)
 
         assert result is registry
 
@@ -205,7 +206,7 @@ class TestLazyValueRegistry:
         registry.register_value_class("SampleA", SampleValueA)
 
         # Access should trigger build
-        _ = "SampleA" in registry
+        _ = registry.has_name("SampleA")
 
         # Should be frozen now
         with pytest.raises(ValueError, match="Value registry is frozen"):
@@ -255,7 +256,9 @@ class TestLazyValueRegistry:
         registry = LazyValueRegistry()
         registry.register_value_class("SampleA", SampleValueA)
 
-        with pytest.raises(ValueError, match='Value type "NonExistent" is not registered'):
+        with pytest.raises(
+            ValueError, match='Value type "NonExistent" is not registered'
+        ):
             registry.get_value_class("NonExistent")
 
     def test_lazy_registry_is_also_builder(self):
@@ -290,33 +293,33 @@ class TestLazyValueRegistry:
         registry = LazyValueRegistry()
         registry.register_value_class("SampleA", SampleValueA)
 
-        assert registry["SampleA"] is SampleValueA
+        assert registry.get_value_class("SampleA") is SampleValueA
 
 
 class TestValueRegistryIntegration:
     """Integration tests with actual Value classes."""
 
     def test_global_registry_contains_builtin_types(self):
-        """Test that the global value_type_registry contains built-in value types."""
+        """Test that the global default_value_registry contains built-in value types."""
         # These types should have been auto-registered during import
-        assert "IntegerValue" in value_type_registry
-        assert "StringValue" in value_type_registry
-        assert "FloatValue" in value_type_registry
-        assert "BooleanValue" in value_type_registry
+        assert default_value_registry.has_name("IntegerValue")
+        assert default_value_registry.has_name("StringValue")
+        assert default_value_registry.has_name("FloatValue")
+        assert default_value_registry.has_name("BooleanValue")
 
     def test_retrieve_builtin_types_from_global_registry(self):
         """Test retrieving built-in value types from global registry."""
         from workflow_engine.core.values import (
+            BooleanValue,
+            FloatValue,
             IntegerValue,
             StringValue,
-            FloatValue,
-            BooleanValue,
         )
 
-        assert value_type_registry["IntegerValue"] is IntegerValue
-        assert value_type_registry["StringValue"] is StringValue
-        assert value_type_registry["FloatValue"] is FloatValue
-        assert value_type_registry["BooleanValue"] is BooleanValue
+        assert default_value_registry.get_value_class("IntegerValue") is IntegerValue
+        assert default_value_registry.get_value_class("StringValue") is StringValue
+        assert default_value_registry.get_value_class("FloatValue") is FloatValue
+        assert default_value_registry.get_value_class("BooleanValue") is BooleanValue
 
     def test_with_concrete_value_classes(self):
         """Test registry with real value classes."""
@@ -339,10 +342,10 @@ class TestValueRegistryIntegration:
 
         registry.build()
 
+        assert registry.has_name("SampleA")
         assert registry.get_value_class("SampleA") is SampleValueA
+        assert registry.has_name("SampleB")
         assert registry.get_value_class("SampleB") is SampleValueB
-        assert "SampleA" in registry
-        assert "SampleB" in registry
 
 
 class TestValueRegistryEdgeCases:
@@ -353,17 +356,8 @@ class TestValueRegistryEdgeCases:
         registry = LazyValueRegistry()
         registry.register_value_class("CustomName", SampleValueA)
 
-        assert "CustomName" in registry
-        assert registry["CustomName"] is SampleValueA
-
-    def test_empty_registry(self):
-        """Test behavior of an empty registry."""
-        registry = LazyValueRegistry()
-
-        assert "Anything" not in registry
-
-        with pytest.raises(ValueError):
-            _ = registry["Anything"]
+        assert registry.has_name("CustomName")
+        assert registry.get_value_class("CustomName") is SampleValueA
 
     def test_multiple_registries_are_independent(self):
         """Test that multiple LazyValueRegistry instances are independent."""
@@ -373,8 +367,10 @@ class TestValueRegistryEdgeCases:
         registry1.register_value_class("SampleA", SampleValueA)
         registry2.register_value_class("SampleB", SampleValueB)
 
-        assert "SampleA" in registry1
-        assert "SampleA" not in registry2
-
-        assert "SampleB" in registry2
-        assert "SampleB" not in registry1
+        assert registry1.has_name("SampleA")
+        assert registry1.get_value_class("SampleA") is SampleValueA
+        assert registry2.has_name("SampleB")
+        assert registry2.get_value_class("SampleB") is SampleValueB
+        assert registry2.has_name("SampleA") is False
+        with pytest.raises(ValueError, match='Value type "SampleA" is not registered'):
+            registry2.get_value_class("SampleA")

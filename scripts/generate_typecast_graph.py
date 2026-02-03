@@ -7,17 +7,17 @@ import pydot
 
 # Import all value types to trigger registration
 import workflow_engine.core.values  # noqa: F401
-from workflow_engine.core.values.value import value_type_registry
+from workflow_engine.core.values.value import default_value_registry
 
 
 def main():
     # Build directed graph
     G = nx.DiGraph()
 
-    for source_name, source_cls in value_type_registry.types.items():
+    for source_name, source_cls in default_value_registry._value_classes.items():
         G.add_node(source_name)
         for target_name in source_cls._get_casters().keys():
-            if target_name in value_type_registry.types:
+            if target_name in default_value_registry._value_classes:
                 G.add_edge(source_name, target_name)
 
     # Export to SVG via pydot

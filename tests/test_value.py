@@ -18,6 +18,22 @@ from workflow_engine.core.values.value import (
 )
 
 
+class QuestionValue(Value[str]):
+    pass
+
+
+class AnswerValue(Value[Literal[42]]):
+    pass
+
+
+class TestValue(Value[str]):
+    pass
+
+
+class CustomValue(Value[str]):
+    pass
+
+
 @pytest.fixture
 def context():
     """Create a test context for value casting operations."""
@@ -211,10 +227,6 @@ async def test_invalid_casting(context):
     """Test that invalid casting raises appropriate errors."""
     int_val = IntegerValue(42)
 
-    # Test casting to a type that doesn't have a registered caster
-    class CustomValue(Value[str]):
-        pass
-
     # This should fail because there's no registered caster from IntegerValue to CustomValue
     with pytest.raises(ValueError, match="Cannot convert"):
         await int_val.cast_to(CustomValue, context=context)
@@ -289,12 +301,6 @@ async def test_complex_nested_casting(context):
 @pytest.mark.unit
 async def test_cast_registration(context):
     """Test that cast functions can be registered and work correctly."""
-
-    class QuestionValue(Value[str]):
-        pass
-
-    class AnswerValue(Value[Literal[42]]):
-        pass
 
     @QuestionValue.register_cast_to(AnswerValue)
     def cast_question_to_answer(value: QuestionValue, context: Context) -> AnswerValue:
@@ -379,9 +385,6 @@ def test_string_map_value_json():
 async def test_async_caster_registration_and_usage(context):
     """Test async caster registration, coroutine detection, and error handling."""
     import asyncio
-
-    class TestValue(Value[str]):
-        pass
 
     # Register an async caster
     @TestValue.register_cast_to(StringValue)

@@ -150,7 +150,7 @@ class Value(ImmutableRootModel[T], Generic[T]):
             assert cls.__base__ is not None
             cls = cls.__base__
         if get_origin(cls) is None:
-            _default_value_registry.register_value_class(cls.__name__, cls)
+            default_value_registry.register_value_class(cls.__name__, cls)
 
     @classmethod
     def _get_casters(cls) -> dict[str, GenericCaster]:
@@ -298,13 +298,9 @@ class ValueRegistry(ABC):
         pass
 
     @abstractmethod
-    def __contains__(self, name: str) -> bool:
+    def has_name(self, name: str) -> bool:
         """Check if a value type name is registered."""
         pass
-
-    def __getitem__(self, name: str) -> ValueType:
-        """Get a value type by name (indexer syntax)."""
-        return self.get_value_class(name)
 
 
 class ValueRegistryBuilder(ABC):
@@ -333,14 +329,14 @@ class ImmutableValueRegistry(ValueRegistry):
         self._value_classes = dict(value_classes)
 
     @override
+    def has_name(self, name: str) -> bool:
+        return name in self._value_classes
+
+    @override
     def get_value_class(self, name: str) -> ValueType:
         if name not in self._value_classes:
             raise ValueError(f'Value type "{name}" is not registered')
         return self._value_classes[name]
-
-    @override
-    def __contains__(self, name: str) -> bool:
-        return name in self._value_classes
 
 
 class EagerValueRegistryBuilder(ValueRegistryBuilder):
@@ -442,29 +438,26 @@ class LazyValueRegistry(ValueRegistry, ValueRegistryBuilder):
     # USE PHASE
 
     @override
+    def has_name(self, name: str) -> bool:
+        self.build()
+        return name in self._value_classes
+
+    @override
     def get_value_class(self, name: str) -> ValueType:
         self.build()
         if name not in self._value_classes:
             raise ValueError(f'Value type "{name}" is not registered')
         return self._value_classes[name]
 
-    @override
-    def __contains__(self, name: str) -> bool:
-        self.build()
-        return name in self._value_classes
 
-
-_default_value_registry = LazyValueRegistry()
-
-# Backwards compatibility alias
-value_type_registry = _default_value_registry
+default_value_registry = LazyValueRegistry()
 
 
 __all__ = [
     "Caster",
+    "default_value_registry",
     "GenericCaster",
     "get_origin_and_args",
     "Value",
     "ValueType",
-    "value_type_registry",
 ]
