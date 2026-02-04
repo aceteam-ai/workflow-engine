@@ -403,3 +403,240 @@ class TestWorkflowEngineMultiTenancy:
         # Both should produce typed workflows
         assert isinstance(loaded_1.nodes[0], SampleAddNode)
         assert isinstance(loaded_2.nodes[0], SampleAddNode)
+
+
+class TestWorkflowEngineExecution:
+    """Tests for WorkflowEngine.execute() method."""
+
+    @pytest.mark.asyncio
+    async def test_execute_with_default_algorithm(self):
+        """Test that execute() works with default TopologicalExecutionAlgorithm."""
+        from workflow_engine import IntegerValue
+        from workflow_engine.contexts import InMemoryContext
+        from workflow_engine.nodes import AddNode
+
+        # Create engine with defaults
+        engine = WorkflowEngine()
+
+        # Create a simple addition workflow
+        node = AddNode(id="add1")
+
+        workflow = Workflow(
+            nodes=[node],
+            edges=[],
+            input_edges=[
+                {"input_key": "a", "target_id": "add1", "target_key": "a"},
+                {"input_key": "b", "target_id": "add1", "target_key": "b"},
+            ],
+            output_edges=[
+                {"source_id": "add1", "source_key": "sum", "output_key": "result"}
+            ],
+        )
+
+        # Execute workflow
+        context = InMemoryContext()
+        input_data = {"a": IntegerValue(5), "b": IntegerValue(3)}
+
+        errors, output = await engine.execute(workflow, input_data, context)
+
+        # Verify results
+        assert len(errors.workflow_errors) == 0
+        assert len(errors.node_errors) == 0
+        assert output["result"].root == 8
+
+    @pytest.mark.asyncio
+    async def test_execute_with_custom_algorithm(self):
+        """Test that execute() uses the provided execution algorithm."""
+        from workflow_engine import IntegerValue
+        from workflow_engine.contexts import InMemoryContext
+        from workflow_engine.execution import ParallelExecutionAlgorithm
+        from workflow_engine.nodes import AddNode
+
+        # Create engine with custom algorithm
+        custom_algorithm = ParallelExecutionAlgorithm()
+        engine = WorkflowEngine(execution_algorithm=custom_algorithm)
+
+        # Verify the algorithm is stored
+        assert engine.execution_algorithm is custom_algorithm
+
+        # Create a simple workflow
+        node = AddNode(id="add1")
+
+        workflow = Workflow(
+            nodes=[node],
+            edges=[],
+            input_edges=[
+                {"input_key": "a", "target_id": "add1", "target_key": "a"},
+                {"input_key": "b", "target_id": "add1", "target_key": "b"},
+            ],
+            output_edges=[
+                {"source_id": "add1", "source_key": "sum", "output_key": "result"}
+            ],
+        )
+
+        # Execute workflow
+        context = InMemoryContext()
+        input_data = {"a": IntegerValue(10), "b": IntegerValue(20)}
+
+        errors, output = await engine.execute(workflow, input_data, context)
+
+        # Verify results
+        assert len(errors.workflow_errors) == 0
+        assert len(errors.node_errors) == 0
+        assert output["result"].root == 30
+
+    @pytest.mark.asyncio
+    async def test_execute_calls_load_internally(self):
+        """Test that execute() calls load() internally before execution."""
+        from workflow_engine import IntegerValue
+        from workflow_engine.contexts import InMemoryContext
+        from workflow_engine.nodes import AddNode
+
+        # Create engine
+        engine = WorkflowEngine()
+
+        # Create a simple workflow
+        node = AddNode(id="add1")
+
+        workflow = Workflow(
+            nodes=[node],
+            edges=[],
+            input_edges=[
+                {"input_key": "a", "target_id": "add1", "target_key": "a"},
+                {"input_key": "b", "target_id": "add1", "target_key": "b"},
+            ],
+            output_edges=[
+                {"source_id": "add1", "source_key": "sum", "output_key": "result"}
+            ],
+        )
+
+        # Execute workflow - load is called internally
+        context = InMemoryContext()
+        input_data = {"a": IntegerValue(7), "b": IntegerValue(4)}
+
+        errors, output = await engine.execute(workflow, input_data, context)
+
+        # Verify it worked
+        assert len(errors.workflow_errors) == 0
+        assert len(errors.node_errors) == 0
+        assert output["result"].root == 11
+
+    @pytest.mark.asyncio
+    async def test_execute_with_typed_workflow(self):
+        """Test that execute() works with already typed workflows."""
+        from workflow_engine import IntegerValue
+        from workflow_engine.contexts import InMemoryContext
+        from workflow_engine.nodes import AddNode
+
+        # Create engine
+        engine = WorkflowEngine()
+
+        # Create workflow with typed node
+        typed_node = AddNode(id="add1")
+
+        workflow = Workflow(
+            nodes=[typed_node],
+            edges=[],
+            input_edges=[
+                {"input_key": "a", "target_id": "add1", "target_key": "a"},
+                {"input_key": "b", "target_id": "add1", "target_key": "b"},
+            ],
+            output_edges=[
+                {"source_id": "add1", "source_key": "sum", "output_key": "result"}
+            ],
+        )
+
+        # Execute workflow
+        context = InMemoryContext()
+        input_data = {"a": IntegerValue(15), "b": IntegerValue(25)}
+
+        errors, output = await engine.execute(workflow, input_data, context)
+
+        # Verify results
+        assert len(errors.workflow_errors) == 0
+        assert len(errors.node_errors) == 0
+        assert output["result"].root == 40
+
+    @pytest.mark.asyncio
+    async def test_execute_with_multiple_nodes(self):
+        """Test execute() with a workflow containing multiple nodes."""
+        from workflow_engine import IntegerValue
+        from workflow_engine.contexts import InMemoryContext
+        from workflow_engine.nodes import AddNode
+
+        # Create engine
+        engine = WorkflowEngine()
+
+        # Create workflow: (a + b) + c
+        add_node1 = AddNode(id="add1")
+        add_node2 = AddNode(id="add2")
+
+        workflow = Workflow(
+            nodes=[add_node1, add_node2],
+            edges=[
+                {
+                    "source_id": "add1",
+                    "source_key": "sum",
+                    "target_id": "add2",
+                    "target_key": "a",
+                }
+            ],
+            input_edges=[
+                {"input_key": "a", "target_id": "add1", "target_key": "a"},
+                {"input_key": "b", "target_id": "add1", "target_key": "b"},
+                {"input_key": "c", "target_id": "add2", "target_key": "b"},
+            ],
+            output_edges=[
+                {
+                    "source_id": "add2",
+                    "source_key": "sum",
+                    "output_key": "result",
+                }
+            ],
+        )
+
+        # Execute: (2 + 3) + 4 = 9
+        context = InMemoryContext()
+        input_data = {
+            "a": IntegerValue(2),
+            "b": IntegerValue(3),
+            "c": IntegerValue(4),
+        }
+
+        errors, output = await engine.execute(workflow, input_data, context)
+
+        # Verify results
+        assert len(errors.workflow_errors) == 0
+        assert len(errors.node_errors) == 0
+        assert output["result"].root == 9
+
+    @pytest.mark.asyncio
+    async def test_execute_with_tenant_specific_engine(self):
+        """Test that tenant-specific engines execute with isolated registries."""
+        from workflow_engine.contexts import InMemoryContext
+
+        # Create tenant-specific registry with only SampleAddNode
+        tenant_registry = NodeRegistry.builder(lazy=True)
+        tenant_registry.register_node_class("SampleAdd", SampleAddNode)
+        tenant_registry.register_base_node_class(Node)
+
+        engine = WorkflowEngine(
+            node_registry=tenant_registry,
+            value_registry=ValueRegistry.builder(lazy=True),
+        )
+
+        # Create workflow with SampleAdd node
+        workflow = Workflow.model_construct(
+            nodes=[Node.model_construct(type="SampleAdd", id="node1", version="1.0.0")],
+            edges=[],
+            input_edges=[],
+            output_edges=[],
+        )
+
+        # Execute workflow
+        context = InMemoryContext()
+        errors, output = await engine.execute(workflow, {}, context)
+
+        # Should execute successfully (no errors)
+        assert len(errors.workflow_errors) == 0
+        assert len(errors.node_errors) == 0
