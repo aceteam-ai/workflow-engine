@@ -16,6 +16,7 @@ from .migration import (
     migration_runner,
 )
 from .node import Empty, Node, NodeTypeInfo, Params
+from .path import FieldPath, PathSegment, resolve_path_type, traverse_value
 from .values import (
     JSON,
     BooleanValue,
@@ -49,6 +50,7 @@ __all__ = [
     "Edge",
     "Empty",
     "ExecutionAlgorithm",
+    "FieldPath",
     "File",
     "FileValue",
     "FloatValue",
@@ -68,10 +70,13 @@ __all__ = [
     "NullValue",
     "OutputEdge",
     "Params",
+    "PathSegment",
+    "resolve_path_type",
     "SequenceValue",
     "ShouldRetry",
     "StringMapValue",
     "StringValue",
+    "traverse_value",
     "UserException",
     "Value",
     "ValueSchema",

@@ -48,6 +48,68 @@ class AddNode(Node[AddNodeInput, SumOutput, Empty]):
         return SumOutput(sum=FloatValue(input.a.root + input.b.root))
 
 
+class MultiplyNodeInput(Data):
+    a: FloatValue
+    b: FloatValue
+
+
+class ProductOutput(Data):
+    product: FloatValue
+
+
+class MultiplyNode(Node[MultiplyNodeInput, ProductOutput, Empty]):
+    TYPE_INFO: ClassVar[NodeTypeInfo] = NodeTypeInfo(
+        name="Multiply",
+        display_name="Multiply",
+        description="Multiplies two numbers.",
+        version="0.4.0",
+    )
+
+    type: Literal["Multiply"] = "Multiply"  # pyright: ignore[reportIncompatibleVariableOverride]
+
+    @property
+    def input_type(self):
+        return MultiplyNodeInput
+
+    @property
+    def output_type(self):
+        return ProductOutput
+
+    async def run(self, context: Context, input: MultiplyNodeInput) -> ProductOutput:
+        return ProductOutput(product=FloatValue(input.a.root * input.b.root))
+
+
+class SubtractNodeInput(Data):
+    a: FloatValue
+    b: FloatValue
+
+
+class DifferenceOutput(Data):
+    difference: FloatValue
+
+
+class SubtractNode(Node[SubtractNodeInput, DifferenceOutput, Empty]):
+    TYPE_INFO: ClassVar[NodeTypeInfo] = NodeTypeInfo(
+        name="Subtract",
+        display_name="Subtract",
+        description="Subtracts b from a.",
+        version="0.4.0",
+    )
+
+    type: Literal["Subtract"] = "Subtract"  # pyright: ignore[reportIncompatibleVariableOverride]
+
+    @property
+    def input_type(self):
+        return SubtractNodeInput
+
+    @property
+    def output_type(self):
+        return DifferenceOutput
+
+    async def run(self, context: Context, input: SubtractNodeInput) -> DifferenceOutput:
+        return DifferenceOutput(difference=FloatValue(input.a.root - input.b.root))
+
+
 class SumNodeInput(Data):
     values: SequenceValue[FloatValue]
 
@@ -120,5 +182,7 @@ class FactorizationNode(Node[IntegerData, FactorizationData, Empty]):
 __all__ = [
     "AddNode",
     "FactorizationNode",
+    "MultiplyNode",
+    "SubtractNode",
     "SumNode",
 ]

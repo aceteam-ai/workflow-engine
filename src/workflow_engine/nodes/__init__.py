@@ -2,6 +2,8 @@
 from .arithmetic import (
     AddNode,
     FactorizationNode,
+    MultiplyNode,
+    SubtractNode,
     SumNode,
 )
 from .conditional import (
@@ -43,12 +45,14 @@ __all__ = [
     "ExpandDataNode",
     "ExpandMappingNode",
     "ExpandSequenceNode",
-    "ForEachNode",
     "FactorizationNode",
+    "ForEachNode",
     "GatherDataNode",
     "GatherMappingNode",
     "GatherSequenceNode",
     "IfElseNode",
     "IfNode",
+    "MultiplyNode",
+    "SubtractNode",
     "SumNode",
 ]

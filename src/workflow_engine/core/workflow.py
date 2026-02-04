@@ -12,6 +12,7 @@ from ..utils.immutable import ImmutableBaseModel
 from .edge import Edge, InputEdge, OutputEdge
 from .error import NodeExpansionException, UserException
 from .node import Node
+from .path import traverse_value
 from .values import Data, DataMapping, Value, ValueType, build_data_type
 
 if TYPE_CHECKING:
@@ -77,14 +78,45 @@ class Workflow(ImmutableBaseModel):
         If an OutputEdge has an output_schema specified, that schema's type is used.
         Otherwise, the type is inferred from the source node's output field.
         """
-        return {
-            edge.output_key: (
-                (edge.output_schema.to_value_cls(), True)
-                if edge.output_schema is not None
-                else self.nodes_by_id[edge.source_id].output_fields[edge.source_key]
-            )
-            for edge in self.output_edges
-        }
+        from .path import resolve_path_type
+
+        def get_source_output_type(edge: OutputEdge) -> tuple[ValueType, bool]:
+            if edge.output_schema is not None:
+                return (edge.output_schema.to_value_cls(), True)
+
+            source_node = self.nodes_by_id[edge.source_id]
+
+            # Handle simple string key (backwards compatible)
+            if isinstance(edge.source_key, str):
+                return source_node.output_fields[edge.source_key]
+
+            # Handle deep path
+            path = edge.source_key
+            if not isinstance(path, (list, tuple)) or len(path) == 0:
+                raise ValueError(f"Invalid source_key: {edge.source_key}")
+
+            # First segment must be a field name
+            first_key = path[0]
+            if not isinstance(first_key, str):
+                raise ValueError(f"First path segment must be a string: {first_key}")
+
+            if first_key not in source_node.output_fields:
+                raise ValueError(
+                    f"Source node {edge.source_id} does not have field '{first_key}'"
+                )
+
+            field_type, _ = source_node.output_fields[first_key]
+
+            # If only one segment, return the field type
+            if len(path) == 1:
+                return (field_type, True)
+
+            # Traverse remaining path segments
+            resolved_type = resolve_path_type(field_type, path[1:])
+            return (resolved_type, True)
+
+        return {edge.output_key: get_source_output_type(edge) for edge in self.output_edges}
+
 
     @cached_property
     def input_type(self) -> Type[Data]:
@@ -272,14 +304,43 @@ class Workflow(ImmutableBaseModel):
             for target_key, edge in self.edges_by_target[node.id].items():
                 # if the input is missing, we will let the node figure it out
                 if isinstance(edge, InputEdge):
-                    node_input_dict[target_key] = input[edge.input_key]
+                    # InputEdge: Get value from workflow input
+                    source_value = input[edge.input_key]
                 elif edge.source_id in node_outputs:
-                    node_input_dict[target_key] = node_outputs[edge.source_id][
-                        edge.source_key
-                    ]
+                    # Regular Edge: Get value from source node output
+                    source_node_output = node_outputs[edge.source_id]
+
+                    # Handle deep path traversal for source_key
+                    if isinstance(edge.source_key, str):
+                        # Simple key (backwards compatible)
+                        source_value = source_node_output[edge.source_key]
+                    else:
+                        # Deep path: need to traverse through the first field
+                        first_key = edge.source_key[0]
+                        field_value = source_node_output[first_key]
+
+                        # If only one segment, use it directly
+                        if len(edge.source_key) == 1:
+                            source_value = field_value
+                        else:
+                            # Traverse remaining path segments
+                            source_value = traverse_value(field_value, edge.source_key[1:])
                 else:
                     ready = False
                     break
+
+                # Handle deep path traversal for target_key
+                if isinstance(target_key, str):
+                    # Simple key (backwards compatible)
+                    node_input_dict[target_key] = source_value
+                else:
+                    # Deep path for target - this would require special handling
+                    # For now, we only support deep paths on source side
+                    # (target paths would need node inputs to support nested structures)
+                    raise NotImplementedError(
+                        f"Deep path target keys are not yet supported: {target_key}"
+                    )
+
             if not ready:
                 continue
 
@@ -326,14 +387,42 @@ class Workflow(ImmutableBaseModel):
                     f"Cannot get output from node {edge.source_id}.",
                 )
             node_output = node_outputs[edge.source_id]
-            if edge.source_key not in node_output:
+
+            # Handle deep path traversal for source_key
+            try:
+                if isinstance(edge.source_key, str):
+                    # Simple key (backwards compatible)
+                    if edge.source_key not in node_output:
+                        if partial:
+                            continue
+                        raise UserException(
+                            f"Cannot get output from node {edge.source_id} at key '{edge.source_key}'.",
+                        )
+                    output_field = node_output[edge.source_key]
+                else:
+                    # Deep path: traverse through the path
+                    first_key = edge.source_key[0]
+                    if first_key not in node_output:
+                        if partial:
+                            continue
+                        raise UserException(
+                            f"Cannot get output from node {edge.source_id} at key '{first_key}' (first segment of path {edge.source_key}).",
+                        )
+                    field_value = node_output[first_key]
+
+                    # If only one segment, use it directly
+                    if len(edge.source_key) == 1:
+                        output_field = field_value
+                    else:
+                        # Traverse remaining path segments
+                        output_field = traverse_value(field_value, edge.source_key[1:])
+            except (KeyError, IndexError, AttributeError) as e:
                 if partial:
                     continue
                 raise UserException(
-                    f"Cannot get output from node {edge.source_id} at key '{edge.source_key}'.",
-                )
+                    f"Cannot traverse path {edge.source_key} in output of node {edge.source_id}: {e}"
+                ) from e
 
-            output_field = node_output[edge.source_key]
             expected_type, _ = self.output_fields[edge.output_key]
 
             # Validate that the output can be cast to the expected type

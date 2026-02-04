@@ -1,0 +1,98 @@
+{
+  "nodes": [
+    {
+      "type": "MatrixInput",
+      "version": "1.0.0",
+      "id": "matrix_input",
+      "params": {}
+    },
+    {
+      "type": "Multiply",
+      "version": "0.4.0",
+      "id": "a_times_d",
+      "params": {}
+    },
+    {
+      "type": "Multiply",
+      "version": "0.4.0",
+      "id": "b_times_c",
+      "params": {}
+    },
+    {
+      "type": "Subtract",
+      "version": "0.4.0",
+      "id": "determinant",
+      "params": {}
+    }
+  ],
+  "edges": [
+    {
+      "source_id": "matrix_input",
+      "source_key": [
+        "matrix",
+        0,
+        0
+      ],
+      "target_id": "a_times_d",
+      "target_key": "a"
+    },
+    {
+      "source_id": "matrix_input",
+      "source_key": [
+        "matrix",
+        1,
+        1
+      ],
+      "target_id": "a_times_d",
+      "target_key": "b"
+    },
+    {
+      "source_id": "matrix_input",
+      "source_key": [
+        "matrix",
+        0,
+        1
+      ],
+      "target_id": "b_times_c",
+      "target_key": "a"
+    },
+    {
+      "source_id": "matrix_input",
+      "source_key": [
+        "matrix",
+        1,
+        0
+      ],
+      "target_id": "b_times_c",
+      "target_key": "b"
+    },
+    {
+      "source_id": "a_times_d",
+      "source_key": "product",
+      "target_id": "determinant",
+      "target_key": "a"
+    },
+    {
+      "source_id": "b_times_c",
+      "source_key": "product",
+      "target_id": "determinant",
+      "target_key": "b"
+    }
+  ],
+  "input_edges": [
+    {
+      "input_key": "matrix",
+      "target_id": "matrix_input",
+      "target_key": "matrix",
+      "input_schema": null
+    }
+  ],
+  "output_edges": [
+    {
+      "source_id": "determinant",
+      "source_key": "difference",
+      "output_key": "determinant",
+      "output_schema": null
+    }
+  ]
+}
