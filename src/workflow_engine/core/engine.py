@@ -54,13 +54,18 @@ class WorkflowEngine:
         Walks the workflow graph and:
         1. Looks up concrete node types in node_registry
         2. Applies migrations via the registry's load_node method
-        3. Returns a new Workflow with typed nodes
+        3. Validates node inputs and edge types
+        4. Returns a new Workflow with typed nodes
 
         Args:
             workflow: Untyped workflow (nodes may be base Node instances)
 
         Returns:
             Typed workflow (nodes are concrete subclass instances)
+
+        Raises:
+            ValueError: If edges reference non-existent fields or nodes are missing required inputs
+            TypeError: If edge types are incompatible
         """
         typed_inner_nodes = []
 
@@ -69,8 +74,28 @@ class WorkflowEngine:
             typed_node = self.node_registry.load_node(node)
             typed_inner_nodes.append(typed_node)
 
-        # Return new workflow with typed nodes
-        return workflow.model_update(inner_nodes=typed_inner_nodes)
+        # Create new workflow with typed nodes
+        typed_workflow = workflow.model_update(inner_nodes=typed_inner_nodes)
+
+        # Validate edges now that nodes are typed
+        self._validate_edges(typed_workflow)
+        self._validate_nodes(typed_workflow)
+
+        return typed_workflow
+
+    def _validate_edges(self, workflow: Workflow) -> None:
+        """Validate that all edges reference valid fields with compatible types."""
+        for edge in workflow.edges:
+            source = workflow.nodes_by_id[edge.source_id]
+            target = workflow.nodes_by_id[edge.target_id]
+            edge.validate_types(source=source, target=target)
+
+    def _validate_nodes(self, workflow: Workflow) -> None:
+        """Validate that all required node inputs have edges."""
+        for node in workflow.nodes:
+            for key, (_, required) in node.input_fields.items():
+                if required and key not in workflow.edges_by_target[node.id]:
+                    raise ValueError(f"Node {node.id} has no required input edge {key}")
 
     async def execute(
         self,

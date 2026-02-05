@@ -4,7 +4,7 @@ from typing import TYPE_CHECKING, ClassVar, Literal, Self
 
 from overrides import override
 
-from .node import Empty, Node, NodeTypeInfo, Params
+from .node import Node, NodeTypeInfo, Params
 from .values import Data, StringMapValue, ValueSchemaValue, ValueType
 from .values.schema import DataValueSchema
 

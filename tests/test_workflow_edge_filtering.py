@@ -15,6 +15,7 @@ from workflow_engine.core import (
     Params,
     StringValue,
     Workflow,
+    WorkflowEngine,
     load_workflow_with_migration,
     migration_registry,
 )
@@ -333,7 +334,7 @@ class TestWorkflowEdgeFiltering:
         assert node.version == "2.0.0"
 
     def test_strict_validation_without_migration(self):
-        """Test that strict validation applies when no migrations occur."""
+        """Test that strict validation applies when loading workflow with invalid edges."""
         # Create workflow with current version (no migration needed) and invalid edge
         workflow_data = {
             "input_node": {
@@ -372,6 +373,10 @@ class TestWorkflowEdgeFiltering:
             ],
         }
 
-        # Should raise ValueError because no migration occurred, so strict validation applies
+        # Deserialization succeeds with untyped nodes (validation deferred)
+        workflow = Workflow.model_validate(workflow_data)
+
+        # Should raise ValueError when loading via WorkflowEngine (types nodes and validates)
+        engine = WorkflowEngine()
         with pytest.raises(ValueError, match="does not have.*field"):
-            Workflow.model_validate(workflow_data)
+            engine.load(workflow)

@@ -5,7 +5,7 @@ import logging
 from typing import TYPE_CHECKING, Any
 
 from ..edge import Edge
-from ..node import Node
+from ..node import Node, NodeRegistry
 
 if TYPE_CHECKING:
     from ..workflow import Workflow
@@ -60,13 +60,23 @@ def clean_edges_after_migration(workflow_data: dict[str, Any]) -> dict[str, Any]
         return workflow_data
 
     try:
-        # Parse inner nodes
-        inner_nodes = [Node.model_validate(node_data) for node_data in inner_nodes_data]
+        # Parse all nodes - first deserialize as base Node, then load to concrete type
+        registry = NodeRegistry.DEFAULT
+        inner_nodes = [
+            registry.load_node(Node.model_validate(node_data))
+            for node_data in inner_nodes_data
+        ]
 
-        # Parse input/output nodes
-        input_node = Node.model_validate(input_node_data) if input_node_data else None
+        # Parse input/output nodes - also need registry dispatch for proper typing
+        input_node = (
+            registry.load_node(Node.model_validate(input_node_data))
+            if input_node_data
+            else None
+        )
         output_node = (
-            Node.model_validate(output_node_data) if output_node_data else None
+            registry.load_node(Node.model_validate(output_node_data))
+            if output_node_data
+            else None
         )
     except Exception:
         # If nodes can't be parsed, return unchanged
@@ -136,7 +146,10 @@ def _filter_edges(
     return valid_edges
 
 
-def load_workflow_with_migration(workflow_data: dict[str, Any]) -> "Workflow":
+def load_workflow_with_migration(
+    workflow_data: dict[str, Any],
+    node_registry: NodeRegistry | None = None,
+) -> "Workflow":
     """
     Load a workflow from data, applying migrations and cleaning invalid edges.
 
@@ -144,13 +157,15 @@ def load_workflow_with_migration(workflow_data: dict[str, Any]) -> "Workflow":
     formats. It handles the complete migration process:
     1. Nodes are automatically migrated to current versions
     2. Invalid edges (broken by migrations) are removed
-    3. Workflow is validated and returned
+    3. Workflow is validated and returned with typed nodes
 
     Args:
         workflow_data: Raw workflow data dictionary (e.g., from json.load())
+        node_registry: Registry to use for node type resolution.
+            Defaults to NodeRegistry.DEFAULT.
 
     Returns:
-        A validated Workflow instance
+        A validated Workflow instance with typed nodes
 
     Example:
         ```python
@@ -169,13 +184,19 @@ def load_workflow_with_migration(workflow_data: dict[str, Any]) -> "Workflow":
         If you want strict validation without migration support, use
         `Workflow.model_validate()` directly instead.
     """
+    from ..engine import WorkflowEngine
     from ..workflow import Workflow
 
     # Clean edges that may have been broken by node migrations
     cleaned_data = clean_edges_after_migration(workflow_data)
 
     # Validate and create workflow
-    return Workflow.model_validate(cleaned_data)
+    workflow = Workflow.model_validate(cleaned_data)
+
+    # Load workflow to convert untyped nodes to typed nodes
+    registry = node_registry if node_registry is not None else NodeRegistry.DEFAULT
+    engine = WorkflowEngine(node_registry=registry)
+    return engine.load(workflow)
 
 
 __all__ = ["clean_edges_after_migration", "load_workflow_with_migration"]

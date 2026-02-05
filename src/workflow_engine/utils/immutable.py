@@ -35,6 +35,16 @@ class ImmutableBaseModel(BaseModel, _ImmutableMixin):
         assert isinstance(self, BaseModel)
         updated = self.model_copy(update=kwargs)  # type: ignore
         self.__class__.model_validate(updated.__dict__)  # validate the updated model
+
+        # Clear cached properties that may have been copied from the original instance
+        # model_copy copies __dict__ which includes functools.cached_property values
+        model_field_names = set(self.__class__.model_fields.keys())
+        cached_keys = [k for k in updated.__dict__ if k not in model_field_names]
+        updated_dict = updated.__dict__
+        assert isinstance(updated_dict, MutableMapping)
+        for key in cached_keys:
+            del updated_dict[key]
+
         return updated
 
     def _model_mutate(self, **kwargs: Any):

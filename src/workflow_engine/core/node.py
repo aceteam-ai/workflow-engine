@@ -200,27 +200,6 @@ class Node(ImmutableBaseModel, Generic[Input_contra, Output_co, Params_co]):
             assert isinstance(type_name, str), type_name
             NodeRegistry.DEFAULT.register_node_class(type_name, cls)
 
-    @model_validator(mode="after")  # type: ignore
-    def _to_subclass(self):
-        """
-        Replaces the Node object with an instance of the registered subclass.
-        """
-        # HACK: This trick only works if the base class can be instantiated, so
-        # we cannot make it an ABC even if it has unimplemented methods.
-        if NodeRegistry.DEFAULT.is_base_node_class(self.__class__):
-            cls = NodeRegistry.DEFAULT.get_node_class(self.type)
-            if cls is None:
-                raise ValueError(f'Node type "{self.type}" is not registered')
-            data = self.model_dump()
-            # Attempt migration before dispatching to subclass
-            data = _migrate_node_data(data, cls)
-            return cls.model_validate(data)
-        if self.__class__ is Node:
-            warnings.warn(
-                f"Node validation for node {self} could not find a registered subclass to dispatch to."
-            )
-        return self
-
     # --------------------------------------------------------------------------
     # NAMING
 
@@ -733,6 +712,8 @@ class LazyNodeRegistry(NodeRegistry, NodeRegistryBuilder):
 
 
 NodeRegistry.DEFAULT = NodeRegistry.builder(lazy=True)
+# Register Node itself as a base node class (subclasses register via __init_subclass__)
+NodeRegistry.DEFAULT.register_base_node_class(Node)
 
 
 __all__ = [
