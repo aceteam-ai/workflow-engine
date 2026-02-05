@@ -1,8 +1,8 @@
 import pytest
 
-from workflow_engine import Edge, IntegerValue, StringMapValue, ValueSchemaValue, Workflow
+from workflow_engine import Edge, IntegerValue, Workflow
 from workflow_engine.contexts import InMemoryContext
-from workflow_engine.core.io import InputNode, OutputNode, SchemaParams
+from workflow_engine.core.io import InputNode, OutputNode
 from workflow_engine.execution import TopologicalExecutionAlgorithm
 from workflow_engine.nodes import AddNode, ConstantIntegerNode
 
@@ -10,21 +10,11 @@ from workflow_engine.nodes import AddNode, ConstantIntegerNode
 @pytest.fixture
 def workflow():
     """Helper function to create the addition workflow."""
-    input_node = InputNode(
-        id="input",
-        params=SchemaParams(
-            fields=StringMapValue[ValueSchemaValue](
-                {"c": ValueSchemaValue(IntegerValue.to_value_schema())}
-            )
-        ),
+    input_node = InputNode.from_fields(
+        c=IntegerValue,
     )
-    output_node = OutputNode(
-        id="output",
-        params=SchemaParams(
-            fields=StringMapValue[ValueSchemaValue](
-                {"sum": ValueSchemaValue(IntegerValue.to_value_schema())}
-            )
-        ),
+    output_node = OutputNode.from_fields(
+        sum=IntegerValue,
     )
 
     return Workflow(

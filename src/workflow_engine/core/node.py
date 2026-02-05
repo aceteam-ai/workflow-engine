@@ -16,7 +16,6 @@ from typing import (
     Generic,
     Literal,
     Self,
-    Type,
     TypeVar,
     Unpack,
     get_origin,
@@ -122,7 +121,7 @@ class NodeTypeInfo(ImmutableBaseModel):
         display_name: str,
         description: str | None = None,
         version: str,
-        parameter_type: Type[Params],
+        parameter_type: type[Params],
         max_retries: int | None = None,
     ) -> Self:
         return cls(
@@ -290,31 +289,41 @@ class Node(ImmutableBaseModel, Generic[Input_contra, Output_co, Params_co]):
     # --------------------------------------------------------------------------
     # TYPING
 
-    @property
-    def input_type(self) -> Type[Input_contra]:  # type: ignore (contravariant return type)
+    @cached_property
+    def input_type(self) -> type[Input_contra]:  # type: ignore (contravariant return type)
+        """
+        The type of the input data for this node.
+        This field must always be cached to ensure referential equality on every
+        call; otherwise we will be constructing instances of different types.
+        """
         # return Empty to spare users from having to specify the input type on
         # nodes that don't have any input fields
         return Empty  # type: ignore
 
-    @property
-    def output_type(self) -> Type[Output_co]:
+    @cached_property
+    def output_type(self) -> type[Output_co]:
+        """
+        The type of the output data for this node.
+        This field must always be cached to ensure referential equality on every
+        call; otherwise we will be constructing instances of different types.
+        """
         # return Empty to spare users from having to specify the output type on
         # nodes that don't have any output fields
         return Empty  # type: ignore
 
-    @property
+    @cached_property
     def input_fields(self) -> Mapping[str, tuple[ValueType, bool]]:  # type: ignore
         return get_data_fields(self.input_type)
 
-    @property
+    @cached_property
     def output_fields(self) -> Mapping[str, tuple[ValueType, bool]]:
         return get_data_fields(self.output_type)
 
-    @property
+    @cached_property
     def input_schema(self) -> ValueSchema:
         return self.input_type.to_value_schema()
 
-    @property
+    @cached_property
     def output_schema(self) -> ValueSchema:
         return self.output_type.to_value_schema()
 
@@ -428,8 +437,8 @@ class Node(ImmutableBaseModel, Generic[Input_contra, Output_co, Params_co]):
 
 
 def _migrate_node_data(
-    data: dict[str, Any], target_cls: Type["Node"]
-) -> dict[str, Any]:
+    data: Mapping[str, Any], target_cls: type[Node]
+) -> Mapping[str, Any]:
     """
     Attempt to migrate node data to the target class's version.
 
@@ -509,11 +518,11 @@ class NodeRegistry(ABC):
     DEFAULT: ClassVar[LazyNodeRegistry]
 
     @abstractmethod
-    def get_node_class(self, name: str) -> Type[Node]:
+    def get_node_class(self, name: str) -> type[Node]:
         pass
 
     @abstractmethod
-    def is_base_node_class(self, base_node_cls: Type[Node]) -> bool:
+    def is_base_node_class(self, base_node_cls: type[Node]) -> bool:
         pass
 
     def load_node(self, node: Node) -> Node:
@@ -565,11 +574,11 @@ class NodeRegistryBuilder(ABC):
     """
 
     @abstractmethod
-    def register_node_class(self, name: str, node_cls: Type[Node]) -> Self:
+    def register_node_class(self, name: str, node_cls: type[Node]) -> Self:
         pass
 
     @abstractmethod
-    def register_base_node_class(self, base_node_cls: Type[Node]) -> Self:
+    def register_base_node_class(self, base_node_cls: type[Node]) -> Self:
         pass
 
     @abstractmethod
@@ -586,35 +595,35 @@ class ImmutableNodeRegistry(NodeRegistry):
     def __init__(
         self,
         *,
-        node_classes: Mapping[str, Type[Node]],
-        base_node_classes: Collection[Type[Node]],
+        node_classes: Mapping[str, type[Node]],
+        base_node_classes: Collection[type[Node]],
     ):
         self._node_classes = dict(node_classes)
         self._base_node_classes = tuple(base_node_classes)
 
     @override
-    def get_node_class(self, name: str) -> Type[Node]:
+    def get_node_class(self, name: str) -> type[Node]:
         return self._node_classes[name]
 
     @override
-    def is_base_node_class(self, base_node_cls: Type[Node]) -> bool:
+    def is_base_node_class(self, base_node_cls: type[Node]) -> bool:
         return base_node_cls in self._base_node_classes
 
 
 class EagerNodeRegistryBuilder(NodeRegistryBuilder):
     def __init__(self):
-        self._node_classes: dict[str, Type[Node]] = {}
-        self._base_node_classes: list[Type[Node]] = []
+        self._node_classes: dict[str, type[Node]] = {}
+        self._base_node_classes: list[type[Node]] = []
 
     @override
-    def register_node_class(self, name: str, node_cls: Type[Node]) -> Self:
+    def register_node_class(self, name: str, node_cls: type[Node]) -> Self:
         if name in self._node_classes:
             raise ValueError(f'Node type "{name}" is already registered')
         self._node_classes[name] = node_cls
         return self
 
     @override
-    def register_base_node_class(self, base_node_cls: Type[Node]) -> Self:
+    def register_base_node_class(self, base_node_cls: type[Node]) -> Self:
         if base_node_cls in self._base_node_classes:
             raise ValueError(
                 f"Node base class {base_node_cls.__name__} is already registered"
@@ -644,24 +653,24 @@ class LazyNodeRegistry(NodeRegistry, NodeRegistryBuilder):
     """
 
     def __init__(self):
-        self._registrations: list[tuple[str | None, Type[Node]]] = []
+        self._registrations: list[tuple[str | None, type[Node]]] = []
         self._frozen: bool = False
 
         # initialized after freeze
-        self._node_classes: Mapping[str, Type[Node]]
-        self._base_node_classes: Collection[Type[Node]]
+        self._node_classes: Mapping[str, type[Node]]
+        self._base_node_classes: Collection[type[Node]]
 
     # REGISTRATION PHASE
 
     @override
-    def register_node_class(self, name: str, node_cls: Type[Node]) -> Self:
+    def register_node_class(self, name: str, node_cls: type[Node]) -> Self:
         if self._frozen:
             raise ValueError("Node registry is frozen, cannot register new node types.")
         self._registrations.append((name, node_cls))
         return self
 
     @override
-    def register_base_node_class(self, base_node_cls: Type[Node]) -> Self:
+    def register_base_node_class(self, base_node_cls: type[Node]) -> Self:
         if self._frozen:
             raise ValueError(
                 "Node registry is frozen, cannot register new base node types."
@@ -711,14 +720,14 @@ class LazyNodeRegistry(NodeRegistry, NodeRegistryBuilder):
     # USE PHASE
 
     @override
-    def get_node_class(self, name: str) -> Type[Node]:
+    def get_node_class(self, name: str) -> type[Node]:
         self.build()
         if name not in self._node_classes:
             raise ValueError(f'Node type "{name}" is not registered')
         return self._node_classes[name]
 
     @override
-    def is_base_node_class(self, base_node_cls: Type[Node]) -> bool:
+    def is_base_node_class(self, base_node_cls: type[Node]) -> bool:
         self.build()
         return base_node_cls in self._base_node_classes
 

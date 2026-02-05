@@ -26,8 +26,8 @@ from workflow_engine.nodes import AddNode, ConstantIntegerNode, ConstantStringNo
 @pytest.mark.asyncio
 async def test_basic_output_casting():
     """Test that IntegerValue is cast to FloatValue in workflow output."""
-    input_node = InputNode(id="input")
-    output_node = OutputNode.from_fields(id="output", fields={"result": FloatValue})
+    input_node = InputNode.empty()
+    output_node = OutputNode.from_fields(result=FloatValue)
 
     node = ConstantIntegerNode.from_value(id="producer", value=42)
 
@@ -63,10 +63,10 @@ async def test_basic_output_casting():
 @pytest.mark.asyncio
 async def test_multiple_outputs_casting():
     """Test that multiple outputs are cast correctly in parallel."""
-    input_node = InputNode(id="input")
+    input_node = InputNode.empty()
     output_node = OutputNode.from_fields(
-        id="output",
-        fields={"int_result": FloatValue, "str_result": IntegerValue},
+        int_result=FloatValue,
+        str_result=IntegerValue,
     )
 
     int_node = ConstantIntegerNode.from_value(id="int_producer", value=100)
@@ -110,8 +110,10 @@ async def test_multiple_outputs_casting():
 @pytest.mark.asyncio
 async def test_parallel_execution_algorithm():
     """Test that output casting works with ParallelExecutionAlgorithm."""
-    input_node = InputNode(id="input")
-    output_node = OutputNode.from_fields(id="output", fields={"result": FloatValue})
+    input_node = InputNode.empty()
+    output_node = OutputNode.from_fields(
+        result=FloatValue,
+    )
 
     node = ConstantIntegerNode.from_value(id="producer", value=42)
 
@@ -169,8 +171,8 @@ async def test_complex_type_sequence_to_jsonlines():
 @pytest.mark.asyncio
 async def test_no_casting_when_types_match():
     """Test that no casting occurs when output types already match."""
-    input_node = InputNode(id="input")
-    output_node = OutputNode.from_fields(id="output", fields={"result": IntegerValue})
+    input_node = InputNode.empty()
+    output_node = OutputNode.from_fields(result=IntegerValue)
 
     node = ConstantIntegerNode.from_value(id="producer", value=42)
 
@@ -208,10 +210,12 @@ async def test_no_casting_when_types_match():
 async def test_input_casting():
     """Test that workflow inputs can be cast to expected types."""
     input_node = InputNode.from_fields(
-        id="input",
-        fields={"a": FloatValue, "b": FloatValue},
+        a=FloatValue,
+        b=FloatValue,
     )
-    output_node = OutputNode.from_fields(id="output", fields={"result": FloatValue})
+    output_node = OutputNode.from_fields(
+        result=FloatValue,
+    )
 
     add_node = AddNode(id="add")
 
@@ -260,8 +264,10 @@ async def test_input_casting():
 @pytest.mark.unit
 def test_workflow_output_type_inference():
     """Test that workflow infers output types from OutputNode."""
-    input_node = InputNode(id="input")
-    output_node = OutputNode.from_fields(id="output", fields={"result": IntegerValue})
+    input_node = InputNode.empty()
+    output_node = OutputNode.from_fields(
+        result=IntegerValue,
+    )
 
     node = ConstantIntegerNode.from_value(id="producer", value=42)
 

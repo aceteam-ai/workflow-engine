@@ -1,7 +1,8 @@
 # tests/test_parallel_execution.py
 
 import asyncio
-from typing import ClassVar, Literal, Type
+from functools import cached_property
+from typing import ClassVar, Literal
 
 import pytest
 
@@ -14,14 +15,15 @@ from workflow_engine import (
     IntegerValue,
     Node,
     Params,
+    SequenceValue,
     StringMapValue,
     ValueSchemaValue,
     Workflow,
 )
+from workflow_engine.contexts import InMemoryContext
 from workflow_engine.core.io import InputNode, OutputNode, SchemaParams
 from workflow_engine.core.node import NodeTypeInfo
 from workflow_engine.core.values.schema import SequenceValueSchema
-from workflow_engine.contexts import InMemoryContext
 from workflow_engine.execution import TopologicalExecutionAlgorithm
 from workflow_engine.execution.parallel import (
     ErrorHandlingMode,
@@ -58,12 +60,12 @@ class SlowNode(Node[Empty, SlowNodeOutput, SlowNodeParams]):
 
     type: Literal["SlowNode"] = "SlowNode"  # pyright: ignore[reportIncompatibleVariableOverride]
 
-    @property
-    def input_type(self) -> Type[Empty]:
+    @cached_property
+    def input_type(self):
         return Empty
 
-    @property
-    def output_type(self) -> Type[SlowNodeOutput]:
+    @cached_property
+    def output_type(self):
         return SlowNodeOutput
 
     async def run(self, context: Context, input: Empty) -> SlowNodeOutput:
@@ -95,12 +97,12 @@ class SlowPassthroughNode(
 
     type: Literal["SlowPassthroughNode"] = "SlowPassthroughNode"  # pyright: ignore[reportIncompatibleVariableOverride]
 
-    @property
-    def input_type(self) -> Type[SlowPassthroughNodeInput]:
+    @cached_property
+    def input_type(self):
         return SlowPassthroughNodeInput
 
-    @property
-    def output_type(self) -> Type[SlowNodeOutput]:
+    @cached_property
+    def output_type(self):
         return SlowNodeOutput
 
     async def run(
@@ -117,10 +119,11 @@ class SlowPassthroughNode(
 @pytest.fixture
 def parallel_workflow() -> Workflow:
     """Create a workflow with independent nodes that can run in parallel."""
-    input_node = InputNode(id="input")
+    input_node = InputNode.empty()
     output_node = OutputNode.from_fields(
-        id="output",
-        fields={"a": IntegerValue, "b": IntegerValue, "c": IntegerValue},
+        a=IntegerValue,
+        b=IntegerValue,
+        c=IntegerValue,
     )
 
     node_a = SlowNode.from_delay(id="node_a", delay_ms=100)
@@ -132,9 +135,15 @@ def parallel_workflow() -> Workflow:
         output_node=output_node,
         inner_nodes=[node_a, node_b, node_c],
         edges=[
-            Edge.from_nodes(source=node_a, source_key="value", target=output_node, target_key="a"),
-            Edge.from_nodes(source=node_b, source_key="value", target=output_node, target_key="b"),
-            Edge.from_nodes(source=node_c, source_key="value", target=output_node, target_key="c"),
+            Edge.from_nodes(
+                source=node_a, source_key="value", target=output_node, target_key="a"
+            ),
+            Edge.from_nodes(
+                source=node_b, source_key="value", target=output_node, target_key="b"
+            ),
+            Edge.from_nodes(
+                source=node_c, source_key="value", target=output_node, target_key="c"
+            ),
         ],
     )
 
@@ -179,8 +188,10 @@ async def test_parallel_execution_faster_than_sequential(
 @pytest.mark.asyncio
 async def test_parallel_execution_respects_dependencies():
     """Test that dependent nodes wait for their dependencies."""
-    input_node = InputNode(id="input")
-    output_node = OutputNode.from_fields(id="output", fields={"result": IntegerValue})
+    input_node = InputNode.empty()
+    output_node = OutputNode.from_fields(
+        result=IntegerValue,
+    )
 
     a = ConstantIntegerNode.from_value(id="a", value=1)
     b = ConstantIntegerNode.from_value(id="b", value=2)
@@ -193,7 +204,9 @@ async def test_parallel_execution_respects_dependencies():
         edges=[
             Edge.from_nodes(source=a, source_key="value", target=c, target_key="a"),
             Edge.from_nodes(source=b, source_key="value", target=c, target_key="b"),
-            Edge.from_nodes(source=c, source_key="sum", target=output_node, target_key="result"),
+            Edge.from_nodes(
+                source=c, source_key="sum", target=output_node, target_key="result"
+            ),
         ],
     )
 
@@ -225,8 +238,10 @@ async def test_parallel_execution_complex_dependencies():
     Node c runs after a, b complete.
     Node f runs after c, d complete.
     """
-    input_node = InputNode(id="input")
-    output_node = OutputNode.from_fields(id="output", fields={"result": IntegerValue})
+    input_node = InputNode.empty()
+    output_node = OutputNode.from_fields(
+        result=IntegerValue,
+    )
 
     a = ConstantIntegerNode.from_value(id="a", value=1)
     b = ConstantIntegerNode.from_value(id="b", value=2)
@@ -243,7 +258,9 @@ async def test_parallel_execution_complex_dependencies():
             Edge.from_nodes(source=b, source_key="value", target=c, target_key="b"),
             Edge.from_nodes(source=c, source_key="sum", target=f, target_key="a"),
             Edge.from_nodes(source=d, source_key="value", target=f, target_key="b"),
-            Edge.from_nodes(source=f, source_key="sum", target=output_node, target_key="result"),
+            Edge.from_nodes(
+                source=f, source_key="sum", target=output_node, target_key="result"
+            ),
         ],
     )
 
@@ -266,8 +283,8 @@ async def test_parallel_execution_continue_on_error():
     """Test CONTINUE error handling mode collects all errors."""
     from workflow_engine import StringValue
 
-    input_node = InputNode(id="input")
-    output_node = OutputNode.from_fields(id="output", fields={"value": StringValue})
+    input_node = InputNode.empty()
+    output_node = OutputNode.from_fields(value=StringValue)
 
     ok_node = ConstantStringNode.from_value(id="ok_node", value="test")
     error1 = ErrorNode.from_name(id="error1", name="Error1")
@@ -286,7 +303,10 @@ async def test_parallel_execution_continue_on_error():
                 source=ok_node, source_key="value", target=error2, target_key="info"
             ),
             Edge.from_nodes(
-                source=ok_node, source_key="value", target=output_node, target_key="value"
+                source=ok_node,
+                source_key="value",
+                target=output_node,
+                target_key="value",
             ),
         ],
     )
@@ -314,8 +334,10 @@ async def test_parallel_execution_fail_fast():
     """Test FAIL_FAST error handling mode stops on first error."""
     from workflow_engine import StringValue
 
-    input_node = InputNode(id="input")
-    output_node = OutputNode.from_fields(id="output", fields={"value": StringValue})
+    input_node = InputNode.empty()
+    output_node = OutputNode.from_fields(
+        value=StringValue,
+    )
 
     constant = ConstantStringNode.from_value(id="constant", value="test")
     error = ErrorNode.from_name(id="error", name="TestError")
@@ -329,7 +351,10 @@ async def test_parallel_execution_fail_fast():
                 source=constant, source_key="value", target=error, target_key="info"
             ),
             Edge.from_nodes(
-                source=constant, source_key="value", target=output_node, target_key="value"
+                source=constant,
+                source_key="value",
+                target=output_node,
+                target_key="value",
             ),
         ],
     )
@@ -350,12 +375,11 @@ async def test_parallel_execution_fail_fast():
 async def test_parallel_execution_with_node_expansion():
     """Test that node expansion works correctly with parallel execution."""
     add_input_node = InputNode.from_fields(
-        id="input",
-        fields={"a": FloatValue, "b": FloatValue},
+        a=FloatValue,
+        b=FloatValue,
     )
     add_output_node = OutputNode.from_fields(
-        id="output",
-        fields={"c": FloatValue},
+        c=FloatValue,
     )
     add = AddNode(id="add")
     add_workflow = Workflow(
@@ -363,9 +387,15 @@ async def test_parallel_execution_with_node_expansion():
         output_node=add_output_node,
         inner_nodes=[add],
         edges=[
-            Edge.from_nodes(source=add_input_node, source_key="a", target=add, target_key="a"),
-            Edge.from_nodes(source=add_input_node, source_key="b", target=add, target_key="b"),
-            Edge.from_nodes(source=add, source_key="sum", target=add_output_node, target_key="c"),
+            Edge.from_nodes(
+                source=add_input_node, source_key="a", target=add, target_key="a"
+            ),
+            Edge.from_nodes(
+                source=add_input_node, source_key="b", target=add, target_key="b"
+            ),
+            Edge.from_nodes(
+                source=add, source_key="sum", target=add_output_node, target_key="c"
+            ),
         ],
     )
 
@@ -375,7 +405,9 @@ async def test_parallel_execution_with_node_expansion():
             fields=StringMapValue[ValueSchemaValue](
                 {
                     "sequence": ValueSchemaValue(
-                        SequenceValueSchema(type="array", items=add_workflow.input_schema)
+                        SequenceValueSchema(
+                            type="array", items=add_workflow.input_schema
+                        )
                     )
                 }
             )
@@ -387,7 +419,9 @@ async def test_parallel_execution_with_node_expansion():
             fields=StringMapValue[ValueSchemaValue](
                 {
                     "results": ValueSchemaValue(
-                        SequenceValueSchema(type="array", items=add_workflow.output_schema)
+                        SequenceValueSchema(
+                            type="array", items=add_workflow.output_schema
+                        )
                     )
                 }
             )
@@ -400,8 +434,18 @@ async def test_parallel_execution_with_node_expansion():
         output_node=outer_output_node,
         inner_nodes=[foreach],
         edges=[
-            Edge.from_nodes(source=outer_input_node, source_key="sequence", target=foreach, target_key="sequence"),
-            Edge.from_nodes(source=foreach, source_key="sequence", target=outer_output_node, target_key="results"),
+            Edge.from_nodes(
+                source=outer_input_node,
+                source_key="sequence",
+                target=foreach,
+                target_key="sequence",
+            ),
+            Edge.from_nodes(
+                source=foreach,
+                source_key="sequence",
+                target=outer_output_node,
+                target_key="results",
+            ),
         ],
     )
 
@@ -426,6 +470,7 @@ async def test_parallel_execution_with_node_expansion():
     assert not errors.any(), errors
     # Compare values directly
     results = output["results"]
+    assert isinstance(results, SequenceValue)
     assert len(results) == 2
     assert results[0].root.c == FloatValue(3.0)
     assert results[1].root.c == FloatValue(7.0)
@@ -437,10 +482,13 @@ async def test_parallel_execution_max_concurrency():
     # Create 5 slow nodes that each take 50ms
     slow_nodes = [SlowNode.from_delay(id=f"node_{i}", delay_ms=50) for i in range(5)]
 
-    input_node = InputNode(id="input")
+    input_node = InputNode.empty()
     output_node = OutputNode.from_fields(
-        id="output",
-        fields={f"out_{i}": IntegerValue for i in range(5)},
+        out_0=IntegerValue,
+        out_1=IntegerValue,
+        out_2=IntegerValue,
+        out_3=IntegerValue,
+        out_4=IntegerValue,
     )
 
     workflow = Workflow(
@@ -448,7 +496,12 @@ async def test_parallel_execution_max_concurrency():
         output_node=output_node,
         inner_nodes=slow_nodes,
         edges=[
-            Edge.from_nodes(source=slow_nodes[i], source_key="value", target=output_node, target_key=f"out_{i}")
+            Edge.from_nodes(
+                source=slow_nodes[i],
+                source_key="value",
+                target=output_node,
+                target_key=f"out_{i}",
+            )
             for i in range(5)
         ],
     )
@@ -475,8 +528,8 @@ async def test_parallel_execution_max_concurrency():
 @pytest.mark.asyncio
 async def test_parallel_execution_empty_workflow():
     """Test that parallel execution handles empty workflows."""
-    input_node = InputNode(id="input")
-    output_node = OutputNode(id="output")
+    input_node = InputNode.empty()
+    output_node = OutputNode.empty()
 
     workflow = Workflow(
         input_node=input_node,
@@ -501,8 +554,8 @@ async def test_parallel_execution_empty_workflow():
 @pytest.mark.asyncio
 async def test_parallel_execution_single_node():
     """Test that parallel execution works with a single node."""
-    input_node = InputNode(id="input")
-    output_node = OutputNode.from_fields(id="output", fields={"result": IntegerValue})
+    input_node = InputNode.empty()
+    output_node = OutputNode.from_fields(result=IntegerValue)
 
     a = ConstantIntegerNode.from_value(id="a", value=42)
 
@@ -511,7 +564,9 @@ async def test_parallel_execution_single_node():
         output_node=output_node,
         inner_nodes=[a],
         edges=[
-            Edge.from_nodes(source=a, source_key="value", target=output_node, target_key="result"),
+            Edge.from_nodes(
+                source=a, source_key="value", target=output_node, target_key="result"
+            ),
         ],
     )
 
@@ -531,8 +586,8 @@ async def test_parallel_execution_single_node():
 @pytest.mark.asyncio
 async def test_parallel_execution_matches_sequential_output():
     """Test that parallel execution produces the same output as sequential."""
-    input_node = InputNode.from_fields(id="input", fields={"c": IntegerValue})
-    output_node = OutputNode.from_fields(id="output", fields={"sum": IntegerValue})
+    input_node = InputNode.from_fields(c=IntegerValue)
+    output_node = OutputNode.from_fields(sum=IntegerValue)
 
     a = ConstantIntegerNode.from_value(id="a", value=42)
     b = ConstantIntegerNode.from_value(id="b", value=2025)
@@ -557,10 +612,16 @@ async def test_parallel_execution_matches_sequential_output():
                 target_key="a",
             ),
             Edge.from_nodes(
-                source=input_node, source_key="c", target=a_plus_b_plus_c, target_key="b"
+                source=input_node,
+                source_key="c",
+                target=a_plus_b_plus_c,
+                target_key="b",
             ),
             Edge.from_nodes(
-                source=a_plus_b_plus_c, source_key="sum", target=output_node, target_key="sum"
+                source=a_plus_b_plus_c,
+                source_key="sum",
+                target=output_node,
+                target_key="sum",
             ),
         ],
     )
@@ -603,10 +664,11 @@ async def test_parallel_execution_eager_dispatch():
 
     With batch dispatch: A+B batch completes at 200ms, then C runs, finishes at 250ms.
     """
-    input_node = InputNode(id="input")
+    input_node = InputNode.empty()
     output_node = OutputNode.from_fields(
-        id="output",
-        fields={"a": IntegerValue, "b": IntegerValue, "c": IntegerValue},
+        a=IntegerValue,
+        b=IntegerValue,
+        c=IntegerValue,
     )
 
     a = SlowNode.from_delay(id="a", delay_ms=50)
@@ -619,9 +681,15 @@ async def test_parallel_execution_eager_dispatch():
         inner_nodes=[a, b, c],
         edges=[
             Edge.from_nodes(source=a, source_key="value", target=c, target_key="value"),
-            Edge.from_nodes(source=a, source_key="value", target=output_node, target_key="a"),
-            Edge.from_nodes(source=b, source_key="value", target=output_node, target_key="b"),
-            Edge.from_nodes(source=c, source_key="value", target=output_node, target_key="c"),
+            Edge.from_nodes(
+                source=a, source_key="value", target=output_node, target_key="a"
+            ),
+            Edge.from_nodes(
+                source=b, source_key="value", target=output_node, target_key="b"
+            ),
+            Edge.from_nodes(
+                source=c, source_key="value", target=output_node, target_key="c"
+            ),
         ],
     )
 

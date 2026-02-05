@@ -1,5 +1,6 @@
 # workflow_engine/nodes/error.py
 
+from functools import cached_property
 from typing import ClassVar, Literal
 
 from ..core import (
@@ -37,7 +38,7 @@ class ErrorNode(Node[ErrorInput, Empty, ErrorParams]):
 
     type: Literal["Error"] = "Error"  # pyright: ignore[reportIncompatibleVariableOverride]
 
-    @property
+    @cached_property
     def input_type(self):
         return ErrorInput
 

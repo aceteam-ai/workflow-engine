@@ -118,11 +118,11 @@ algorithm = TopologicalExecutionAlgorithm(rate_limits=registry)
 
 ### RateLimitConfig Options
 
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `max_concurrency` | `int \| None` | `None` | Maximum concurrent executions (None = unlimited) |
-| `requests_per_window` | `int \| None` | `None` | Maximum requests per time window (None = unlimited) |
-| `window_duration` | `timedelta` | 60 seconds | Time window for request rate limiting |
+| Parameter             | Type          | Default    | Description                                         |
+| --------------------- | ------------- | ---------- | --------------------------------------------------- |
+| `max_concurrency`     | `int \| None` | `None`     | Maximum concurrent executions (None = unlimited)    |
+| `requests_per_window` | `int \| None` | `None`     | Maximum requests per time window (None = unlimited) |
+| `window_duration`     | `timedelta`   | 60 seconds | Time window for request rate limiting               |
 
 ## Node Expansion
 

@@ -2,7 +2,9 @@
 """Integration tests for node migration during deserialization."""
 
 import warnings
-from typing import Any, ClassVar, Literal, Type
+from collections.abc import Mapping
+from functools import cached_property
+from typing import Any, ClassVar, Literal
 
 import pytest
 
@@ -10,7 +12,6 @@ from workflow_engine import StringValue
 from workflow_engine.core import Empty, Node, NodeTypeInfo, Params
 from workflow_engine.core.migration import Migration, migration_registry
 from workflow_engine.core.values import Data
-
 
 # Test fixtures: a node type with migrations
 
@@ -40,12 +41,12 @@ class MigratableNode(Node[Empty, MigratableOutput, MigratableParams]):
 
     type: Literal["MigratableNode"] = "MigratableNode"  # pyright: ignore[reportIncompatibleVariableOverride]
 
-    @property
-    def input_type(self) -> Type[Empty]:
+    @cached_property
+    def input_type(self):
         return Empty
 
-    @property
-    def output_type(self) -> Type[MigratableOutput]:
+    @cached_property
+    def output_type(self):
         return MigratableOutput
 
     async def run(self, context: Any, input: Empty) -> MigratableOutput:
@@ -59,7 +60,7 @@ class MigratableNodeMigration_1_0_0_to_2_0_0(Migration):
     from_version = "1.0.0"
     to_version = "2.0.0"
 
-    def migrate(self, data: dict[str, Any]) -> dict[str, Any]:
+    def migrate(self, data: Mapping[str, Any]) -> Mapping[str, Any]:
         result = dict(data)
         params = dict(result.get("params", {}))
         # In v1, the field was called 'text', in v2 it's 'value'
@@ -184,11 +185,7 @@ class TestNodeMigration:
                 "type": "Output",
                 "version": "1.0.0",
                 "id": "output",
-                "params": {
-                    "fields": {
-                        "output": {"type": "string"}
-                    }
-                },
+                "params": {"fields": {"output": {"type": "string"}}},
             },
             "edges": [
                 {
@@ -218,7 +215,7 @@ class TestNodeMigration:
             from_version = "1.5.0"
             to_version = "2.0.0"
 
-            def migrate(self, data: dict[str, Any]) -> dict[str, Any]:
+            def migrate(self, data: Mapping[str, Any]) -> Mapping[str, Any]:
                 result = dict(data)
                 params = dict(result.get("params", {}))
                 # In 1.5.0, field was 'content', in 2.0.0 it's 'value'
@@ -232,7 +229,7 @@ class TestNodeMigration:
             from_version = "1.0.0"
             to_version = "1.5.0"
 
-            def migrate(self, data: dict[str, Any]) -> dict[str, Any]:
+            def migrate(self, data: Mapping[str, Any]) -> Mapping[str, Any]:
                 result = dict(data)
                 params = dict(result.get("params", {}))
                 # In 1.0.0, field was 'text', in 1.5.0 it's 'content'

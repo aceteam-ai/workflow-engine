@@ -17,6 +17,7 @@ This guide explains how to write migrations for nodes when you need to change th
 Write a migration when you make **breaking changes** to a node's schema:
 
 ### ✅ Requires Migration
+
 - **Renaming fields**: `old_name` → `new_name`
 - **Changing field types**: `str` → `int`, `required` → `optional`
 - **Removing required fields**: Provide defaults for old data
@@ -24,6 +25,7 @@ Write a migration when you make **breaking changes** to a node's schema:
 - **Changing semantics**: Same field name, different meaning
 
 ### ❌ No Migration Needed
+
 - **Adding optional fields with defaults**: Backward compatible
 - **Bug fixes**: No schema change
 - **Internal implementation changes**: Schema stays the same
@@ -350,6 +352,7 @@ def migrate(self, data: Mapping[str, Any]) -> dict[str, Any]:
 ### ✅ DO
 
 1. **Write clear migration descriptions**
+
    ```python
    """
    Rename 'retries' to 'max_retries' to match common terminology.
@@ -358,11 +361,13 @@ def migrate(self, data: Mapping[str, Any]) -> dict[str, Any]:
    ```
 
 2. **Provide sensible defaults**
+
    ```python
    params["timeout"] = params.pop("timeout", 30)  # 30s default
    ```
 
 3. **Preserve backward compatibility when possible**
+
    ```python
    # Support both old and new field names temporarily
    if "old_field" in params and "new_field" not in params:
@@ -370,6 +375,7 @@ def migrate(self, data: Mapping[str, Any]) -> dict[str, Any]:
    ```
 
 4. **Use validation for complex migrations**
+
    ```python
    def validate(self, data: Mapping[str, Any]) -> list[str]:
        errors = []
@@ -389,6 +395,7 @@ def migrate(self, data: Mapping[str, Any]) -> dict[str, Any]:
 ### ❌ DON'T
 
 1. **Don't mutate input or output** (enforced by type system)
+
    ```python
    # ❌ Bad - won't work, data is Mapping (read-only)
    def migrate(self, data: Mapping[str, Any]) -> Mapping[str, Any]:
@@ -405,12 +412,14 @@ def migrate(self, data: Mapping[str, Any]) -> dict[str, Any]:
    ```
 
    **Why Mapping for return type?**
+
    - Discourages mutation of migration results
    - Enforces functional programming style
    - `dict` is a valid `Mapping`, so you can still return dicts
    - Type checker prevents accidental mutations downstream
 
 2. **Don't modify the version field**
+
    ```python
    # ❌ Bad - runner handles this
    result["version"] = self.to_version
@@ -420,6 +429,7 @@ def migrate(self, data: Mapping[str, Any]) -> dict[str, Any]:
    ```
 
 3. **Don't skip validation for destructive changes**
+
    ```python
    # ✅ Good - validate before dropping data
    def validate(self, data: Mapping[str, Any]) -> list[str]:
@@ -429,6 +439,7 @@ def migrate(self, data: Mapping[str, Any]) -> dict[str, Any]:
    ```
 
 4. **Don't use magic values without comments**
+
    ```python
    # ❌ Bad
    params["priority"] = params.get("level", 5) * 2

@@ -17,6 +17,7 @@ workflow = load_workflow_with_migration(workflow_data)
 ```
 
 That's it! The function handles:
+
 - ✅ Node migrations (version upgrades)
 - ✅ Edge cleanup (removes edges broken by field renames)
 - ✅ Validation (ensures workflow is valid)
@@ -65,11 +66,13 @@ When you call `load_workflow_with_migration(workflow_data)`:
 ### What Gets Migrated
 
 **Nodes:**
+
 - Version field updated to current version
 - Params transformed according to migration rules
 - All migrations in the chain are applied
 
 **Edges:**
+
 - Invalid edges are removed (if migrations occurred)
 - Valid edges are preserved
 - Warnings logged for each removed edge
@@ -118,17 +121,20 @@ workflow = load_workflow_with_migration(workflow_data)
 Edges are removed when:
 
 1. **Missing field reference**
-   ```
+
+   ```text
    Edge references "old_field" but node now has "new_field"
    ```
 
 2. **Type incompatibility**
-   ```
+
+   ```text
    Edge connects StringValue output to IntegerValue input
    ```
 
 3. **Missing node**
-   ```
+
+   ```text
    Edge references node ID that doesn't exist
    ```
 
@@ -222,9 +228,9 @@ node = ConstantStringNode.from_value(id="greeting", value="Hello")
 
 # Create workflow directly with InputNode/OutputNode
 workflow = Workflow(
-    input_node=InputNode(id="input"),
+    input_node=InputNode.empty(),
     inner_nodes=[node],
-    output_node=OutputNode.from_fields(id="output", fields={"result": StringValue}),
+    output_node=OutputNode.from_fields(fields={"result": StringValue}),
     edges=[
         Edge(source_id="greeting", source_key="value", target_id="output", target_key="result")
     ]
@@ -344,12 +350,14 @@ for wf_data in workflows_to_migrate:
 ### ✅ DO
 
 1. **Use migration support for user data**
+
    ```python
    # When loading from storage
    workflow = load_workflow_with_migration(workflow_data)
    ```
 
 2. **Log migration activities**
+
    ```python
    import logging
    logging.basicConfig(level=logging.INFO)
@@ -357,6 +365,7 @@ for wf_data in workflows_to_migrate:
    ```
 
 3. **Test migrations before deploying**
+
    ```python
    # In tests
    old_workflow = load_test_data("v1_workflow.json")
@@ -365,6 +374,7 @@ for wf_data in workflows_to_migrate:
    ```
 
 4. **Save workflows after migration**
+
    ```python
    # Update stored version
    migrated = load_workflow_with_migration(old_data)
@@ -374,6 +384,7 @@ for wf_data in workflows_to_migrate:
 ### ❌ DON'T
 
 1. **Don't use migration for new workflows**
+
    ```python
    # ❌ Unnecessary overhead
    new_workflow = load_workflow_with_migration(just_created_data)
@@ -383,6 +394,7 @@ for wf_data in workflows_to_migrate:
    ```
 
 2. **Don't ignore migration warnings**
+
    ```python
    # ❌ Silently discarding edges may break workflows
    import warnings
@@ -393,6 +405,7 @@ for wf_data in workflows_to_migrate:
    ```
 
 3. **Don't assume migrations preserve all edges**
+
    ```python
    # ❌ May fail - edges might be removed
    workflow = load_workflow_with_migration(old_data)

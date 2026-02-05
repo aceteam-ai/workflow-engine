@@ -1,7 +1,8 @@
+# workflow_engine/core/io.py
 from functools import cached_property
-from typing import TYPE_CHECKING, ClassVar, Literal, Mapping, Self, Type
+from typing import TYPE_CHECKING, ClassVar, Literal, Self
 
-from pydantic import Field
+from overrides import override
 
 from .node import Empty, Node, NodeTypeInfo, Params
 from .values import Data, StringMapValue, ValueSchemaValue, ValueType
@@ -24,15 +25,14 @@ class InputNode(Node[Data, Data, SchemaParams]):
         parameter_type=SchemaParams,
     )
 
-    type: Literal["Input"] = "Input"
-    params: SchemaParams = Field(default_factory=lambda: SchemaParams(fields=StringMapValue({})))
+    type: Literal["Input"] = "Input"  # pyright: ignore[reportIncompatibleVariableOverride]
 
     @cached_property
-    def input_type(self) -> Type[Data]:
+    def input_type(self):
         return self.input_schema.build_data_cls()
 
-    @property
-    def output_type(self) -> Type[Data]:
+    @cached_property
+    def output_type(self):
         return self.input_type
 
     @cached_property
@@ -44,35 +44,42 @@ class InputNode(Node[Data, Data, SchemaParams]):
             additionalProperties=False,
         )
 
-    @property
+    @cached_property
     def output_schema(self) -> DataValueSchema:
         return self.input_schema
 
+    @override
     async def run(self, context: "Context", input: Data) -> Data:
         return input
 
     @classmethod
     def from_fields(
         cls,
-        id: str,
-        fields: Mapping[str, ValueType] | None = None,
+        **fields: ValueType,
     ) -> Self:
         """Create an InputNode with the specified output fields.
 
         Args:
-            id: Node ID
             fields: Mapping from field name to Value type (e.g., {"a": IntegerValue})
         """
-        if fields is None:
-            fields = {}
-
         schema_fields = StringMapValue[ValueSchemaValue](
-            {name: ValueSchemaValue(vtype.to_value_schema()) for name, vtype in fields.items()}
+            {
+                name: ValueSchemaValue(vtype.to_value_schema())
+                for name, vtype in fields.items()
+            }
         )
-        return cls(id=id, params=SchemaParams(fields=schema_fields))
+        return cls(
+            id="input",
+            params=SchemaParams(fields=schema_fields),
+        )
+
+    @classmethod
+    def empty(cls) -> Self:
+        """Create an InputNode with no fields."""
+        return cls.from_fields()
 
 
-class OutputNode(Node[Data, Empty, SchemaParams]):
+class OutputNode(Node[Data, Data, SchemaParams]):
     TYPE_INFO: ClassVar[NodeTypeInfo] = NodeTypeInfo.from_parameter_type(
         name="Output",
         display_name="Output Node",
@@ -81,18 +88,17 @@ class OutputNode(Node[Data, Empty, SchemaParams]):
         parameter_type=SchemaParams,
     )
 
-    type: Literal["Output"] = "Output"
-    params: SchemaParams = Field(default_factory=lambda: SchemaParams(fields=StringMapValue({})))
+    type: Literal["Output"] = "Output"  # pyright: ignore[reportIncompatibleVariableOverride]
 
-    @property
-    def input_type(self) -> Type[Data]:
+    @cached_property
+    def input_type(self):
         return self.output_type
 
     @cached_property
-    def output_type(self) -> Type[Data]:
+    def output_type(self):
         return self.output_schema.build_data_cls()
 
-    @property
+    @cached_property
     def input_schema(self) -> DataValueSchema:
         return self.output_schema
 
@@ -105,28 +111,35 @@ class OutputNode(Node[Data, Empty, SchemaParams]):
             additionalProperties=False,
         )
 
+    @override
     async def run(self, context: "Context", input: Data) -> Data:
         return input
 
     @classmethod
     def from_fields(
         cls,
-        id: str,
-        fields: Mapping[str, ValueType] | None = None,
+        **fields: ValueType,
     ) -> Self:
         """Create an OutputNode with the specified input/output fields.
 
         Args:
-            id: Node ID
             fields: Mapping from field name to Value type (e.g., {"result": IntegerValue})
         """
-        if fields is None:
-            fields = {}
-
         schema_fields = StringMapValue[ValueSchemaValue](
-            {name: ValueSchemaValue(vtype.to_value_schema()) for name, vtype in fields.items()}
+            {
+                name: ValueSchemaValue(vtype.to_value_schema())
+                for name, vtype in fields.items()
+            }
         )
-        return cls(id=id, params=SchemaParams(fields=schema_fields))
+        return cls(
+            id="output",
+            params=SchemaParams(fields=schema_fields),
+        )
+
+    @classmethod
+    def empty(cls) -> Self:
+        """Create an OutputNode with no fields."""
+        return cls.from_fields()
 
 
 __all__ = [

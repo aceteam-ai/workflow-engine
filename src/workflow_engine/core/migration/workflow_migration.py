@@ -65,7 +65,9 @@ def clean_edges_after_migration(workflow_data: dict[str, Any]) -> dict[str, Any]
 
         # Parse input/output nodes
         input_node = Node.model_validate(input_node_data) if input_node_data else None
-        output_node = Node.model_validate(output_node_data) if output_node_data else None
+        output_node = (
+            Node.model_validate(output_node_data) if output_node_data else None
+        )
     except Exception:
         # If nodes can't be parsed, return unchanged
         return workflow_data

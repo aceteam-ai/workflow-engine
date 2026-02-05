@@ -16,7 +16,6 @@ from typing import (
     Literal,
     Protocol,
     Self,
-    Type,
     TypeVar,
     get_origin,
     overload,
@@ -37,7 +36,7 @@ logger = getLogger(__name__)
 
 T = TypeVar("T")
 V = TypeVar("V", bound="Value")
-type ValueType = Type[Value]
+type ValueType = type[Value]
 
 
 def get_origin_and_args(t: ValueType) -> tuple[ValueType, tuple[ValueType, ...]]:
@@ -110,8 +109,8 @@ class GenericCaster(Protocol, Generic[SourceType, TargetType]):  # type: ignore
 
     def __call__(
         self,
-        source_type: Type[SourceType],
-        target_type: Type[TargetType],
+        source_type: type[SourceType],
+        target_type: type[TargetType],
     ) -> Caster[SourceType, TargetType] | None: ...
 
 
@@ -187,7 +186,7 @@ class Value(ImmutableRootModel[T], Generic[T]):
         return resolved_casters
 
     @classmethod
-    def register_cast_to(cls, t: Type[V]):
+    def register_cast_to(cls, t: type[V]):
         """
         A decorator to register a possible type cast from this class to the
         class T, neither of which are generic.
@@ -200,7 +199,7 @@ class Value(ImmutableRootModel[T], Generic[T]):
         return wrap
 
     @classmethod
-    def register_generic_cast_to(cls, t: Type[V]):
+    def register_generic_cast_to(cls, t: type[V]):
         """
         A decorator to register a possible type cast from this class to the
         class T, either of which may be generic.
@@ -223,7 +222,7 @@ class Value(ImmutableRootModel[T], Generic[T]):
         return wrap
 
     @classmethod
-    def get_caster(cls, t: Type[V]) -> Caster[Self, V] | None:
+    def get_caster(cls, t: type[V]) -> Caster[Self, V] | None:
         converters = cls._get_casters()
         target_origin, _ = get_origin_and_args(t)
         if target_origin.__name__ in converters:
@@ -238,7 +237,7 @@ class Value(ImmutableRootModel[T], Generic[T]):
         return None
 
     @classmethod
-    def can_cast_to(cls, t: Type[V]) -> bool:
+    def can_cast_to(cls, t: type[V]) -> bool:
         """
         Returns True if there is any hope of casting this value to the type t.
         """
@@ -265,7 +264,7 @@ class Value(ImmutableRootModel[T], Generic[T]):
     def md5(self) -> str:
         return md5(str(self).encode()).hexdigest()
 
-    async def cast_to(self, t: Type[V], *, context: "Context") -> V:
+    async def cast_to(self, t: type[V], *, context: "Context") -> V:
         key = get_value_type_key(t)
         if key in self._cast_cache:
             casted: V = self._cast_cache[key]  # type: ignore

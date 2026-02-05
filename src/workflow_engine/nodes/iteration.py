@@ -3,7 +3,8 @@
 Nodes that iterate over a sequence of items.
 """
 
-from typing import ClassVar, Literal, Self, Type
+from functools import cached_property
+from typing import ClassVar, Literal, Self
 
 from overrides import override
 
@@ -62,18 +63,16 @@ class ForEachNode(Node[SequenceData, SequenceData, ForEachParams]):
 
     type: Literal["ForEach"] = "ForEach"  # pyright: ignore[reportIncompatibleVariableOverride]
 
-    @property
+    @cached_property
     def workflow(self) -> Workflow:
         return self.params.workflow.root
 
-    @property
-    @override
-    def input_type(self) -> Type[SequenceData]:
+    @cached_property
+    def input_type(self):
         return SequenceData[DataValue[self.workflow.input_type]]
 
-    @property
-    @override
-    def output_type(self) -> Type[SequenceData]:
+    @cached_property
+    def output_type(self):
         return SequenceData[DataValue[self.workflow.output_type]]
 
     @override

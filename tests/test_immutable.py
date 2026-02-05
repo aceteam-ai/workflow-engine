@@ -47,9 +47,6 @@ def test_model_config_inheritance():
     assert ModelA.model_config.get("frozen") is True
     assert ModelB.model_config.get("frozen") is True
 
-    assert ModelA.model_config.get("revalidate_instances") == "always"
-    assert ModelB.model_config.get("revalidate_instances") == "always"
-
     assert ModelA.model_config.get("validate_assignment") is True
     assert ModelB.model_config.get("validate_assignment") is True
 

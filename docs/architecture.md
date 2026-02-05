@@ -91,6 +91,7 @@ Node serialization uses Pydantic's discriminated union pattern. Each node class 
 ## Workflow Structure
 
 A `Workflow` consists of:
+
 - **input_node**: An `InputNode` that defines the workflow's input schema via `SchemaParams`
 - **inner_nodes**: The processing nodes that perform computations
 - **output_node**: An `OutputNode` that defines the workflow's output schema via `SchemaParams`

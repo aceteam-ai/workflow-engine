@@ -2,6 +2,7 @@
 """Tests for retry behavior in workflow execution."""
 
 from datetime import timedelta
+from functools import cached_property
 from typing import ClassVar, Literal
 from unittest.mock import AsyncMock
 
@@ -17,9 +18,9 @@ from workflow_engine import (
     StringValue,
     Workflow,
 )
+from workflow_engine.contexts import InMemoryContext
 from workflow_engine.core import NodeTypeInfo
 from workflow_engine.core.io import InputNode, OutputNode
-from workflow_engine.contexts import InMemoryContext
 from workflow_engine.execution import TopologicalExecutionAlgorithm
 from workflow_engine.execution.retry import NodeRetryState, RetryTracker
 
@@ -52,11 +53,11 @@ class RetryableNode(Node[RetryableInput, RetryableOutput, RetryableParams]):
     type: Literal["Retryable"] = "Retryable"  # pyright: ignore[reportIncompatibleVariableOverride]
     _attempt_counts: ClassVar[dict[str, int]] = {}
 
-    @property
+    @cached_property
     def input_type(self):
         return RetryableInput
 
-    @property
+    @cached_property
     def output_type(self):
         return RetryableOutput
 
@@ -90,11 +91,11 @@ class RetryableNode2(Node[RetryableInput, RetryableOutput, RetryableParams]):
     type: Literal["Retryable2"] = "Retryable2"  # pyright: ignore[reportIncompatibleVariableOverride]
     _attempt_counts: ClassVar[dict[str, int]] = {}
 
-    @property
+    @cached_property
     def input_type(self):
         return RetryableInput
 
-    @property
+    @cached_property
     def output_type(self):
         return RetryableOutput
 
@@ -131,11 +132,11 @@ class CustomRetryNode(Node[RetryableInput, RetryableOutput, RetryableParams]):
     type: Literal["CustomRetry"] = "CustomRetry"  # pyright: ignore[reportIncompatibleVariableOverride]
     _attempt_counts: ClassVar[dict[str, int]] = {}
 
-    @property
+    @cached_property
     def input_type(self):
         return RetryableInput
 
-    @property
+    @cached_property
     def output_type(self):
         return RetryableOutput
 
@@ -282,8 +283,10 @@ class TestRetryIntegration:
         """Test that a node succeeds after retrying within the limit."""
         from workflow_engine.nodes import ConstantStringNode
 
-        input_node = InputNode(id="input")
-        output_node = OutputNode.from_fields(id="output", fields={"result": StringValue})
+        input_node = InputNode.empty()
+        output_node = OutputNode.from_fields(
+            result=StringValue,
+        )
 
         constant = ConstantStringNode.from_value(id="constant", value="input")
         retryable = RetryableNode.from_fail_count(id="retryable", fail_count=2)
@@ -326,8 +329,10 @@ class TestRetryIntegration:
         """Test that a node fails after exhausting retries."""
         from workflow_engine.nodes import ConstantStringNode
 
-        input_node = InputNode(id="input")
-        output_node = OutputNode.from_fields(id="output", fields={"result": StringValue})
+        input_node = InputNode.empty()
+        output_node = OutputNode.from_fields(
+            result=StringValue,
+        )
 
         constant = ConstantStringNode.from_value(id="constant", value="input")
         retryable = RetryableNode.from_fail_count(id="retryable", fail_count=5)
@@ -371,8 +376,10 @@ class TestRetryIntegration:
         """Test that the on_node_retry hook is called."""
         from workflow_engine.nodes import ConstantStringNode
 
-        input_node = InputNode(id="input")
-        output_node = OutputNode.from_fields(id="output", fields={"result": StringValue})
+        input_node = InputNode.empty()
+        output_node = OutputNode.from_fields(
+            result=StringValue,
+        )
 
         constant = ConstantStringNode.from_value(id="constant", value="input")
         retryable = RetryableNode.from_fail_count(id="retryable", fail_count=2)
@@ -427,8 +434,10 @@ class TestRetryIntegration:
         """Test that NodeTypeInfo.max_retries overrides algorithm default."""
         from workflow_engine.nodes import ConstantStringNode
 
-        input_node = InputNode(id="input")
-        output_node = OutputNode.from_fields(id="output", fields={"result": StringValue})
+        input_node = InputNode.empty()
+        output_node = OutputNode.from_fields(
+            result=StringValue,
+        )
 
         constant = ConstantStringNode.from_value(id="constant", value="input")
         custom = CustomRetryNode.from_fail_count(id="custom", fail_count=4)
@@ -471,11 +480,13 @@ class TestRetryIntegration:
     @pytest.mark.asyncio
     async def test_retry_with_rate_limiting(self):
         """Test that retry and rate limiting work together correctly."""
-        from workflow_engine.nodes import ConstantStringNode
         from workflow_engine.execution import RateLimitConfig, RateLimitRegistry
+        from workflow_engine.nodes import ConstantStringNode
 
-        input_node = InputNode(id="input")
-        output_node = OutputNode.from_fields(id="output", fields={"result": StringValue})
+        input_node = InputNode.empty()
+        output_node = OutputNode.from_fields(
+            result=StringValue,
+        )
 
         constant = ConstantStringNode.from_value(id="constant", value="input")
         retryable = RetryableNode.from_fail_count(id="retryable", fail_count=1)
@@ -535,8 +546,10 @@ class TestRetryIntegration:
         # Reset counts
         RetryableNode2._attempt_counts = {}
 
-        input_node = InputNode(id="input")
-        output_node = OutputNode.from_fields(id="output", fields={"final_result": StringValue})
+        input_node = InputNode.empty()
+        output_node = OutputNode.from_fields(
+            final_result=StringValue,
+        )
 
         constant = ConstantStringNode.from_value(id="constant", value="start")
         node1 = RetryableNode.from_fail_count(id="node1", fail_count=1)

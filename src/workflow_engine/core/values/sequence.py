@@ -2,7 +2,7 @@
 
 import asyncio
 from collections.abc import Iterator, Sequence
-from typing import TYPE_CHECKING, Any, Generic, Type, TypeVar
+from typing import TYPE_CHECKING, Any, Generic, TypeVar
 
 from .primitives import IntegerValue
 from .value import Caster, Value, get_origin_and_args
@@ -37,8 +37,8 @@ TargetType = TypeVar("TargetType", bound=Value)
 
 @SequenceValue.register_generic_cast_to(SequenceValue)
 def cast_sequence_to_sequence(
-    source_type: Type[SequenceValue[SourceType]],
-    target_type: Type[SequenceValue[TargetType]],
+    source_type: type[SequenceValue[SourceType]],
+    target_type: type[SequenceValue[TargetType]],
 ) -> Caster[SequenceValue[SourceType], SequenceValue[TargetType]] | None:
     source_origin, (source_item_type,) = get_origin_and_args(source_type)
     target_origin, (target_item_type,) = get_origin_and_args(target_type)

@@ -1,5 +1,6 @@
 # workflow_engine/nodes/text.py
 import os
+from functools import cached_property
 from typing import ClassVar, Literal, Self
 
 from ..core import (
@@ -38,11 +39,11 @@ class AppendToFileNode(Node[AppendToFileInput, AppendToFileOutput, AppendToFileP
 
     type: Literal["AppendToFile"] = "AppendToFile"  # pyright: ignore[reportIncompatibleVariableOverride]
 
-    @property
+    @cached_property
     def input_type(self):
         return AppendToFileInput
 
-    @property
+    @cached_property
     def output_type(self):
         return AppendToFileOutput
 

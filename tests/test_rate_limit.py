@@ -182,8 +182,10 @@ class TestRateLimitIntegration:
     @pytest.mark.asyncio
     async def test_execution_with_rate_limit_registry(self):
         """Test that execution algorithm uses rate limit registry."""
-        input_node = InputNode(id="input")
-        output_node = OutputNode.from_fields(id="output", fields={"result": StringValue})
+        input_node = InputNode.empty()
+        output_node = OutputNode.from_fields(
+            result=StringValue,
+        )
 
         constant = ConstantStringNode.from_value(id="constant", value="test")
 
@@ -219,8 +221,10 @@ class TestRateLimitIntegration:
     @pytest.mark.asyncio
     async def test_execution_without_rate_limits(self):
         """Test that execution works without rate limits configured."""
-        input_node = InputNode(id="input")
-        output_node = OutputNode.from_fields(id="output", fields={"result": StringValue})
+        input_node = InputNode.empty()
+        output_node = OutputNode.from_fields(
+            result=StringValue,
+        )
 
         constant = ConstantStringNode.from_value(id="constant", value="test")
 
@@ -255,8 +259,10 @@ class TestRateLimitIntegration:
         """Test that rate limiter is released even when node fails."""
         from workflow_engine.nodes import ErrorNode
 
-        input_node = InputNode(id="input")
-        output_node = OutputNode.from_fields(id="output", fields={"result": StringValue})
+        input_node = InputNode.empty()
+        output_node = OutputNode.from_fields(
+            result=StringValue,
+        )
 
         constant = ConstantStringNode.from_value(id="constant", value="test")
         error = ErrorNode.from_name(id="error", name="TestError")

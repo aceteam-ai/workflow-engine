@@ -111,7 +111,8 @@ class MyParams(Data):
 ### 3. Define the Node
 
 ```python
-from typing import ClassVar, Literal, Type
+from functools import cached_property
+from typing import ClassVar, Literal
 from workflow_engine import Context, Node, NodeTypeInfo
 
 class MyNode(Node[MyInput, MyOutput, MyParams]):
@@ -124,12 +125,12 @@ class MyNode(Node[MyInput, MyOutput, MyParams]):
     )
     type: Literal["MyNode"] = "MyNode"
 
-    @property
-    def input_type(self) -> Type[MyInput]:
+    @cached_property
+    def input_type(self):
         return MyInput
 
-    @property
-    def output_type(self) -> Type[MyOutput]:
+    @cached_property
+    def output_type(self):
         return MyOutput
 
     async def run(self, context: Context, input: MyInput) -> MyOutput:

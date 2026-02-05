@@ -2,17 +2,9 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from workflow_engine import (
-    Edge,
-    StringMapValue,
-    StringValue,
-    UserException,
-    ValueSchemaValue,
-    Workflow,
-    WorkflowErrors,
-)
+from workflow_engine import Edge, StringValue, UserException, Workflow, WorkflowErrors
 from workflow_engine.contexts import InMemoryContext
-from workflow_engine.core.io import InputNode, OutputNode, SchemaParams
+from workflow_engine.core.io import InputNode, OutputNode
 from workflow_engine.execution import TopologicalExecutionAlgorithm
 from workflow_engine.nodes import ConstantStringNode, ErrorNode
 
@@ -20,14 +12,9 @@ from workflow_engine.nodes import ConstantStringNode, ErrorNode
 @pytest.fixture
 def workflow():
     """Helper function to create the error workflow."""
-    input_node = InputNode(id="input")
-    output_node = OutputNode(
-        id="output",
-        params=SchemaParams(
-            fields=StringMapValue[ValueSchemaValue](
-                {"text": ValueSchemaValue(StringValue.to_value_schema())}
-            )
-        ),
+    input_node = InputNode.empty()
+    output_node = OutputNode.from_fields(
+        text=StringValue,
     )
 
     constant = ConstantStringNode.from_value(id="constant", value="test")

@@ -1,5 +1,6 @@
 # workflow_engine/nodes/constant.py
-from typing import ClassVar, Literal, Type
+from functools import cached_property
+from typing import ClassVar, Literal
 
 from ..core import (
     BooleanValue,
@@ -29,8 +30,8 @@ class ConstantBooleanNode(Node[Empty, ConstantBoolean, ConstantBoolean]):
 
     type: Literal["ConstantBoolean"] = "ConstantBoolean"  # pyright: ignore[reportIncompatibleVariableOverride]
 
-    @property
-    def output_type(self) -> Type[ConstantBoolean]:
+    @cached_property
+    def output_type(self):
         return ConstantBoolean
 
     async def run(self, context: Context, input: Empty) -> ConstantBoolean:
@@ -56,8 +57,8 @@ class ConstantIntegerNode(Node[Empty, ConstantInteger, ConstantInteger]):
 
     type: Literal["ConstantInteger"] = "ConstantInteger"  # pyright: ignore[reportIncompatibleVariableOverride]
 
-    @property
-    def output_type(self) -> Type[ConstantInteger]:
+    @cached_property
+    def output_type(self):
         return ConstantInteger
 
     async def run(self, context: Context, input: Empty) -> ConstantInteger:
@@ -83,8 +84,8 @@ class ConstantStringNode(Node[Empty, ConstantString, ConstantString]):
 
     type: Literal["ConstantString"] = "ConstantString"  # pyright: ignore[reportIncompatibleVariableOverride]
 
-    @property
-    def output_type(self) -> Type[ConstantString]:
+    @cached_property
+    def output_type(self):
         return ConstantString
 
     async def run(self, context: Context, input: Data) -> ConstantString:

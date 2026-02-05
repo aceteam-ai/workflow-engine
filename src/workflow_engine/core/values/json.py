@@ -1,7 +1,7 @@
 # workflow_engine/core/values/json.py
 
 from collections.abc import Mapping, Sequence
-from typing import TYPE_CHECKING, Type
+from typing import TYPE_CHECKING
 
 from .mapping import StringMapValue
 from .primitives import BooleanValue, FloatValue, IntegerValue, NullValue
@@ -56,8 +56,8 @@ def cast_json_to_float(value: JSONValue, context: "Context") -> FloatValue:
 
 @JSONValue.register_generic_cast_to(SequenceValue)
 def cast_json_to_sequence(
-    source_type: Type[JSONValue],
-    target_type: Type[SequenceValue],
+    source_type: type[JSONValue],
+    target_type: type[SequenceValue],
 ) -> Caster[JSONValue, SequenceValue] | None:
     assert issubclass(source_type, JSONValue)
 
@@ -76,8 +76,8 @@ def cast_json_to_sequence(
 
 @JSONValue.register_generic_cast_to(StringMapValue)
 def cast_json_to_string_map(
-    source_type: Type[JSONValue],
-    target_type: Type[StringMapValue],
+    source_type: type[JSONValue],
+    target_type: type[StringMapValue],
 ) -> Caster[JSONValue, StringMapValue] | None:
     assert issubclass(source_type, JSONValue)
 

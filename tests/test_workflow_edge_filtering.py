@@ -1,13 +1,14 @@
 """Tests for automatic filtering of invalid edges after node migrations."""
 
 import logging
-from typing import ClassVar, Literal, Type
+from functools import cached_property
+from typing import Any, ClassVar, Literal, Mapping
 
 import pytest
 
 from workflow_engine.core import (
     Context,
-    Empty,
+    Data,
     Migration,
     Node,
     NodeTypeInfo,
@@ -23,7 +24,7 @@ class _NodeParams(Params):
     value: int
 
 
-class _NodeInput(Empty):
+class _NodeInput(Data):
     pass
 
 
@@ -45,14 +46,14 @@ class _TestNodeForEdgeFiltering(Node[_NodeInput, _NodeOutput_V2, _NodeParams]):
         version="2.0.0",
         parameter_type=_NodeParams,
     )
-    type: Literal["TestNodeForEdgeFiltering"] = "TestNodeForEdgeFiltering"
+    type: Literal["TestNodeForEdgeFiltering"] = "TestNodeForEdgeFiltering"  # pyright: ignore[reportIncompatibleVariableOverride]
 
-    @property
-    def input_type(self) -> Type[_NodeInput]:
+    @cached_property
+    def input_type(self):
         return _NodeInput
 
-    @property
-    def output_type(self) -> Type[_NodeOutput_V2]:
+    @cached_property
+    def output_type(self):
         return _NodeOutput_V2
 
     async def run(self, context: Context, input: _NodeInput) -> _NodeOutput_V2:
@@ -66,9 +67,9 @@ class TestNodeMigration_1_to_2(Migration):
     from_version = "1.0.0"
     to_version = "2.0.0"
 
-    def migrate(self, data: dict) -> dict:
+    def migrate(self, data: Mapping[str, Any]) -> Mapping[str, Any]:
         # No changes needed to params, just version bump
-        return dict(data)
+        return data
 
 
 @pytest.mark.unit
@@ -159,11 +160,7 @@ class TestWorkflowEdgeFiltering:
                 "type": "Output",
                 "version": "1.0.0",
                 "id": "output",
-                "params": {
-                    "fields": {
-                        "final_output": {"type": "string"}
-                    }
-                },
+                "params": {"fields": {"final_output": {"type": "string"}}},
             },
             "edges": [
                 {
@@ -184,8 +181,7 @@ class TestWorkflowEdgeFiltering:
 
         # Verify warning was logged
         assert any(
-            "Removing invalid edge" in record.message
-            and "result" in record.message
+            "Removing invalid edge" in record.message and "result" in record.message
             for record in caplog.records
         )
 
@@ -213,11 +209,7 @@ class TestWorkflowEdgeFiltering:
                 "type": "Output",
                 "version": "1.0.0",
                 "id": "output",
-                "params": {
-                    "fields": {
-                        "final_output": {"type": "string"}
-                    }
-                },
+                "params": {"fields": {"final_output": {"type": "string"}}},
             },
             "edges": [
                 {
@@ -308,11 +300,7 @@ class TestWorkflowEdgeFiltering:
                 "type": "Output",
                 "version": "1.0.0",
                 "id": "output",
-                "params": {
-                    "fields": {
-                        "result": {"type": "string"}
-                    }
-                },
+                "params": {"fields": {"result": {"type": "string"}}},
             },
             "edges": [
                 {

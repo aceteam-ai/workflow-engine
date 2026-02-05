@@ -12,12 +12,11 @@ from workflow_engine.nodes import AppendToFileNode
 def workflow():
     """Helper function to create the append workflow."""
     input_node = InputNode.from_fields(
-        id="input",
-        fields={"text": StringValue, "file": TextFileValue},
+        text=StringValue,
+        file=TextFileValue,
     )
     output_node = OutputNode.from_fields(
-        id="output",
-        fields={"file": TextFileValue},
+        file=TextFileValue,
     )
     append = AppendToFileNode.from_suffix(
         id="append",
@@ -52,7 +51,6 @@ def workflow():
 
 
 @pytest.mark.unit
-@pytest.mark.skip(reason="Workflow serialization from from_fields() needs schema serialization fix")
 def test_workflow_serialization(workflow: Workflow):
     """Test that the append workflow can be serialized and deserialized correctly."""
     # Test round-trip serialization/deserialization

@@ -1,6 +1,7 @@
 # tests/test_migration_registry.py
 """Tests for MigrationRegistry."""
 
+from collections.abc import Mapping
 from typing import Any
 
 import pytest
@@ -15,7 +16,7 @@ class MockMigration_1_0_0_to_2_0_0(Migration):
     from_version = "1.0.0"
     to_version = "2.0.0"
 
-    def migrate(self, data: dict[str, Any]) -> dict[str, Any]:
+    def migrate(self, data: Mapping[str, Any]) -> Mapping[str, Any]:
         return dict(data)
 
 
@@ -26,7 +27,7 @@ class MockMigration_2_0_0_to_3_0_0(Migration):
     from_version = "2.0.0"
     to_version = "3.0.0"
 
-    def migrate(self, data: dict[str, Any]) -> dict[str, Any]:
+    def migrate(self, data: Mapping[str, Any]) -> Mapping[str, Any]:
         return dict(data)
 
 
@@ -37,7 +38,7 @@ class MockMigration_1_0_0_to_3_0_0(Migration):
     from_version = "1.0.0"
     to_version = "3.0.0"
 
-    def migrate(self, data: dict[str, Any]) -> dict[str, Any]:
+    def migrate(self, data: Mapping[str, Any]) -> Mapping[str, Any]:
         return dict(data)
 
 
@@ -48,7 +49,7 @@ class OtherNodeMigration(Migration):
     from_version = "1.0.0"
     to_version = "2.0.0"
 
-    def migrate(self, data: dict[str, Any]) -> dict[str, Any]:
+    def migrate(self, data: Mapping[str, Any]) -> Mapping[str, Any]:
         return dict(data)
 
 
@@ -83,7 +84,7 @@ class TestMigrationRegistry:
             from_version = "1.0.0"
             to_version = "2.5.0"
 
-            def migrate(self, data: dict[str, Any]) -> dict[str, Any]:
+            def migrate(self, data: Mapping[str, Any]) -> Mapping[str, Any]:
                 return data
 
         with pytest.raises(ValueError, match="already registered"):
@@ -198,7 +199,7 @@ class TestMigrationRegistry:
             from_version = "1.0.0"
             to_version = "2.0.0"
 
-            def migrate(self, data: dict[str, Any]) -> dict[str, Any]:
+            def migrate(self, data: Mapping[str, Any]) -> Mapping[str, Any]:
                 return data
 
         assert registry.get("DecoratedNode", "1.0.0") is DecoratedMigration

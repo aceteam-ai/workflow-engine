@@ -1,6 +1,13 @@
 import pytest
 
-from workflow_engine import Edge, FloatValue, StringMapValue, ValueSchemaValue, Workflow
+from workflow_engine import (
+    Edge,
+    FloatValue,
+    SequenceValue,
+    StringMapValue,
+    ValueSchemaValue,
+    Workflow,
+)
 from workflow_engine.contexts import InMemoryContext
 from workflow_engine.core.io import InputNode, OutputNode, SchemaParams
 from workflow_engine.core.values.schema import SequenceValueSchema
@@ -149,6 +156,7 @@ async def test_for_each_simple_sequence(workflow: Workflow):
 
     # Compare actual values (dynamically generated DataValue types have identity issues)
     results = output["results"]
+    assert isinstance(results, SequenceValue)
     assert len(results) == 3
     assert results[0].root.c == FloatValue(3.0)
     assert results[1].root.c == FloatValue(7.0)
@@ -176,4 +184,5 @@ async def test_for_each_empty(workflow: Workflow):
     assert not errors.any(), errors
 
     results = output["results"]
+    assert isinstance(results, SequenceValue)
     assert len(results) == 0
