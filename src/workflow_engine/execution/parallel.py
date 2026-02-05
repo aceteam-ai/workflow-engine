@@ -95,7 +95,7 @@ class ParallelExecutionAlgorithm(ExecutionAlgorithm):
 
         try:
             # Initial dispatch - start all initially ready nodes
-            ready_nodes = workflow.get_ready_nodes(input=input)
+            ready_nodes = {workflow.input_node.id: input}
             for node_id, node_input in ready_nodes.items():
                 task = asyncio.create_task(
                     self._execute_node(
@@ -207,7 +207,6 @@ class ParallelExecutionAlgorithm(ExecutionAlgorithm):
                 ready_nodes = {
                     nid: inp
                     for nid, inp in workflow.get_ready_nodes(
-                        input=input,
                         node_outputs=node_outputs,
                     ).items()
                     if nid not in failed_nodes

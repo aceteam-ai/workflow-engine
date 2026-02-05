@@ -17,6 +17,7 @@ This guide explains how to write migrations for nodes when you need to change th
 Write a migration when you make **breaking changes** to a node's schema:
 
 ### ✅ Requires Migration
+
 - **Renaming fields**: `old_name` → `new_name`
 - **Changing field types**: `str` → `int`, `required` → `optional`
 - **Removing required fields**: Provide defaults for old data
@@ -24,6 +25,7 @@ Write a migration when you make **breaking changes** to a node's schema:
 - **Changing semantics**: Same field name, different meaning
 
 ### ❌ No Migration Needed
+
 - **Adding optional fields with defaults**: Backward compatible
 - **Bug fixes**: No schema change
 - **Internal implementation changes**: Schema stays the same
@@ -142,20 +144,35 @@ from .my_node import MyNodeMigration_1_0_0_to_2_0_0
 from workflow_engine.core import load_workflow_with_migration
 
 old_workflow_data = {
-    "nodes": [{
+    "input_node": {
+        "type": "Input",
+        "version": "1.0.0",
+        "id": "input",
+        "params": {"fields": {}}
+    },
+    "inner_nodes": [{
         "type": "MyNode",
         "id": "node1",
         "version": "1.0.0",  # Old version
         "params": {"input_text": "Hello"}  # Old field name
     }],
-    "edges": [],
-    "input_edges": [],
-    "output_edges": []
+    "output_node": {
+        "type": "Output",
+        "version": "1.0.0",
+        "id": "output",
+        "params": {"fields": {"result": {"type": "string"}}}
+    },
+    "edges": [{
+        "source_id": "node1",
+        "source_key": "text",
+        "target_id": "output",
+        "target_key": "result"
+    }]
 }
 
 # Load with migration - field gets renamed automatically
 workflow = load_workflow_with_migration(old_workflow_data)
-print(workflow.nodes[0].params.text)  # "Hello"
+print(workflow.inner_nodes[0].params.text)  # "Hello"
 ```
 
 ## Testing Migrations
@@ -175,22 +192,32 @@ def test_my_node_migration():
 
     # Old workflow data
     old_data = {
-        "nodes": [{
+        "input_node": {
+            "type": "Input",
+            "version": "1.0.0",
+            "id": "input",
+            "params": {"fields": {}}
+        },
+        "inner_nodes": [{
             "type": "MyNode",
             "id": "node1",
             "version": "1.0.0",
             "params": {"input_text": "Hello", "other_param": 42}
         }],
-        "edges": [],
-        "input_edges": [],
-        "output_edges": []
+        "output_node": {
+            "type": "Output",
+            "version": "1.0.0",
+            "id": "output",
+            "params": {"fields": {}}
+        },
+        "edges": []
     }
 
     # Load workflow - migration runs automatically
     workflow = Workflow.model_validate(old_data)
 
     # Verify migration worked
-    node = workflow.nodes[0]
+    node = workflow.inner_nodes[0]
     assert node.version == "2.0.0"
     assert node.params.text == "Hello"
     assert node.params.other_param == 42
@@ -209,17 +236,19 @@ def test_migration_chain():
     migration_registry.register(MyNodeMigration_1_5_0_to_2_0_0)
 
     old_data = {
-        "nodes": [{
+        "input_node": {"type": "Input", "version": "1.0.0", "id": "input", "params": {"fields": {}}},
+        "inner_nodes": [{
             "type": "MyNode",
             "id": "node1",
             "version": "1.0.0",
             "params": {...}
         }],
-        ...
+        "output_node": {"type": "Output", "version": "1.0.0", "id": "output", "params": {"fields": {}}},
+        "edges": []
     }
 
     workflow = Workflow.model_validate(old_data)
-    assert workflow.nodes[0].version == "2.0.0"
+    assert workflow.inner_nodes[0].version == "2.0.0"
 ```
 
 ## Common Patterns
@@ -323,6 +352,7 @@ def migrate(self, data: Mapping[str, Any]) -> dict[str, Any]:
 ### ✅ DO
 
 1. **Write clear migration descriptions**
+
    ```python
    """
    Rename 'retries' to 'max_retries' to match common terminology.
@@ -331,11 +361,13 @@ def migrate(self, data: Mapping[str, Any]) -> dict[str, Any]:
    ```
 
 2. **Provide sensible defaults**
+
    ```python
    params["timeout"] = params.pop("timeout", 30)  # 30s default
    ```
 
 3. **Preserve backward compatibility when possible**
+
    ```python
    # Support both old and new field names temporarily
    if "old_field" in params and "new_field" not in params:
@@ -343,6 +375,7 @@ def migrate(self, data: Mapping[str, Any]) -> dict[str, Any]:
    ```
 
 4. **Use validation for complex migrations**
+
    ```python
    def validate(self, data: Mapping[str, Any]) -> list[str]:
        errors = []
@@ -362,6 +395,7 @@ def migrate(self, data: Mapping[str, Any]) -> dict[str, Any]:
 ### ❌ DON'T
 
 1. **Don't mutate input or output** (enforced by type system)
+
    ```python
    # ❌ Bad - won't work, data is Mapping (read-only)
    def migrate(self, data: Mapping[str, Any]) -> Mapping[str, Any]:
@@ -378,12 +412,14 @@ def migrate(self, data: Mapping[str, Any]) -> dict[str, Any]:
    ```
 
    **Why Mapping for return type?**
+
    - Discourages mutation of migration results
    - Enforces functional programming style
    - `dict` is a valid `Mapping`, so you can still return dicts
    - Type checker prevents accidental mutations downstream
 
 2. **Don't modify the version field**
+
    ```python
    # ❌ Bad - runner handles this
    result["version"] = self.to_version
@@ -393,6 +429,7 @@ def migrate(self, data: Mapping[str, Any]) -> dict[str, Any]:
    ```
 
 3. **Don't skip validation for destructive changes**
+
    ```python
    # ✅ Good - validate before dropping data
    def validate(self, data: Mapping[str, Any]) -> list[str]:
@@ -402,6 +439,7 @@ def migrate(self, data: Mapping[str, Any]) -> dict[str, Any]:
    ```
 
 4. **Don't use magic values without comments**
+
    ```python
    # ❌ Bad
    params["priority"] = params.get("level", 5) * 2

@@ -4,13 +4,13 @@ Values are type-safe, immutable wrappers around data. They are the currency of d
 
 ## Primitive Values
 
-| Type | Wraps | Notes |
-|------|-------|-------|
-| `BooleanValue` | `bool` | |
-| `FloatValue` | `float` | Has `is_integer()` method |
-| `IntegerValue` | `int` | Implements `__index__()` for use as sequence indices |
-| `NullValue` | `None` | |
-| `StringValue` | `str` | Supports `len()` and `in` operator |
+| Type           | Wraps   | Notes                                                |
+| -------------- | ------- | ---------------------------------------------------- |
+| `BooleanValue` | `bool`  |                                                      |
+| `FloatValue`   | `float` | Has `is_integer()` method                            |
+| `IntegerValue` | `int`   | Implements `__index__()` for use as sequence indices |
+| `NullValue`    | `None`  |                                                      |
+| `StringValue`  | `str`   | Supports `len()` and `in` operator                   |
 
 ### Usage
 
@@ -89,13 +89,13 @@ data = JSONValue(root={"key": [1, 2, 3], "nested": {"a": True}})
 
 File values reference files managed by the execution `Context`.
 
-| Type | MIME Type | Key Methods |
-|------|-----------|-------------|
-| `FileValue` | (base class) | `read()`, `write()`, `copy_from_local_file()` |
-| `TextFileValue` | `text/plain` | `read_text()`, `write_text()` |
-| `JSONFileValue` | `application/json` | `read_data()`, `write_data()` |
-| `JSONLinesFileValue` | `application/jsonl` | `read_data()`, `write_data()` |
-| `PDFFileValue` | `application/pdf` | |
+| Type                 | MIME Type           | Key Methods                                   |
+| -------------------- | ------------------- | --------------------------------------------- |
+| `FileValue`          | (base class)        | `read()`, `write()`, `copy_from_local_file()` |
+| `TextFileValue`      | `text/plain`        | `read_text()`, `write_text()`                 |
+| `JSONFileValue`      | `application/json`  | `read_data()`, `write_data()`                 |
+| `JSONLinesFileValue` | `application/jsonl` | `read_data()`, `write_data()`                 |
+| `PDFFileValue`       | `application/pdf`   |                                               |
 
 ## Type Casting
 
@@ -118,47 +118,47 @@ result = await value.cast_to(FloatValue)  # FloatValue(42.0)
 
 **Primitive conversions:**
 
-| From | To | Condition |
-|------|----|-----------|
-| `IntegerValue` | `FloatValue` | Always |
-| `FloatValue` | `IntegerValue` | Only if `is_integer()` |
-| Any `Value` | `StringValue` | Always (via `str()`) |
-| `StringValue` | `BooleanValue` | Via JSON parsing |
-| `StringValue` | `IntegerValue` | Via JSON parsing |
-| `StringValue` | `FloatValue` | Via JSON parsing |
+| From           | To             | Condition              |
+| -------------- | -------------- | ---------------------- |
+| `IntegerValue` | `FloatValue`   | Always                 |
+| `FloatValue`   | `IntegerValue` | Only if `is_integer()` |
+| Any `Value`    | `StringValue`  | Always (via `str()`)   |
+| `StringValue`  | `BooleanValue` | Via JSON parsing       |
+| `StringValue`  | `IntegerValue` | Via JSON parsing       |
+| `StringValue`  | `FloatValue`   | Via JSON parsing       |
 
 **JSON conversions:**
 
-| From | To | Condition |
-|------|----|-----------|
-| Any `Value` | `JSONValue` | Always (via `model_dump()`) |
-| `JSONValue` | `NullValue` | If value is `null` |
-| `JSONValue` | `BooleanValue` | If value is `bool` |
-| `JSONValue` | `IntegerValue` | If value is `int` |
-| `JSONValue` | `FloatValue` | If value is `float` or `int` |
-| `JSONValue` | `SequenceValue` | If value is `list` |
-| `JSONValue` | `StringMapValue` | If value is `dict` |
+| From        | To               | Condition                    |
+| ----------- | ---------------- | ---------------------------- |
+| Any `Value` | `JSONValue`      | Always (via `model_dump()`)  |
+| `JSONValue` | `NullValue`      | If value is `null`           |
+| `JSONValue` | `BooleanValue`   | If value is `bool`           |
+| `JSONValue` | `IntegerValue`   | If value is `int`            |
+| `JSONValue` | `FloatValue`     | If value is `float` or `int` |
+| `JSONValue` | `SequenceValue`  | If value is `list`           |
+| `JSONValue` | `StringMapValue` | If value is `dict`           |
 
 **File conversions:**
 
-| From | To |
-|------|----|
-| `TextFileValue` | `StringValue` |
-| `StringValue` | `TextFileValue` |
-| `JSONFileValue` | Primitives, `SequenceValue`, `StringMapValue`, `JSONValue` |
-| Any `Value` | `JSONFileValue` |
-| `JSONLinesFileValue` | `SequenceValue[T]` |
-| `SequenceValue` | `JSONLinesFileValue` |
+| From                 | To                                                         |
+| -------------------- | ---------------------------------------------------------- |
+| `TextFileValue`      | `StringValue`                                              |
+| `StringValue`        | `TextFileValue`                                            |
+| `JSONFileValue`      | Primitives, `SequenceValue`, `StringMapValue`, `JSONValue` |
+| Any `Value`          | `JSONFileValue`                                            |
+| `JSONLinesFileValue` | `SequenceValue[T]`                                         |
+| `SequenceValue`      | `JSONLinesFileValue`                                       |
 
 **Collection conversions:**
 
-| From | To | Condition |
-|------|----|-----------|
-| `SequenceValue[S]` | `SequenceValue[T]` | If `S` can cast to `T` |
-| `StringMapValue[S]` | `StringMapValue[T]` | If `S` can cast to `T` |
-| `DataValue[S]` | `DataValue[T]` | Field-by-field casting |
-| `DataValue[D]` | `StringMapValue[V]` | If all fields can cast to `V` |
-| `StringMapValue[V]` | `DataValue[D]` | Runtime field matching |
+| From                | To                  | Condition                     |
+| ------------------- | ------------------- | ----------------------------- |
+| `SequenceValue[S]`  | `SequenceValue[T]`  | If `S` can cast to `T`        |
+| `StringMapValue[S]` | `StringMapValue[T]` | If `S` can cast to `T`        |
+| `DataValue[S]`      | `DataValue[T]`      | Field-by-field casting        |
+| `DataValue[D]`      | `StringMapValue[V]` | If all fields can cast to `V` |
+| `StringMapValue[V]` | `DataValue[D]`      | Runtime field matching        |
 
 The full casting graph is visualized in the repository: [typecast_graph.svg](typecast_graph.svg).
 

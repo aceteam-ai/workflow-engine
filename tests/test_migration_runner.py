@@ -1,7 +1,7 @@
 # tests/test_migration_runner.py
 """Tests for MigrationRunner."""
 
-from typing import Any
+from typing import Any, Mapping, Sequence
 
 import pytest
 
@@ -21,7 +21,7 @@ class ParamRenameMigration(Migration):
     from_version = "1.0.0"
     to_version = "2.0.0"
 
-    def migrate(self, data: dict[str, Any]) -> dict[str, Any]:
+    def migrate(self, data: Mapping[str, Any]) -> Mapping[str, Any]:
         result = dict(data)
         params = dict(result.get("params", {}))
         # Rename 'old_field' to 'new_field'
@@ -38,7 +38,7 @@ class AddDefaultFieldMigration(Migration):
     from_version = "2.0.0"
     to_version = "3.0.0"
 
-    def migrate(self, data: dict[str, Any]) -> dict[str, Any]:
+    def migrate(self, data: Mapping[str, Any]) -> Mapping[str, Any]:
         result = dict(data)
         params = dict(result.get("params", {}))
         # Add new required field with default
@@ -55,10 +55,10 @@ class ValidationMigration(Migration):
     from_version = "1.0.0"
     to_version = "2.0.0"
 
-    def migrate(self, data: dict[str, Any]) -> dict[str, Any]:
+    def migrate(self, data: Mapping[str, Any]) -> Mapping[str, Any]:
         return dict(data)
 
-    def validate(self, data: dict[str, Any]) -> list[str]:
+    def validate(self, data: Mapping[str, Any]) -> Sequence[str]:
         errors = []
         if "required_field" not in data.get("params", {}):
             errors.append("Missing required_field in params")

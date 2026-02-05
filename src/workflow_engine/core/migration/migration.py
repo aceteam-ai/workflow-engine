@@ -2,7 +2,7 @@
 """Base class for node migrations."""
 
 from abc import ABC, abstractmethod
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from typing import Any, ClassVar
 
 
@@ -69,7 +69,7 @@ class Migration(ABC):
         """
         raise NotImplementedError
 
-    def validate(self, data: Mapping[str, Any]) -> list[str]:
+    def validate(self, data: Mapping[str, Any]) -> Sequence[str]:
         """
         Optionally validate that the data can be migrated.
 

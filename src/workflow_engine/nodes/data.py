@@ -1,10 +1,10 @@
 # workflow_engine/nodes/data.py
-
 """
 Utility nodes to construct and deconstruct data objects.
 """
 
 from collections.abc import Sequence
+from functools import cached_property
 from typing import ClassVar, Generic, Literal, Self, Type, TypeVar
 
 from overrides import override
@@ -72,22 +72,20 @@ class GatherSequenceNode(Node[Data, SequenceData, SequenceParams]):
     def key(self, index: int) -> str:
         return f"element_{index}"
 
-    @property
+    @cached_property
     def keys(self) -> Sequence[str]:
         N = self.params.length.root
         return [self.key(i) for i in range(N)]
 
-    @property
-    @override
-    def input_type(self) -> Type[Data]:
+    @cached_property
+    def input_type(self):
         return build_data_type(
             "GatherSequenceInput",
             {key: (self.element_type, True) for key in self.keys},
         )
 
-    @property
-    @override
-    def output_type(self) -> Type[SequenceData]:
+    @cached_property
+    def output_type(self):
         return SequenceData[self.element_type]
 
     @override
@@ -137,19 +135,17 @@ class ExpandSequenceNode(Node[SequenceData, Data, SequenceParams]):
     def key(self, index: int) -> str:
         return f"element_{index}"
 
-    @property
+    @cached_property
     def keys(self) -> Sequence[str]:
         N = self.params.length.root
         return [self.key(i) for i in range(N)]
 
-    @property
-    @override
-    def input_type(self) -> Type[SequenceData]:
+    @cached_property
+    def input_type(self):
         return SequenceData[self.element_type]
 
-    @property
-    @override
-    def output_type(self) -> Type[Data]:
+    @cached_property
+    def output_type(self):
         return build_data_type(
             "ExpandSequenceOutput",
             {key: (self.element_type, True) for key in self.keys},
@@ -219,17 +215,15 @@ class GatherMappingNode(Node[Data, MappingData, MappingParams]):
     # TODO: make this serializable/deserializable
     value_type: ValueType = Value
 
-    @property
-    @override
-    def input_type(self) -> Type[Data]:
+    @cached_property
+    def input_type(self):
         return build_data_type(
             "GatherMappingInput",
             {key.root: (self.value_type, True) for key in self.params.keys},
         )
 
-    @property
-    @override
-    def output_type(self) -> Type[MappingData]:
+    @cached_property
+    def output_type(self):
         return MappingData[self.value_type]
 
     @override
@@ -280,14 +274,12 @@ class ExpandMappingNode(Node[MappingData, Data, MappingParams]):
     # TODO: make this serializable/deserializable
     value_type: ValueType = Value
 
-    @property
-    @override
-    def input_type(self) -> Type[MappingData]:
+    @cached_property
+    def input_type(self):
         return MappingData[self.value_type]
 
-    @property
-    @override
-    def output_type(self) -> Type[Data]:
+    @cached_property
+    def output_type(self):
         return build_data_type(
             "ExpandMappingOutput",
             {key.root: (self.value_type, True) for key in self.params.keys},
@@ -350,14 +342,12 @@ class GatherDataNode(Node[Data, NestedData, Empty]):
     # TODO: make this serializable/deserializable
     data_type: Type[Data] = Field(default=Data, exclude=True)
 
-    @property
-    @override
-    def input_type(self) -> Type[Data]:
+    @cached_property
+    def input_type(self):
         return self.data_type
 
-    @property
-    @override
-    def output_type(self) -> Type[NestedData]:
+    @cached_property
+    def output_type(self):
         return NestedData[self.data_type]
 
     @override
@@ -399,14 +389,12 @@ class ExpandDataNode(Node[NestedData, Data, Empty]):
     # TODO: make this serializable/deserializable
     data_type: Type[Data] = Field(default=Data, exclude=True)
 
-    @property
-    @override
-    def input_type(self) -> Type[NestedData]:
+    @cached_property
+    def input_type(self):
         return NestedData[self.data_type]
 
-    @property
-    @override
-    def output_type(self) -> Type[Data]:
+    @cached_property
+    def output_type(self):
         return self.data_type
 
     @override

@@ -2,6 +2,7 @@
 """Migration runner for applying migrations to node data."""
 
 import logging
+from collections.abc import Mapping
 from typing import Any
 
 from .exceptions import MigrationNotFoundError, MigrationValidationError
@@ -45,9 +46,9 @@ class MigrationRunner:
 
     def migrate(
         self,
-        data: dict[str, Any],
+        data: Mapping[str, Any],
         target_version: str,
-    ) -> dict[str, Any]:
+    ) -> Mapping[str, Any]:
         """
         Migrate node data to the target version.
 

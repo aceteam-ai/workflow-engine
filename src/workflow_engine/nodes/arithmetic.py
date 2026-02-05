@@ -3,6 +3,7 @@
 Simple nodes for testing the workflow engine, with limited usefulness otherwise.
 """
 
+from functools import cached_property
 from typing import ClassVar, Literal
 
 from ..core import (
@@ -36,11 +37,11 @@ class AddNode(Node[AddNodeInput, SumOutput, Empty]):
 
     type: Literal["Add"] = "Add"  # pyright: ignore[reportIncompatibleVariableOverride]
 
-    @property
+    @cached_property
     def input_type(self):
         return AddNodeInput
 
-    @property
+    @cached_property
     def output_type(self):
         return SumOutput
 
@@ -67,11 +68,11 @@ class SumNode(Node[SumNodeInput, SumNodeOutput, Empty]):
 
     type: Literal["Sum"] = "Sum"  # pyright: ignore[reportIncompatibleVariableOverride]
 
-    @property
+    @cached_property
     def input_type(self):
         return SumNodeInput
 
-    @property
+    @cached_property
     def output_type(self):
         return SumNodeOutput
 
@@ -98,11 +99,11 @@ class FactorizationNode(Node[IntegerData, FactorizationData, Empty]):
 
     type: Literal["Factorization"] = "Factorization"  # pyright: ignore[reportIncompatibleVariableOverride]
 
-    @property
+    @cached_property
     def input_type(self):
         return IntegerData
 
-    @property
+    @cached_property
     def output_type(self):
         return FactorizationData
 

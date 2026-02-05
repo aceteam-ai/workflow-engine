@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from functools import cached_property
-from typing import Any, ClassVar, Literal
+from typing import Any, ClassVar, Final, Literal
 
 from overrides import override
 from pydantic import (
@@ -142,7 +142,7 @@ class BaseValueSchema(ImmutableBaseModel):
 
 
 class BooleanValueSchema(BaseValueSchema):
-    type: Literal["boolean"]
+    type: Final[Literal["boolean"]]
 
     @override
     def build_value_cls(
@@ -153,7 +153,7 @@ class BooleanValueSchema(BaseValueSchema):
 
 
 class NullValueSchema(BaseValueSchema):
-    type: Literal["null"]
+    type: Final[Literal["null"]]
 
     @override
     def build_value_cls(
@@ -165,7 +165,7 @@ class NullValueSchema(BaseValueSchema):
 
 class IntegerValueSchema(BaseValueSchema):
     # unused JSON Schema fields include minimum, maximum, multipleOf, etc.
-    type: Literal["integer"]
+    type: Final[Literal["integer"]]
 
     @override
     def build_value_cls(
@@ -177,7 +177,7 @@ class IntegerValueSchema(BaseValueSchema):
 
 class FloatValueSchema(BaseValueSchema):
     # unused JSON Schema fields include minimum, maximum, multipleOf, etc.
-    type: Literal["number"]
+    type: Final[Literal["number"]]
 
     @override
     def build_value_cls(
@@ -189,7 +189,7 @@ class FloatValueSchema(BaseValueSchema):
 
 class StringValueSchema(BaseValueSchema):
     # unused JSON Schema fields include length
-    type: Literal["string"]
+    type: Final[Literal["string"]]
     enum: Sequence[str] | None = None
     pattern: str | None = None
 
@@ -202,7 +202,7 @@ class StringValueSchema(BaseValueSchema):
 
 
 class SequenceValueSchema(BaseValueSchema):
-    type: Literal["array"]
+    type: Final[Literal["array"]]
     items: ValueSchema
 
     @override
@@ -215,7 +215,7 @@ class SequenceValueSchema(BaseValueSchema):
 
 
 class StringMapValueSchema(BaseValueSchema):
-    type: Literal["object"]
+    type: Final[Literal["object"]]
     additionalProperties: ValueSchema | Literal[True] = True
 
     @override
@@ -235,7 +235,7 @@ class DataValueSchema(BaseValueSchema):
     Matches a DataValue[T] schema, for some class T that inherits from Data.
     """
 
-    type: Literal["object"]
+    type: Final[Literal["object"]]
 
     # NOTE: recursive validation does not work unless this is a dict instead of a Mapping
     properties: dict[str, ValueSchema]

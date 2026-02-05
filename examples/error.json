@@ -1,5 +1,13 @@
 {
-  "nodes": [
+  "input_node": {
+    "type": "Input",
+    "version": "1.0.0",
+    "id": "input",
+    "params": {
+      "fields": {}
+    }
+  },
+  "inner_nodes": [
     {
       "type": "ConstantString",
       "version": "0.4.0",
@@ -17,21 +25,28 @@
       }
     }
   ],
+  "output_node": {
+    "type": "Output",
+    "version": "1.0.0",
+    "id": "output",
+    "params": {
+      "fields": {
+        "text": {"type": "string"}
+      }
+    }
+  },
   "edges": [
     {
       "source_id": "constant",
       "source_key": "value",
       "target_id": "error",
       "target_key": "info"
-    }
-  ],
-  "input_edges": [],
-  "output_edges": [
+    },
     {
       "source_id": "constant",
       "source_key": "value",
-      "output_key": "text",
-      "output_schema": null
+      "target_id": "output",
+      "target_key": "text"
     }
   ]
 }

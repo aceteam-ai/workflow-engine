@@ -3,7 +3,8 @@
 Conditional nodes that run different workflows depending on a condition input.
 """
 
-from typing import ClassVar, Literal, Self, Type
+from functools import cached_property
+from typing import ClassVar, Literal, Self
 
 from overrides import override
 from pydantic import ConfigDict
@@ -60,18 +61,16 @@ class IfNode(Node[ConditionalInput, Empty, IfParams]):
 
     type: Literal["If"] = "If"  # pyright: ignore[reportIncompatibleVariableOverride]
 
-    @property
-    @override
-    def input_type(self) -> Type[ConditionalInput]:
+    @cached_property
+    def input_type(self):
         fields = dict(get_data_fields(ConditionalInput))
         for key, field in self.params.if_true.root.input_fields.items():
             assert key not in fields
             fields[key] = field
         return build_data_type("IfInput", fields, base_cls=ConditionalInput)
 
-    @property
-    @override
-    def output_type(self) -> Type[Empty]:
+    @cached_property
+    def output_type(self):
         return Empty
 
     @override
@@ -86,7 +85,10 @@ class IfNode(Node[ConditionalInput, Empty, IfParams]):
         id: str,
         if_true: Workflow,
     ) -> Self:
-        return cls(id=id, params=IfParams(if_true=WorkflowValue(if_true)))
+        return cls(
+            id=id,
+            params=IfParams(if_true=WorkflowValue(if_true)),
+        )
 
 
 class IfElseNode(Node[ConditionalInput, Data, IfElseParams]):
@@ -109,18 +111,16 @@ class IfElseNode(Node[ConditionalInput, Data, IfElseParams]):
     )
     type: Literal["IfElse"] = "IfElse"  # pyright: ignore[reportIncompatibleVariableOverride]
 
-    @property
-    @override
-    def input_type(self) -> Type[ConditionalInput]:
+    @cached_property
+    def input_type(self):
         fields = dict(get_data_fields(ConditionalInput))
         for key, field in self.params.if_true.root.input_fields.items():
             assert key not in fields
             fields[key] = field
         return build_data_type("IfElseInput", fields, base_cls=ConditionalInput)
 
-    @property
-    @override
-    def output_type(self) -> Type[Data]:
+    @cached_property
+    def output_type(self):
         fields = mapping_intersection(
             self.params.if_true.root.output_fields,
             self.params.if_false.root.output_fields,

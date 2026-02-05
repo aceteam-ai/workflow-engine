@@ -1,7 +1,16 @@
 import pytest
 
-from workflow_engine import InputEdge, OutputEdge, Workflow
+from workflow_engine import (
+    Edge,
+    FloatValue,
+    SequenceValue,
+    StringMapValue,
+    ValueSchemaValue,
+    Workflow,
+)
 from workflow_engine.contexts import InMemoryContext
+from workflow_engine.core.io import InputNode, OutputNode, SchemaParams
+from workflow_engine.core.values.schema import SequenceValueSchema
 from workflow_engine.execution import TopologicalExecutionAlgorithm
 from workflow_engine.nodes import AddNode, ForEachNode
 
@@ -9,28 +18,52 @@ from workflow_engine.nodes import AddNode, ForEachNode
 @pytest.fixture
 def add_workflow() -> Workflow:
     """Create a workflow that adds two numbers: a + b = c."""
+    input_node = InputNode(
+        id="input",
+        params=SchemaParams(
+            fields=StringMapValue[ValueSchemaValue](
+                {
+                    "a": ValueSchemaValue(FloatValue.to_value_schema()),
+                    "b": ValueSchemaValue(FloatValue.to_value_schema()),
+                }
+            )
+        ),
+    )
+    output_node = OutputNode(
+        id="output",
+        params=SchemaParams(
+            fields=StringMapValue[ValueSchemaValue](
+                {
+                    "c": ValueSchemaValue(FloatValue.to_value_schema()),
+                }
+            )
+        ),
+    )
+
+    add = AddNode(id="add")
+
     return Workflow(
-        nodes=[
-            add := AddNode(id="add"),
-        ],
-        edges=[],
-        input_edges=[
-            InputEdge.from_node(
-                input_key="a",
+        input_node=input_node,
+        output_node=output_node,
+        inner_nodes=[add],
+        edges=[
+            Edge.from_nodes(
+                source=input_node,
+                source_key="a",
                 target=add,
                 target_key="a",
             ),
-            InputEdge.from_node(
-                input_key="b",
+            Edge.from_nodes(
+                source=input_node,
+                source_key="b",
                 target=add,
                 target_key="b",
             ),
-        ],
-        output_edges=[
-            OutputEdge.from_node(
+            Edge.from_nodes(
                 source=add,
                 source_key="sum",
-                output_key="c",
+                target=output_node,
+                target_key="c",
             ),
         ],
     )
@@ -38,26 +71,58 @@ def add_workflow() -> Workflow:
 
 @pytest.fixture
 def workflow(add_workflow: Workflow) -> Workflow:
+    input_node = InputNode(
+        id="input",
+        params=SchemaParams(
+            fields=StringMapValue[ValueSchemaValue](
+                {
+                    "sequence": ValueSchemaValue(
+                        SequenceValueSchema(
+                            type="array",
+                            items=add_workflow.input_schema,
+                        )
+                    ),
+                }
+            )
+        ),
+    )
+    output_node = OutputNode(
+        id="output",
+        params=SchemaParams(
+            fields=StringMapValue[ValueSchemaValue](
+                {
+                    "results": ValueSchemaValue(
+                        SequenceValueSchema(
+                            type="array",
+                            items=add_workflow.output_schema,
+                        )
+                    ),
+                }
+            )
+        ),
+    )
+
+    for_each = ForEachNode.from_workflow(
+        id="for_each",
+        workflow=add_workflow,
+    )
+
     workflow = Workflow(
-        nodes=[
-            for_each := ForEachNode.from_workflow(
-                id="for_each",
-                workflow=add_workflow,
-            ),
-        ],
-        edges=[],
-        input_edges=[
-            InputEdge.from_node(
-                input_key="sequence",
+        input_node=input_node,
+        output_node=output_node,
+        inner_nodes=[for_each],
+        edges=[
+            Edge.from_nodes(
+                source=input_node,
+                source_key="sequence",
                 target=for_each,
                 target_key="sequence",
             ),
-        ],
-        output_edges=[
-            OutputEdge.from_node(
+            Edge.from_nodes(
                 source=for_each,
                 source_key="sequence",
-                output_key="results",
+                target=output_node,
+                target_key="results",
             ),
         ],
     )
@@ -89,18 +154,13 @@ async def test_for_each_simple_sequence(workflow: Workflow):
 
     assert not errors.any(), errors
 
-    assert (
-        output
-        == workflow.output_type.model_validate(
-            {
-                "results": [
-                    {"c": 3.0},
-                    {"c": 7.0},
-                    {"c": 11.0},
-                ]
-            }
-        ).to_dict()
-    )
+    # Compare actual values (dynamically generated DataValue types have identity issues)
+    results = output["results"]
+    assert isinstance(results, SequenceValue)
+    assert len(results) == 3
+    assert results[0].root.c == FloatValue(3.0)
+    assert results[1].root.c == FloatValue(7.0)
+    assert results[2].root.c == FloatValue(11.0)
 
 
 @pytest.mark.asyncio
@@ -123,11 +183,6 @@ async def test_for_each_empty(workflow: Workflow):
 
     assert not errors.any(), errors
 
-    assert (
-        output
-        == workflow.output_type.model_validate(
-            {
-                "results": [],
-            }
-        ).to_dict()
-    )
+    results = output["results"]
+    assert isinstance(results, SequenceValue)
+    assert len(results) == 0

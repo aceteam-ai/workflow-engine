@@ -61,11 +61,19 @@ Check the `examples` directory for more sample workflows in JSON form:
 - **Error Handling**: Robust error propagation and logging system
 - **Versioning**: Built-in support for workflow versioning
 
+### Workflow Structure
+
+Workflows are defined as JSON with:
+- **input_node**: Defines the workflow's input schema using `InputNode`
+- **inner_nodes**: The processing nodes that perform computations
+- **output_node**: Defines the workflow's output schema using `OutputNode`
+- **edges**: Connect node outputs to inputs (including to/from input/output nodes)
+
 ### Node Types
 
-- **Input Nodes**: Accept workflow inputs with type constraints
+- **InputNode**: Special node defining workflow input fields and their types
+- **OutputNode**: Special node defining workflow output fields and their types
 - **Processing Nodes**: Execute computational tasks with configurable parameters
-- **Output Nodes**: Format and return workflow results
 
 ### Storage Backends
 

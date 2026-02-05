@@ -4,7 +4,7 @@
 import logging
 from typing import TYPE_CHECKING, Any
 
-from ..edge import Edge, InputEdge, OutputEdge
+from ..edge import Edge
 from ..node import Node
 
 if TYPE_CHECKING:
@@ -27,10 +27,10 @@ def clean_edges_after_migration(workflow_data: dict[str, Any]) -> dict[str, Any]
 
     Args:
         workflow_data: Raw workflow data dictionary with keys:
-                      - nodes: list of node dicts
+                      - input_node: input node dict
+                      - inner_nodes: list of node dicts
+                      - output_node: output node dict
                       - edges: list of edge dicts
-                      - input_edges: list of input edge dicts
-                      - output_edges: list of output edge dicts
 
     Returns:
         Modified workflow data with invalid edges removed. If no migrations
@@ -51,20 +51,30 @@ def clean_edges_after_migration(workflow_data: dict[str, Any]) -> dict[str, Any]
     if not isinstance(workflow_data, dict):
         return workflow_data
 
-    # Parse nodes first
-    nodes_data = workflow_data.get("nodes", [])
-    if not nodes_data:
+    # Parse all nodes (input_node, inner_nodes, output_node)
+    inner_nodes_data = workflow_data.get("inner_nodes", [])
+    input_node_data = workflow_data.get("input_node")
+    output_node_data = workflow_data.get("output_node")
+
+    if not inner_nodes_data and not input_node_data and not output_node_data:
         return workflow_data
 
     try:
-        nodes = [Node.model_validate(node_data) for node_data in nodes_data]
+        # Parse inner nodes
+        inner_nodes = [Node.model_validate(node_data) for node_data in inner_nodes_data]
+
+        # Parse input/output nodes
+        input_node = Node.model_validate(input_node_data) if input_node_data else None
+        output_node = (
+            Node.model_validate(output_node_data) if output_node_data else None
+        )
     except Exception:
         # If nodes can't be parsed, return unchanged
         return workflow_data
 
-    # Check if any nodes were migrated
+    # Check if any inner nodes were migrated
     any_migration_occurred = False
-    for node, node_data in zip(nodes, nodes_data, strict=False):
+    for node, node_data in zip(inner_nodes, inner_nodes_data, strict=False):
         if not isinstance(node_data, dict):
             continue
         original_version = node_data.get("version")
@@ -82,32 +92,27 @@ def clean_edges_after_migration(workflow_data: dict[str, Any]) -> dict[str, Any]
 
     logger.info("Node migrations detected, filtering invalid edges")
 
-    nodes_by_id = {node.id: node for node in nodes}
+    # Build nodes_by_id including input/output nodes
+    nodes_by_id = {node.id: node for node in inner_nodes}
+    if input_node:
+        nodes_by_id[input_node.id] = input_node
+    if output_node:
+        nodes_by_id[output_node.id] = output_node
 
-    # Filter regular edges
+    # Filter edges
     edges_data = workflow_data.get("edges", [])
     valid_edges = _filter_edges(edges_data, nodes_by_id)
-
-    # Filter input edges
-    input_edges_data = workflow_data.get("input_edges", [])
-    valid_input_edges = _filter_input_edges(input_edges_data, nodes_by_id)
-
-    # Filter output edges
-    output_edges_data = workflow_data.get("output_edges", [])
-    valid_output_edges = _filter_output_edges(output_edges_data, nodes_by_id)
 
     # Return modified data with filtered edges
     result = dict(workflow_data)
     result["edges"] = valid_edges
-    result["input_edges"] = valid_input_edges
-    result["output_edges"] = valid_output_edges
     return result
 
 
 def _filter_edges(
     edges_data: list[dict[str, Any]], nodes_by_id: dict[str, Node]
 ) -> list[dict[str, Any]]:
-    """Filter regular edges, removing those with invalid references."""
+    """Filter edges, removing those with invalid references."""
     valid_edges = []
     for edge_data in edges_data:
         try:
@@ -129,95 +134,6 @@ def _filter_edges(
                 f"to {edge_data.get('target_id')}.{edge_data.get('target_key')}: {e}"
             )
     return valid_edges
-
-
-def _filter_input_edges(
-    input_edges_data: list[dict[str, Any]], nodes_by_id: dict[str, Node]
-) -> list[dict[str, Any]]:
-    """Filter input edges, removing those with invalid references."""
-    valid_input_edges = []
-    for edge_data in input_edges_data:
-        try:
-            edge = InputEdge.model_validate(edge_data)
-            if edge.target_id not in nodes_by_id:
-                logger.warning(
-                    f"Removing input edge to {edge.target_id}.{edge.target_key}: node not found"
-                )
-                continue
-
-            target = nodes_by_id[edge.target_id]
-
-            # Check if target field exists
-            if edge.target_key not in target.input_fields:
-                logger.warning(
-                    f"Removing input edge '{edge.input_key}' to {edge.target_id}.{edge.target_key}: "
-                    f"field does not exist on target node"
-                )
-                continue
-
-            # If edge has a schema, validate type compatibility
-            if edge.input_schema is not None:
-                edge_input_type = edge.input_schema.to_value_cls()
-                target_input_type, _ = target.input_fields[edge.target_key]
-                if not edge_input_type.can_cast_to(target_input_type):
-                    logger.warning(
-                        f"Removing input edge '{edge.input_key}' to {edge.target_id}.{edge.target_key}: "
-                        f"type {edge_input_type} is not assignable to {target_input_type}"
-                    )
-                    continue
-
-            valid_input_edges.append(edge_data)
-        except (ValueError, TypeError) as e:
-            logger.warning(
-                f"Removing invalid input edge '{edge_data.get('input_key')}' "
-                f"to {edge_data.get('target_id')}.{edge_data.get('target_key')}: {e}"
-            )
-    return valid_input_edges
-
-
-def _filter_output_edges(
-    output_edges_data: list[dict[str, Any]], nodes_by_id: dict[str, Node]
-) -> list[dict[str, Any]]:
-    """Filter output edges, removing those with invalid references."""
-    valid_output_edges = []
-    for edge_data in output_edges_data:
-        try:
-            edge = OutputEdge.model_validate(edge_data)
-            if edge.source_id not in nodes_by_id:
-                logger.warning(
-                    f"Removing output edge '{edge.output_key}' from {edge.source_id}.{edge.source_key}: "
-                    f"node not found"
-                )
-                continue
-
-            source = nodes_by_id[edge.source_id]
-
-            # Check if source field exists
-            if edge.source_key not in source.output_fields:
-                logger.warning(
-                    f"Removing output edge '{edge.output_key}' from {edge.source_id}.{edge.source_key}: "
-                    f"field does not exist on source node"
-                )
-                continue
-
-            # If edge has a schema, validate type compatibility
-            if edge.output_schema is not None:
-                source_output_type, _ = source.output_fields[edge.source_key]
-                edge_output_type = edge.output_schema.to_value_cls()
-                if not source_output_type.can_cast_to(edge_output_type):
-                    logger.warning(
-                        f"Removing output edge '{edge.output_key}' from {edge.source_id}.{edge.source_key}: "
-                        f"type {source_output_type} is not assignable to {edge_output_type}"
-                    )
-                    continue
-
-            valid_output_edges.append(edge_data)
-        except (ValueError, TypeError) as e:
-            logger.warning(
-                f"Removing invalid output edge '{edge_data.get('output_key')}' "
-                f"from {edge_data.get('source_id')}.{edge_data.get('source_key')}: {e}"
-            )
-    return valid_output_edges
 
 
 def load_workflow_with_migration(workflow_data: dict[str, Any]) -> "Workflow":

@@ -63,9 +63,9 @@ class TopologicalExecutionAlgorithm(ExecutionAlgorithm):
         pending_retry: dict[str, DataMapping] = {}
 
         try:
-            ready_nodes = dict(workflow.get_ready_nodes(input=input))
+            ready_nodes = {workflow.input_node.id: input}
 
-            while ready_nodes or pending_retry:
+            while len(ready_nodes) > 0 or len(pending_retry) > 0:
                 # Check if any pending retries are now ready
                 for node_id in list(pending_retry.keys()):
                     state = retry_tracker.get_state(node_id)
@@ -79,7 +79,7 @@ class TopologicalExecutionAlgorithm(ExecutionAlgorithm):
                         await asyncio.sleep(wait_time.total_seconds())
                     continue
 
-                if not ready_nodes:
+                if len(ready_nodes) == 0:
                     break
 
                 node_id, node_input = ready_nodes.popitem()
@@ -129,7 +129,6 @@ class TopologicalExecutionAlgorithm(ExecutionAlgorithm):
 
                 ready_nodes = dict(
                     workflow.get_ready_nodes(
-                        input=input,
                         node_outputs=node_outputs,
                         partial_results=ready_nodes,
                     )

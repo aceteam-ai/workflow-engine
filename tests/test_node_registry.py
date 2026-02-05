@@ -1,6 +1,7 @@
 """Tests for NodeRegistry implementations."""
 
-from typing import Literal, Type
+from functools import cached_property
+from typing import Literal
 
 import pytest
 
@@ -21,13 +22,13 @@ class SampleNodeA(Node[Empty, Empty, Empty]):
         version="1.0.0",
         parameter_type=Empty,
     )
-    type: Literal["TestA"] = "TestA"
+    type: Literal["TestA"] = "TestA"  # pyright: ignore[reportIncompatibleVariableOverride]
 
-    @property
+    @cached_property
     def input_type(self):
         return Empty
 
-    @property
+    @cached_property
     def output_type(self):
         return Empty
 
@@ -42,13 +43,13 @@ class SampleNodeB(Node[Empty, Empty, Empty]):
         version="1.0.0",
         parameter_type=Empty,
     )
-    type: Literal["TestB"] = "TestB"
+    type: Literal["TestB"] = "TestB"  # pyright: ignore[reportIncompatibleVariableOverride]
 
-    @property
+    @cached_property
     def input_type(self):
         return Empty
 
-    @property
+    @cached_property
     def output_type(self):
         return Empty
 
@@ -106,7 +107,7 @@ class TestImmutableNodeRegistry:
 
     def test_immutability(self):
         """Test that the registry data cannot be modified after construction."""
-        node_classes: dict[str, Type[Node]] = {"TestA": SampleNodeA}
+        node_classes: dict[str, type[Node]] = {"TestA": SampleNodeA}
         base_node_classes = [Node]
 
         registry = ImmutableNodeRegistry(

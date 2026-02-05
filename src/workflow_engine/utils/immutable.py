@@ -5,7 +5,6 @@ from pydantic import BaseModel, ConfigDict, RootModel
 
 _immutable_model_config = ConfigDict(
     frozen=True,
-    revalidate_instances="always",
     validate_assignment=True,
 )
 

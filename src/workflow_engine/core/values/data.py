@@ -3,7 +3,7 @@ import asyncio
 import json
 import logging
 from collections.abc import Mapping
-from typing import TYPE_CHECKING, Any, ClassVar, Generic, Type, TypeVar
+from typing import TYPE_CHECKING, Any, ClassVar, Generic, TypeVar
 
 from pydantic import ConfigDict, create_model
 
@@ -61,7 +61,7 @@ Input_contra = TypeVar("Input_contra", bound=Data, contravariant=True)
 Output_co = TypeVar("Output_co", bound=Data, covariant=True)
 
 
-def get_data_fields(cls: Type[Data]) -> Mapping[str, tuple[ValueType, bool]]:
+def get_data_fields(cls: type[Data]) -> Mapping[str, tuple[ValueType, bool]]:
     """
     Extract the fields of a Data subclass.
 
@@ -85,8 +85,8 @@ D = TypeVar("D", bound=Data)
 def build_data_type(
     name: str,
     fields: Mapping[str, tuple[ValueType, bool]],
-    base_cls: Type[D] = Data,
-) -> Type[D]:
+    base_cls: type[D] = Data,
+) -> type[D]:
     """
     Create a Data subclass whose fields are given by a mapping of field names to
     (ValueType, is_required) tuples.
@@ -127,8 +127,8 @@ V = TypeVar("V", bound=Value)
 
 @DataValue.register_generic_cast_to(DataValue)
 def cast_data_to_data(
-    source_type: Type[DataValue],
-    target_type: Type[DataValue],
+    source_type: type[DataValue],
+    target_type: type[DataValue],
 ) -> Caster[DataValue, DataValue] | None:
     source_origin, (source_value_type,) = get_origin_and_args(source_type)
     assert source_origin is DataValue
@@ -169,8 +169,8 @@ def cast_data_to_data(
 
 @DataValue.register_generic_cast_to(StringMapValue)
 def cast_data_to_string_map(
-    source_type: Type[DataValue],
-    target_type: Type[StringMapValue[V]],
+    source_type: type[DataValue],
+    target_type: type[StringMapValue[V]],
 ) -> Caster[DataValue, StringMapValue[V]] | None:
     """
     Casts a DataValue[D] object to a StringMapValue[V] object, if all of the
@@ -208,8 +208,8 @@ def cast_data_to_string_map(
 
 @StringMapValue.register_generic_cast_to(DataValue)
 def cast_string_map_to_data(
-    source_type: Type[StringMapValue],
-    target_type: Type[DataValue],
+    source_type: type[StringMapValue],
+    target_type: type[DataValue],
 ) -> Caster[StringMapValue, DataValue] | None:
     """
     Casts a StringMapValue[V] object to a DataValue[D] object by trying to cast

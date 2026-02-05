@@ -2,15 +2,16 @@
 
 ## Module Structure
 
-```
+```text
 src/workflow_engine/
 ├── __init__.py            # Public API exports and version
 ├── core/                  # Core abstractions
 │   ├── context.py         # Context base class (file I/O, lifecycle hooks)
 │   ├── data.py            # Data base class (typed field containers)
-│   ├── edge.py            # Edge, InputEdge, OutputEdge definitions
+│   ├── edge.py            # Edge definitions
 │   ├── execution.py       # ExecutionAlgorithm base class
 │   ├── file.py            # File reference type
+│   ├── io.py              # InputNode, OutputNode
 │   ├── node.py            # Node base class, NodeTypeInfo, node registry
 │   ├── workflow.py        # Workflow definition and validation
 │   ├── values/            # Value type system
@@ -53,6 +54,7 @@ src/workflow_engine/
 ### Immutability
 
 All core objects (`Node`, `Workflow`, `Edge`, `Data`, `Value`) are frozen Pydantic models. This ensures:
+
 - Thread safety during parallel execution
 - Predictable behavior (no hidden mutation)
 - Clean serialization/deserialization
@@ -62,6 +64,7 @@ To "modify" an object, use `model_copy(update={...})`.
 ### Async-First
 
 All execution-related operations are async:
+
 - `Node.run()` - Node computation
 - `Value.cast_to()` - Type conversion between values
 - `Context` lifecycle hooks
@@ -72,6 +75,7 @@ This enables non-blocking I/O operations (API calls, file operations) within nod
 ### Type-Safe Data Flow
 
 Edges connect specific output fields of one node to input fields of another. At workflow construction time, the engine validates:
+
 - Referenced nodes and fields exist
 - The graph is acyclic (DAG)
 - Type compatibility between connected fields (with automatic casting where possible)
@@ -84,22 +88,35 @@ Nodes auto-register via `__init_subclass__` when they define a `type` field with
 
 Node serialization uses Pydantic's discriminated union pattern. Each node class has a `type: Literal["NodeName"]` field that acts as the discriminator, enabling efficient deserialization without trying every possible node type.
 
+## Workflow Structure
+
+A `Workflow` consists of:
+
+- **input_node**: An `InputNode` that defines the workflow's input schema via `SchemaParams`
+- **inner_nodes**: The processing nodes that perform computations
+- **output_node**: An `OutputNode` that defines the workflow's output schema via `SchemaParams`
+- **edges**: Connections between any nodes (including input/output nodes)
+
+All edges use a unified format with `source_id`, `source_key`, `target_id`, `target_key`. There are no separate "input_edges" or "output_edges" - edges from the input_node and to the output_node use the same structure as edges between inner nodes.
+
 ## Execution Flow
 
 1. **Load**: Parse workflow JSON into a `Workflow` object (validates structure, detects cycles, checks types)
 2. **Prepare**: Create a `Context` and `ExecutionAlgorithm`
 3. **Execute**: The algorithm processes nodes according to its strategy:
-   - Resolves input edges (collects outputs from upstream nodes)
+   - Starts with the input_node (passes through workflow input)
+   - Resolves edges (collects outputs from upstream nodes)
    - Casts values to match expected input types
    - Calls `node.run(context, input)`
    - Stores outputs for downstream nodes
    - Handles node expansion (composite nodes like `ForEach` replace themselves with sub-workflows)
-4. **Collect**: Resolves output edges to build the final result
+4. **Collect**: Resolves edges to the output_node to build the final result
 5. **Return**: Returns `(WorkflowErrors, DataMapping)` tuple
 
 ## Error Propagation
 
 Errors during execution are collected per-node in a `WorkflowErrors` object. The behavior depends on the execution algorithm:
+
 - **Topological**: Stops on first error
 - **Parallel (FAIL_FAST)**: Cancels remaining tasks on first error
 - **Parallel (CONTINUE)**: Runs all possible nodes, collects all errors

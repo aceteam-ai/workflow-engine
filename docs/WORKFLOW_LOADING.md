@@ -17,6 +17,7 @@ workflow = load_workflow_with_migration(workflow_data)
 ```
 
 That's it! The function handles:
+
 - ✅ Node migrations (version upgrades)
 - ✅ Edge cleanup (removes edges broken by field renames)
 - ✅ Validation (ensures workflow is valid)
@@ -65,11 +66,13 @@ When you call `load_workflow_with_migration(workflow_data)`:
 ### What Gets Migrated
 
 **Nodes:**
+
 - Version field updated to current version
 - Params transformed according to migration rules
 - All migrations in the chain are applied
 
 **Edges:**
+
 - Invalid edges are removed (if migrations occurred)
 - Valid edges are preserved
 - Warnings logged for each removed edge
@@ -81,17 +84,24 @@ If node migrations rename/remove fields, edges may become invalid:
 ```python
 # Before migration: Node v1.0.0 has output field "result"
 workflow_data = {
-    "nodes": [{
+    "input_node": {"type": "Input", "version": "1.0.0", "id": "input", "params": {"fields": {}}},
+    "inner_nodes": [{
         "type": "MyNode",
         "id": "node1",
         "version": "1.0.0",
         "params": {...}
     }],
-    "edges": [],
-    "output_edges": [{
+    "output_node": {
+        "type": "Output",
+        "version": "1.0.0",
+        "id": "output",
+        "params": {"fields": {"final_result": {"type": "string"}}}
+    },
+    "edges": [{
         "source_id": "node1",
         "source_key": "result",  # ← This field gets renamed to "output" in v2.0.0
-        "output_key": "final_result"
+        "target_id": "output",
+        "target_key": "final_result"
     }]
 }
 
@@ -100,8 +110,8 @@ workflow = load_workflow_with_migration(workflow_data)
 
 # Result:
 # - Node migrated to v2.0.0
-# - Output edge removed (field "result" no longer exists)
-# - Warning logged: "Removing output edge 'final_result' from node1.result: field does not exist"
+# - Edge removed (field "result" no longer exists)
+# - Warning logged: "Removing invalid edge from node1.result to output.final_result"
 ```
 
 ## Edge Filtering Details
@@ -111,17 +121,20 @@ workflow = load_workflow_with_migration(workflow_data)
 Edges are removed when:
 
 1. **Missing field reference**
-   ```
+
+   ```text
    Edge references "old_field" but node now has "new_field"
    ```
 
 2. **Type incompatibility**
-   ```
+
+   ```text
    Edge connects StringValue output to IntegerValue input
    ```
 
 3. **Missing node**
-   ```
+
+   ```text
    Edge references node ID that doesn't exist
    ```
 
@@ -132,13 +145,19 @@ Edge filtering **only** happens when migrations occur. If all nodes are already 
 ```python
 # All nodes at v2.0.0 - no migrations needed
 workflow_data = {
-    "nodes": [{
+    "input_node": {"type": "Input", "version": "1.0.0", "id": "input", "params": {"fields": {}}},
+    "inner_nodes": [{
         "type": "MyNode",
+        "id": "node1",
         "version": "2.0.0",  # Current version
         "params": {...}
     }],
-    "output_edges": [{
-        "source_key": "invalid_field"  # ← This will FAIL validation
+    "output_node": {"type": "Output", "version": "1.0.0", "id": "output", "params": {"fields": {}}},
+    "edges": [{
+        "source_id": "node1",
+        "source_key": "invalid_field",  # ← This will FAIL validation
+        "target_id": "output",
+        "target_key": "result"
     }]
 }
 
@@ -200,22 +219,21 @@ workflow = Workflow.model_validate(workflow_data)
 When creating workflows in code, you don't need migration support:
 
 ```python
-from workflow_engine.core import Workflow
+from workflow_engine import StringValue, Workflow
+from workflow_engine.core.io import InputNode, OutputNode
 from workflow_engine.nodes import ConstantStringNode
 
 # Create nodes programmatically
-node = ConstantStringNode(
-    id="greeting",
-    params={"value": StringValue("Hello")}
-    # version automatically set to current
-)
+node = ConstantStringNode.from_value(id="greeting", value="Hello")
 
-# Create workflow directly
+# Create workflow directly with InputNode/OutputNode
 workflow = Workflow(
-    nodes=[node],
-    edges=[],
-    input_edges=[],
-    output_edges=[]
+    input_node=InputNode.empty(),
+    inner_nodes=[node],
+    output_node=OutputNode.from_fields(fields={"result": StringValue}),
+    edges=[
+        Edge(source_id="greeting", source_key="value", target_id="output", target_key="result")
+    ]
 )
 ```
 
@@ -332,12 +350,14 @@ for wf_data in workflows_to_migrate:
 ### ✅ DO
 
 1. **Use migration support for user data**
+
    ```python
    # When loading from storage
    workflow = load_workflow_with_migration(workflow_data)
    ```
 
 2. **Log migration activities**
+
    ```python
    import logging
    logging.basicConfig(level=logging.INFO)
@@ -345,6 +365,7 @@ for wf_data in workflows_to_migrate:
    ```
 
 3. **Test migrations before deploying**
+
    ```python
    # In tests
    old_workflow = load_test_data("v1_workflow.json")
@@ -353,6 +374,7 @@ for wf_data in workflows_to_migrate:
    ```
 
 4. **Save workflows after migration**
+
    ```python
    # Update stored version
    migrated = load_workflow_with_migration(old_data)
@@ -362,6 +384,7 @@ for wf_data in workflows_to_migrate:
 ### ❌ DON'T
 
 1. **Don't use migration for new workflows**
+
    ```python
    # ❌ Unnecessary overhead
    new_workflow = load_workflow_with_migration(just_created_data)
@@ -371,6 +394,7 @@ for wf_data in workflows_to_migrate:
    ```
 
 2. **Don't ignore migration warnings**
+
    ```python
    # ❌ Silently discarding edges may break workflows
    import warnings
@@ -381,6 +405,7 @@ for wf_data in workflows_to_migrate:
    ```
 
 3. **Don't assume migrations preserve all edges**
+
    ```python
    # ❌ May fail - edges might be removed
    workflow = load_workflow_with_migration(old_data)

@@ -35,9 +35,11 @@ uv run pyright
 
 ### Core Concepts
 
-- **Workflow**: A DAG of nodes with typed data flow between them
+- **Workflow**: A DAG of nodes with typed data flow between them. Contains an `input_node`, `inner_nodes`, `output_node`, and `edges`.
+- **InputNode**: Special node that defines the workflow's input schema. Created with `InputNode.from_fields()`.
+- **OutputNode**: Special node that defines the workflow's output schema. Created with `OutputNode.from_fields()`.
 - **Node**: A unit of computation with typed inputs, outputs, and parameters
-- **Edge**: Connects a node output field to another node's input field with type validation
+- **Edge**: Connects a node output field to another node's input field with type validation. All edges (including to/from input/output nodes) use the same format.
 - **Value**: Type-safe immutable wrapper around data (IntegerValue, StringValue, FileValue, etc.)
 - **Data**: Immutable Pydantic model containing only Value fields
 - **Context**: Execution environment providing file I/O and lifecycle hooks
@@ -45,7 +47,7 @@ uv run pyright
 
 ### Module Structure
 
-```
+```text
 src/workflow_engine/
 ├── core/           # Base classes: Node, Workflow, Edge, Context, Value
 │   └── values/     # Value type system (primitives, file, json, sequence, mapping)
@@ -58,6 +60,7 @@ src/workflow_engine/
 ### Key Patterns
 
 **Node Definition**: Nodes use a discriminator pattern with `type: Literal["NodeName"]` for polymorphic serialization:
+
 ```python
 class MyNode(Node[MyInput, MyOutput, MyParams]):
     TYPE_INFO: ClassVar[NodeTypeInfo] = NodeTypeInfo.from_parameter_type(
@@ -69,12 +72,12 @@ class MyNode(Node[MyInput, MyOutput, MyParams]):
     )
     type: Literal["MyNode"] = "MyNode"
 
-    @property
-    def input_type(self) -> Type[MyInput]:
+    @cached_property
+    def input_type(self):
         return MyInput
 
-    @property
-    def output_type(self) -> Type[MyOutput]:
+    @cached_property
+    def output_type(self):
         return MyOutput
 
     async def run(self, context: Context, input: MyInput) -> MyOutput:
@@ -123,6 +126,7 @@ if registry.has_name("foo"):  # Ctrl+Click jumps to has_name()
 ```
 
 **Rationale:**
+
 - Explicit methods show up in IDE autocomplete
 - "Go to Definition" / Ctrl+Click works properly
 - Easier to search for all usages in codebase
@@ -130,6 +134,7 @@ if registry.has_name("foo"):  # Ctrl+Click jumps to has_name()
 - Self-documenting code
 
 **Exceptions where dunder methods are appropriate:**
+
 - Core data structures (custom collections, numerical types)
 - Protocol implementations (context managers, iterators)
 - Pydantic model internals (`__init_subclass__`, `model_validator`)

@@ -1,5 +1,15 @@
 {
-  "nodes": [
+  "input_node": {
+    "type": "Input",
+    "version": "1.0.0",
+    "id": "input",
+    "params": {
+      "fields": {
+        "c": {"type": "number"}
+      }
+    }
+  },
+  "inner_nodes": [
     {
       "type": "ConstantInteger",
       "version": "0.4.0",
@@ -29,6 +39,16 @@
       "params": {}
     }
   ],
+  "output_node": {
+    "type": "Output",
+    "version": "1.0.0",
+    "id": "output",
+    "params": {
+      "fields": {
+        "sum": {"type": "number"}
+      }
+    }
+  },
   "edges": [
     {
       "source_id": "a",
@@ -47,22 +67,18 @@
       "source_key": "sum",
       "target_id": "a+b+c",
       "target_key": "a"
-    }
-  ],
-  "input_edges": [
+    },
     {
-      "input_key": "c",
+      "source_id": "input",
+      "source_key": "c",
       "target_id": "a+b+c",
-      "target_key": "b",
-      "input_schema": null
-    }
-  ],
-  "output_edges": [
+      "target_key": "b"
+    },
     {
       "source_id": "a+b+c",
       "source_key": "sum",
-      "output_key": "sum",
-      "output_schema": null
+      "target_id": "output",
+      "target_key": "sum"
     }
   ]
 }

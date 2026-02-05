@@ -10,11 +10,11 @@ from pydantic import ValidationError
 
 from workflow_engine import (
     Edge,
-    OutputEdge,
     StringValue,
     Workflow,
 )
 from workflow_engine.contexts import InMemoryContext
+from workflow_engine.core.io import InputNode, OutputNode
 from workflow_engine.execution import (
     RateLimitConfig,
     RateLimiter,
@@ -182,17 +182,23 @@ class TestRateLimitIntegration:
     @pytest.mark.asyncio
     async def test_execution_with_rate_limit_registry(self):
         """Test that execution algorithm uses rate limit registry."""
+        input_node = InputNode.empty()
+        output_node = OutputNode.from_fields(
+            result=StringValue,
+        )
+
+        constant = ConstantStringNode.from_value(id="constant", value="test")
+
         workflow = Workflow(
-            nodes=[
-                constant := ConstantStringNode.from_value(id="constant", value="test"),
-            ],
-            edges=[],
-            input_edges=[],
-            output_edges=[
-                OutputEdge.from_node(
+            input_node=input_node,
+            output_node=output_node,
+            inner_nodes=[constant],
+            edges=[
+                Edge.from_nodes(
                     source=constant,
                     source_key="value",
-                    output_key="result",
+                    target=output_node,
+                    target_key="result",
                 ),
             ],
         )
@@ -215,17 +221,23 @@ class TestRateLimitIntegration:
     @pytest.mark.asyncio
     async def test_execution_without_rate_limits(self):
         """Test that execution works without rate limits configured."""
+        input_node = InputNode.empty()
+        output_node = OutputNode.from_fields(
+            result=StringValue,
+        )
+
+        constant = ConstantStringNode.from_value(id="constant", value="test")
+
         workflow = Workflow(
-            nodes=[
-                constant := ConstantStringNode.from_value(id="constant", value="test"),
-            ],
-            edges=[],
-            input_edges=[],
-            output_edges=[
-                OutputEdge.from_node(
+            input_node=input_node,
+            output_node=output_node,
+            inner_nodes=[constant],
+            edges=[
+                Edge.from_nodes(
                     source=constant,
                     source_key="value",
-                    output_key="result",
+                    target=output_node,
+                    target_key="result",
                 ),
             ],
         )
@@ -247,11 +259,18 @@ class TestRateLimitIntegration:
         """Test that rate limiter is released even when node fails."""
         from workflow_engine.nodes import ErrorNode
 
+        input_node = InputNode.empty()
+        output_node = OutputNode.from_fields(
+            result=StringValue,
+        )
+
+        constant = ConstantStringNode.from_value(id="constant", value="test")
+        error = ErrorNode.from_name(id="error", name="TestError")
+
         workflow = Workflow(
-            nodes=[
-                constant := ConstantStringNode.from_value(id="constant", value="test"),
-                error := ErrorNode.from_name(id="error", name="TestError"),
-            ],
+            input_node=input_node,
+            output_node=output_node,
+            inner_nodes=[constant, error],
             edges=[
                 Edge.from_nodes(
                     source=constant,
@@ -259,13 +278,11 @@ class TestRateLimitIntegration:
                     target=error,
                     target_key="info",
                 ),
-            ],
-            input_edges=[],
-            output_edges=[
-                OutputEdge.from_node(
+                Edge.from_nodes(
                     source=constant,
                     source_key="value",
-                    output_key="result",
+                    target=output_node,
+                    target_key="result",
                 ),
             ],
         )

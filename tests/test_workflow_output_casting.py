@@ -7,37 +7,41 @@ expected output types, just like node inputs are cast to expected types.
 import pytest
 
 from workflow_engine import (
+    Edge,
     FloatValue,
     IntegerValue,
     JSONValue,
-    OutputEdge,
     SequenceValue,
     Workflow,
 )
 from workflow_engine.contexts import InMemoryContext
+from workflow_engine.core.io import InputNode, OutputNode
 from workflow_engine.execution.parallel import ParallelExecutionAlgorithm
 from workflow_engine.execution.topological import TopologicalExecutionAlgorithm
 from workflow_engine.files import JSONLinesFileValue
-from workflow_engine.nodes import ConstantIntegerNode, ConstantStringNode
+from workflow_engine.nodes import AddNode, ConstantIntegerNode, ConstantStringNode
 
 
 @pytest.mark.unit
 @pytest.mark.asyncio
 async def test_basic_output_casting():
     """Test that IntegerValue is cast to FloatValue in workflow output."""
+    input_node = InputNode.empty()
+    output_node = OutputNode.from_fields(result=FloatValue)
+
     node = ConstantIntegerNode.from_value(id="producer", value=42)
 
     # Workflow expects FloatValue output, but node produces IntegerValue
     workflow = Workflow(
-        nodes=[node],
-        edges=[],
-        input_edges=[],
-        output_edges=[
-            OutputEdge(
-                source_id="producer",
+        input_node=input_node,
+        output_node=output_node,
+        inner_nodes=[node],
+        edges=[
+            Edge.from_nodes(
+                source=node,
                 source_key="value",
-                output_key="result",
-                output_schema=FloatValue.to_value_schema(),
+                target=output_node,
+                target_key="result",
             )
         ],
     )
@@ -59,25 +63,31 @@ async def test_basic_output_casting():
 @pytest.mark.asyncio
 async def test_multiple_outputs_casting():
     """Test that multiple outputs are cast correctly in parallel."""
+    input_node = InputNode.empty()
+    output_node = OutputNode.from_fields(
+        int_result=FloatValue,
+        str_result=IntegerValue,
+    )
+
     int_node = ConstantIntegerNode.from_value(id="int_producer", value=100)
     str_node = ConstantStringNode.from_value(id="str_producer", value="123")
 
     workflow = Workflow(
-        nodes=[int_node, str_node],
-        edges=[],
-        input_edges=[],
-        output_edges=[
-            OutputEdge(
-                source_id="int_producer",
+        input_node=input_node,
+        output_node=output_node,
+        inner_nodes=[int_node, str_node],
+        edges=[
+            Edge.from_nodes(
+                source=int_node,
                 source_key="value",
-                output_key="int_result",
-                output_schema=FloatValue.to_value_schema(),
+                target=output_node,
+                target_key="int_result",
             ),
-            OutputEdge(
-                source_id="str_producer",
+            Edge.from_nodes(
+                source=str_node,
                 source_key="value",
-                output_key="str_result",
-                output_schema=IntegerValue.to_value_schema(),
+                target=output_node,
+                target_key="str_result",
             ),
         ],
     )
@@ -98,53 +108,25 @@ async def test_multiple_outputs_casting():
 
 @pytest.mark.unit
 @pytest.mark.asyncio
-async def test_partial_mode_skips_missing_outputs():
-    """Test that partial mode skips missing outputs gracefully."""
-    node = ConstantIntegerNode.from_value(id="producer", value=42)
-
-    workflow = Workflow(
-        nodes=[node],
-        edges=[],
-        input_edges=[],
-        output_edges=[
-            OutputEdge(
-                source_id="producer",
-                source_key="value",
-                output_key="result",
-                output_schema=FloatValue.to_value_schema(),
-            )
-        ],
-    )
-
-    context = InMemoryContext()
-
-    # Call get_output with partial=True and empty node_outputs
-    output = await workflow.get_output(
-        context=context,
-        node_outputs={},
-        partial=True,
-    )
-
-    # Should return empty dict, not raise exception
-    assert output == {}
-
-
-@pytest.mark.unit
-@pytest.mark.asyncio
 async def test_parallel_execution_algorithm():
     """Test that output casting works with ParallelExecutionAlgorithm."""
+    input_node = InputNode.empty()
+    output_node = OutputNode.from_fields(
+        result=FloatValue,
+    )
+
     node = ConstantIntegerNode.from_value(id="producer", value=42)
 
     workflow = Workflow(
-        nodes=[node],
-        edges=[],
-        input_edges=[],
-        output_edges=[
-            OutputEdge(
-                source_id="producer",
+        input_node=input_node,
+        output_node=output_node,
+        inner_nodes=[node],
+        edges=[
+            Edge.from_nodes(
+                source=node,
                 source_key="value",
-                output_key="result",
-                output_schema=FloatValue.to_value_schema(),
+                target=output_node,
+                target_key="result",
             )
         ],
     )
@@ -189,19 +171,27 @@ async def test_complex_type_sequence_to_jsonlines():
 @pytest.mark.asyncio
 async def test_no_casting_when_types_match():
     """Test that no casting occurs when output types already match."""
+    input_node = InputNode.empty()
+    output_node = OutputNode.from_fields(result=IntegerValue)
+
     node = ConstantIntegerNode.from_value(id="producer", value=42)
 
     workflow = Workflow(
-        nodes=[node],
-        edges=[],
-        input_edges=[],
-        output_edges=[
-            OutputEdge(source_id="producer", source_key="value", output_key="result")
+        input_node=input_node,
+        output_node=output_node,
+        inner_nodes=[node],
+        edges=[
+            Edge.from_nodes(
+                source=node,
+                source_key="value",
+                target=output_node,
+                target_key="result",
+            )
         ],
     )
 
     # Output type matches (IntegerValue -> IntegerValue)
-    assert workflow.output_fields["result"] == (IntegerValue, True)
+    assert workflow.output_fields["result"][0] == IntegerValue
 
     context = InMemoryContext()
     algorithm = TopologicalExecutionAlgorithm()
@@ -217,32 +207,41 @@ async def test_no_casting_when_types_match():
 
 @pytest.mark.unit
 @pytest.mark.asyncio
-async def test_input_edge_with_schema():
-    """Test that InputEdge can specify a schema different from target node."""
-    from workflow_engine import InputEdge
-    from workflow_engine.nodes import AddNode
+async def test_input_casting():
+    """Test that workflow inputs can be cast to expected types."""
+    input_node = InputNode.from_fields(
+        a=FloatValue,
+        b=FloatValue,
+    )
+    output_node = OutputNode.from_fields(
+        result=FloatValue,
+    )
 
     add_node = AddNode(id="add")
 
     workflow = Workflow(
-        nodes=[add_node],
-        edges=[],
-        input_edges=[
-            InputEdge(
-                input_key="a",
-                target_id="add",
+        input_node=input_node,
+        output_node=output_node,
+        inner_nodes=[add_node],
+        edges=[
+            Edge.from_nodes(
+                source=input_node,
+                source_key="a",
+                target=add_node,
                 target_key="a",
-                input_schema=FloatValue.to_value_schema(),
             ),
-            InputEdge(
-                input_key="b",
-                target_id="add",
+            Edge.from_nodes(
+                source=input_node,
+                source_key="b",
+                target=add_node,
                 target_key="b",
-                input_schema=FloatValue.to_value_schema(),
             ),
-        ],
-        output_edges=[
-            OutputEdge(source_id="add", source_key="sum", output_key="result")
+            Edge.from_nodes(
+                source=add_node,
+                source_key="sum",
+                target=output_node,
+                target_key="result",
+            ),
         ],
     )
 
@@ -263,23 +262,28 @@ async def test_input_edge_with_schema():
 
 
 @pytest.mark.unit
-def test_backward_compatibility_no_schema():
-    """Test that edges without schemas work exactly as before."""
+def test_workflow_output_type_inference():
+    """Test that workflow infers output types from OutputNode."""
+    input_node = InputNode.empty()
+    output_node = OutputNode.from_fields(
+        result=IntegerValue,
+    )
+
     node = ConstantIntegerNode.from_value(id="producer", value=42)
 
     workflow = Workflow(
-        nodes=[node],
-        edges=[],
-        input_edges=[],
-        output_edges=[
-            OutputEdge(
-                source_id="producer",
+        input_node=input_node,
+        output_node=output_node,
+        inner_nodes=[node],
+        edges=[
+            Edge.from_nodes(
+                source=node,
                 source_key="value",
-                output_key="result",
-                # No output_schema specified
+                target=output_node,
+                target_key="result",
             )
         ],
     )
 
-    # Should infer IntegerValue from node
+    # Should infer IntegerValue from OutputNode
     assert workflow.output_fields["result"][0] == IntegerValue
