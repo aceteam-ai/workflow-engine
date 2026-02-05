@@ -36,6 +36,7 @@ uv run ruff format .
 ```
 
 Ruff configuration is in `pyproject.toml`. Key rules:
+
 - Line length: default (88 characters)
 - Import sorting handled by Ruff
 
@@ -111,8 +112,7 @@ class MyParams(Data):
 
 ```python
 from typing import ClassVar, Literal, Type
-from workflow_engine import Node, Context
-from workflow_engine.core.node import NodeTypeInfo
+from workflow_engine import Context, Node, NodeTypeInfo
 
 class MyNode(Node[MyInput, MyOutput, MyParams]):
     TYPE_INFO: ClassVar[NodeTypeInfo] = NodeTypeInfo.from_parameter_type(

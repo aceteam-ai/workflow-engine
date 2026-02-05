@@ -1,4 +1,6 @@
 # workflow_engine/core/values/value.py
+from __future__ import annotations
+
 import inspect
 import re
 from abc import ABC, abstractmethod
@@ -11,11 +13,13 @@ from typing import (
     Awaitable,
     ClassVar,
     Generic,
+    Literal,
     Protocol,
     Self,
     Type,
     TypeVar,
     get_origin,
+    overload,
 )
 
 from overrides import override
@@ -150,7 +154,7 @@ class Value(ImmutableRootModel[T], Generic[T]):
             assert cls.__base__ is not None
             cls = cls.__base__
         if get_origin(cls) is None:
-            default_value_registry.register_value_class(cls.__name__, cls)
+            ValueRegistry.DEFAULT.register_value_class(cls.__name__, cls)
 
     @classmethod
     def _get_casters(cls) -> dict[str, GenericCaster]:
@@ -292,6 +296,8 @@ class ValueRegistry(ABC):
     An immutable registry of value types by name.
     """
 
+    DEFAULT: ClassVar[LazyValueRegistry]
+
     @abstractmethod
     def get_value_class(self, name: str) -> ValueType:
         """Get a value type by name."""
@@ -301,6 +307,36 @@ class ValueRegistry(ABC):
     def has_name(self, name: str) -> bool:
         """Check if a value type name is registered."""
         pass
+
+    def load_value(self, schema: ValueSchema) -> ValueType | None:
+        """
+        Load a value type from a schema by looking up the title in the registry.
+
+        This method only handles registered value types (where schema.title matches
+        a registered name). If no match is found, returns None to indicate that
+        the caller should fall back to building the value class from the schema.
+
+        Args:
+            schema: A ValueSchema with an optional title field
+
+        Returns:
+            The registered value class if the title matches, None otherwise
+        """
+        if schema.title is not None and self.has_name(schema.title):
+            return self.get_value_class(schema.title)
+        return None
+
+    @overload
+    @staticmethod
+    def builder(*, lazy: Literal[True]) -> LazyValueRegistry: ...
+
+    @overload
+    @staticmethod
+    def builder(*, lazy: Literal[False] = False) -> EagerValueRegistryBuilder: ...
+
+    @staticmethod
+    def builder(*, lazy: bool = False):
+        return LazyValueRegistry() if lazy else EagerValueRegistryBuilder()
 
 
 class ValueRegistryBuilder(ABC):
@@ -450,14 +486,14 @@ class LazyValueRegistry(ValueRegistry, ValueRegistryBuilder):
         return self._value_classes[name]
 
 
-default_value_registry = LazyValueRegistry()
+ValueRegistry.DEFAULT = ValueRegistry.builder(lazy=True)
 
 
 __all__ = [
     "Caster",
-    "default_value_registry",
     "GenericCaster",
     "get_origin_and_args",
     "Value",
+    "ValueRegistry",
     "ValueType",
 ]
