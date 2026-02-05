@@ -198,9 +198,7 @@ class TestWorkflowEngine:
         input_node = InputNode.empty()
         output_node = OutputNode.empty()
         node1 = Node.model_construct(type="SampleAdd", id="node1", version="1.0.0")
-        node2 = Node.model_construct(
-            type="SampleMultiply", id="node2", version="1.0.0"
-        )
+        node2 = Node.model_construct(type="SampleMultiply", id="node2", version="1.0.0")
 
         workflow = Workflow(
             input_node=input_node,
@@ -296,9 +294,7 @@ class TestWorkflowEngine:
         workflow_multiply = Workflow.model_construct(
             input_node=input_node,
             inner_nodes=[
-                Node.model_construct(
-                    type="SampleMultiply", id="node1", version="1.0.0"
-                )
+                Node.model_construct(type="SampleMultiply", id="node1", version="1.0.0")
             ],
             output_node=output_node,
             edges=[],
