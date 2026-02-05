@@ -62,15 +62,15 @@ class WorkflowEngine:
         Returns:
             Typed workflow (nodes are concrete subclass instances)
         """
-        typed_nodes = []
+        typed_inner_nodes = []
 
-        for node in workflow.nodes:
+        for node in workflow.inner_nodes:
             # Load the node (will return unchanged if already concrete)
             typed_node = self.node_registry.load_node(node)
-            typed_nodes.append(typed_node)
+            typed_inner_nodes.append(typed_node)
 
         # Return new workflow with typed nodes
-        return workflow.model_update(nodes=typed_nodes)
+        return workflow.model_update(inner_nodes=typed_inner_nodes)
 
     async def execute(
         self,

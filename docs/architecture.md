@@ -2,15 +2,16 @@
 
 ## Module Structure
 
-```
+```text
 src/workflow_engine/
 ├── __init__.py            # Public API exports and version
 ├── core/                  # Core abstractions
 │   ├── context.py         # Context base class (file I/O, lifecycle hooks)
 │   ├── data.py            # Data base class (typed field containers)
-│   ├── edge.py            # Edge, InputEdge, OutputEdge definitions
+│   ├── edge.py            # Edge definitions
 │   ├── execution.py       # ExecutionAlgorithm base class
 │   ├── file.py            # File reference type
+│   ├── io.py              # InputNode, OutputNode
 │   ├── node.py            # Node base class, NodeTypeInfo, node registry
 │   ├── workflow.py        # Workflow definition and validation
 │   ├── values/            # Value type system
@@ -53,6 +54,7 @@ src/workflow_engine/
 ### Immutability
 
 All core objects (`Node`, `Workflow`, `Edge`, `Data`, `Value`) are frozen Pydantic models. This ensures:
+
 - Thread safety during parallel execution
 - Predictable behavior (no hidden mutation)
 - Clean serialization/deserialization
@@ -62,6 +64,7 @@ To "modify" an object, use `model_copy(update={...})`.
 ### Async-First
 
 All execution-related operations are async:
+
 - `Node.run()` - Node computation
 - `Value.cast_to()` - Type conversion between values
 - `Context` lifecycle hooks
@@ -72,6 +75,7 @@ This enables non-blocking I/O operations (API calls, file operations) within nod
 ### Type-Safe Data Flow
 
 Edges connect specific output fields of one node to input fields of another. At workflow construction time, the engine validates:
+
 - Referenced nodes and fields exist
 - The graph is acyclic (DAG)
 - Type compatibility between connected fields (with automatic casting where possible)
@@ -100,6 +104,7 @@ Node serialization uses Pydantic's discriminated union pattern. Each node class 
 ## Error Propagation
 
 Errors during execution are collected per-node in a `WorkflowErrors` object. The behavior depends on the execution algorithm:
+
 - **Topological**: Stops on first error
 - **Parallel (FAIL_FAST)**: Cancels remaining tasks on first error
 - **Parallel (CONTINUE)**: Runs all possible nodes, collects all errors

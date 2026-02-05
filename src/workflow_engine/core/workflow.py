@@ -2,17 +2,18 @@
 import asyncio
 from collections.abc import Mapping, Sequence
 from functools import cached_property
-from itertools import chain
 from typing import TYPE_CHECKING, Type
 
 import networkx as nx
 from pydantic import ConfigDict, ValidationError, model_validator
 
 from ..utils.immutable import ImmutableBaseModel
-from .edge import Edge, InputEdge, OutputEdge
+from .edge import Edge
 from .error import NodeExpansionException, UserException
 from .node import Node
-from .values import Data, DataMapping, Value, ValueType, build_data_type
+from .values import Data, DataMapping, Value, ValueType
+from .io import InputNode, OutputNode
+from .values.schema import DataValueSchema
 
 if TYPE_CHECKING:
     from .context import Context
@@ -21,10 +22,14 @@ if TYPE_CHECKING:
 class Workflow(ImmutableBaseModel):
     model_config = ConfigDict(frozen=True)
 
-    nodes: Sequence[Node]
+    input_node: InputNode
+    inner_nodes: Sequence[Node]
+    output_node: OutputNode
     edges: Sequence[Edge]
-    input_edges: Sequence[InputEdge]
-    output_edges: Sequence[OutputEdge]
+
+    @cached_property
+    def nodes(self) -> Sequence[Node]:
+        return (self.input_node, *self.inner_nodes, self.output_node)
 
     @cached_property
     def nodes_by_id(self) -> Mapping[str, Node]:
@@ -36,15 +41,15 @@ class Workflow(ImmutableBaseModel):
         return nodes_by_id
 
     @cached_property
-    def edges_by_target(self) -> Mapping[str, Mapping[str, Edge | InputEdge]]:
+    def edges_by_target(self) -> Mapping[str, Mapping[str, Edge]]:
         """
         A mapping from each node and input key to the (unique) edge that targets
         the node at that key.
         """
-        edges_by_target: dict[str, dict[str, Edge | InputEdge]] = {
+        edges_by_target: dict[str, dict[str, Edge]] = {
             node.id: {} for node in self.nodes
         }
-        for edge in chain(self.edges, self.input_edges):
+        for edge in self.edges:
             if edge.target_key in edges_by_target[edge.target_id]:
                 raise ValueError(
                     f"In-edge to {edge.target_id}.{edge.target_key} is already in the graph"
@@ -57,54 +62,44 @@ class Workflow(ImmutableBaseModel):
         """
         Returns the input fields for this workflow.
 
-        If an InputEdge has an input_schema specified, that schema's type is used.
+        If an InputNode has an input_schema specified, that schema's type is used.
         Otherwise, the type is inferred from the target node's input field.
         """
-        return {
-            edge.input_key: (
-                (edge.input_schema.to_value_cls(), True)
-                if edge.input_schema is not None
-                else self.nodes_by_id[edge.target_id].input_fields[edge.target_key]
-            )
-            for edge in self.input_edges
-        }
+        return self.input_node.input_fields
 
     @cached_property
     def output_fields(self) -> Mapping[str, tuple[ValueType, bool]]:
         """
         Returns the output fields for this workflow.
 
-        If an OutputEdge has an output_schema specified, that schema's type is used.
+        If an OutputNode has an output_schema specified, that schema's type is used.
         Otherwise, the type is inferred from the source node's output field.
         """
-        return {
-            edge.output_key: (
-                (edge.output_schema.to_value_cls(), True)
-                if edge.output_schema is not None
-                else self.nodes_by_id[edge.source_id].output_fields[edge.source_key]
-            )
-            for edge in self.output_edges
-        }
+        return self.output_node.output_fields
 
     @cached_property
     def input_type(self) -> Type[Data]:
-        return build_data_type(
-            "WorkflowInput",
-            {
-                edge.input_key: self.input_fields[edge.input_key]
-                for edge in self.input_edges
-            },
-        )
+        return self.input_node.input_type
 
     @cached_property
     def output_type(self) -> Type[Data]:
-        return build_data_type(
-            "WorkflowOutput",
-            {
-                edge.output_key: self.output_fields[edge.output_key]
-                for edge in self.output_edges
-            },
-        )
+        return self.output_node.output_type
+
+    @cached_property
+    def input_schema(self) -> DataValueSchema:
+        return self.input_node.input_schema
+
+    @cached_property
+    def output_schema(self) -> DataValueSchema:
+        return self.output_node.output_schema
+
+    @cached_property
+    def input_edges(self) -> Sequence[Edge]:
+        return [edge for edge in self.edges if edge.source_id == self.input_node.id]
+
+    @cached_property
+    def output_edges(self) -> Sequence[Edge]:
+        return [edge for edge in self.edges if edge.target_id == self.output_node.id]
 
     @cached_property
     def nx_graph(self) -> nx.DiGraph:
@@ -117,16 +112,6 @@ class Workflow(ImmutableBaseModel):
             graph.add_edge(edge.source_id, edge.target_id, data=edge)
 
         return graph
-
-    @cached_property
-    def input_edges_by_key(self) -> Mapping[str, InputEdge]:
-        """Index of input edges by their input_key."""
-        return {edge.input_key: edge for edge in self.input_edges}
-
-    @cached_property
-    def output_edges_by_key(self) -> Mapping[str, OutputEdge]:
-        """Index of output edges by their output_key."""
-        return {edge.output_key: edge for edge in self.output_edges}
 
     @model_validator(mode="after")
     def _validate_nodes(self):
@@ -144,66 +129,6 @@ class Workflow(ImmutableBaseModel):
                 source=self.nodes_by_id[edge.source_id],
                 target=self.nodes_by_id[edge.target_id],
             )
-        return self
-
-    @model_validator(mode="after")
-    def _validate_input_edges(self):
-        """
-        Validate that input edges with schemas have compatible types.
-
-        For each InputEdge with input_schema, validates that the schema can cast
-        to the target node's input field type.
-        """
-        for edge in self.input_edges:
-            if edge.input_schema is not None:
-                target = self.nodes_by_id[edge.target_id]
-
-                if edge.target_key not in target.input_fields:
-                    raise ValueError(
-                        f"Target node {target.id} does not have input field '{edge.target_key}'"
-                    )
-
-                edge_input_type = edge.input_schema.to_value_cls()
-                target_input_type, _ = target.input_fields[edge.target_key]
-
-                # Validate: edge schema -> target input
-                if not edge_input_type.can_cast_to(target_input_type):
-                    raise TypeError(
-                        f"Input edge '{edge.input_key}' has invalid schema: "
-                        f"{edge_input_type} is not assignable to target "
-                        f"{target.id}.{edge.target_key} ({target_input_type})"
-                    )
-
-        return self
-
-    @model_validator(mode="after")
-    def _validate_output_edges(self):
-        """
-        Validate that output edges with schemas have compatible types.
-
-        For each OutputEdge with output_schema, validates that the source node's
-        output can cast to the schema type.
-        """
-        for edge in self.output_edges:
-            if edge.output_schema is not None:
-                source = self.nodes_by_id[edge.source_id]
-
-                if edge.source_key not in source.output_fields:
-                    raise ValueError(
-                        f"Source node {source.id} does not have output field '{edge.source_key}'"
-                    )
-
-                source_output_type, _ = source.output_fields[edge.source_key]
-                edge_output_type = edge.output_schema.to_value_cls()
-
-                # Validate: source output -> edge schema
-                if not source_output_type.can_cast_to(edge_output_type):
-                    raise TypeError(
-                        f"Output edge '{edge.output_key}' has invalid schema: "
-                        f"source {source.id}.{edge.source_key} ({source_output_type}) "
-                        f"is not assignable to {edge_output_type}"
-                    )
-
         return self
 
     @model_validator(mode="after")
@@ -237,7 +162,6 @@ class Workflow(ImmutableBaseModel):
 
     def get_ready_nodes(
         self,
-        input: DataMapping,
         node_outputs: Mapping[str, DataMapping] | None = None,
         partial_results: Mapping[str, DataMapping] | None = None,
     ) -> Mapping[str, DataMapping]:
@@ -271,9 +195,7 @@ class Workflow(ImmutableBaseModel):
             node_input_dict: DataMapping = {}
             for target_key, edge in self.edges_by_target[node.id].items():
                 # if the input is missing, we will let the node figure it out
-                if isinstance(edge, InputEdge):
-                    node_input_dict[target_key] = input[edge.input_key]
-                elif edge.source_id in node_outputs:
+                if edge.source_id in node_outputs:
                     node_input_dict[target_key] = node_outputs[edge.source_id][
                         edge.source_key
                     ]
@@ -334,16 +256,16 @@ class Workflow(ImmutableBaseModel):
                 )
 
             output_field = node_output[edge.source_key]
-            expected_type, _ = self.output_fields[edge.output_key]
+            expected_type, _ = self.output_fields[edge.target_key]
 
             # Validate that the output can be cast to the expected type
             if not output_field.can_cast_to(expected_type):
                 raise UserException(
-                    f"Output '{edge.output_key}' from node {edge.source_id}.{edge.source_key} "
+                    f"Output '{edge.target_key}' from node {edge.source_id}.{edge.source_key} "
                     f"cannot be cast: {output_field} is not assignable to {expected_type}"
                 )
 
-            outputs_to_cast.append((edge.output_key, output_field, expected_type))
+            outputs_to_cast.append((edge.target_key, output_field, expected_type))
 
         # Second pass: Cast all outputs in parallel
         cast_tasks = [
@@ -398,96 +320,42 @@ class Workflow(ImmutableBaseModel):
             subgraph = subgraph.with_namespace(node_id)
 
             # Collect all edges that need to be modified
-            new_nodes: list[Node] = [
-                node for node in self.nodes if node.id != node_id
+            new_inner_nodes: list[Node] = [
+                node for node in self.inner_nodes if node.id != node_id
             ] + list(subgraph.nodes)
             new_edges: list[Edge] = list(subgraph.edges)
-            new_input_edges: list[InputEdge] = []
-            new_output_edges: list[OutputEdge] = []
 
-            # Use cached properties for subgraph edge indexing
-            subgraph_input_by_key = subgraph.input_edges_by_key
-            subgraph_output_by_key = subgraph.output_edges_by_key
-
-            # Handle input edges - reconnect them to subgraph input nodes
-            for input_edge in self.input_edges:
-                if input_edge.target_id == node_id:
-                    if input_edge.target_key in subgraph_input_by_key:
-                        subgraph_input_edge = subgraph_input_by_key[
-                            input_edge.target_key
-                        ]
-                        new_input_edges.append(
-                            InputEdge(
-                                input_key=input_edge.input_key,
-                                target_id=subgraph_input_edge.target_id,
-                                target_key=subgraph_input_edge.target_key,
-                            )
-                        )
-                    # If no matching input edge found, the edge is dropped
-                else:
-                    new_input_edges.append(input_edge)
-
-            # Handle regular edges
             for edge in self.edges:
                 if edge.target_id == node_id:
-                    if edge.target_key in subgraph_input_by_key:
-                        subgraph_input_edge = subgraph_input_by_key[edge.target_key]
+                    # Only create the edge if the subgraph's input_node has this field
+                    if edge.target_key in subgraph.input_node.input_fields:
                         new_edges.append(
                             Edge(
                                 source_id=edge.source_id,
                                 source_key=edge.source_key,
-                                target_id=subgraph_input_edge.target_id,
-                                target_key=subgraph_input_edge.target_key,
-                            )
-                        )
-                    # If no matching input edge found, the edge is dropped
-                elif edge.source_id == node_id:
-                    if edge.source_key in subgraph_output_by_key:
-                        subgraph_output_edge = subgraph_output_by_key[edge.source_key]
-                        new_edges.append(
-                            Edge(
-                                source_id=subgraph_output_edge.source_id,
-                                source_key=subgraph_output_edge.source_key,
-                                target_id=edge.target_id,
+                                target_id=subgraph.input_node.id,
                                 target_key=edge.target_key,
                             )
                         )
-                    else:
-                        raise ValueError(
-                            f"Node {node_id} has output '{edge.source_key}' that is required by "
-                            f"workflow, but the subgraph does not provide a matching output edge"
+                    # Edges to fields not in the subgraph input are dropped
+                    # (e.g., control fields like 'condition' for IfElseNode)
+                elif edge.source_id == node_id:
+                    new_edges.append(
+                        Edge(
+                            source_id=subgraph.output_node.id,
+                            source_key=edge.source_key,
+                            target_id=edge.target_id,
+                            target_key=edge.target_key,
                         )
+                    )
                 else:
                     new_edges.append(edge)
 
-            # Handle output edges
-            for output_edge in self.output_edges:
-                if output_edge.source_id == node_id:
-                    if output_edge.source_key in subgraph_output_by_key:
-                        subgraph_output_edge = subgraph_output_by_key[
-                            output_edge.source_key
-                        ]
-                        new_output_edges.append(
-                            OutputEdge(
-                                source_id=subgraph_output_edge.source_id,
-                                source_key=subgraph_output_edge.source_key,
-                                output_key=output_edge.output_key,
-                            )
-                        )
-                    else:
-                        raise ValueError(
-                            f"Node {node_id} has output '{output_edge.source_key}' that is required by "
-                            f"workflow output '{output_edge.output_key}', but the subgraph does not "
-                            f"provide a matching output edge"
-                        )
-                else:
-                    new_output_edges.append(output_edge)
-
             return Workflow(
-                nodes=new_nodes,
+                inner_nodes=new_inner_nodes,
+                input_node=self.input_node,
+                output_node=self.output_node,
                 edges=new_edges,
-                input_edges=new_input_edges,
-                output_edges=new_output_edges,
             )
         except Exception as e:
             raise NodeExpansionException(node_id, workflow=subgraph) from e
@@ -503,40 +371,11 @@ class Workflow(ImmutableBaseModel):
             A new Workflow with all node IDs prefixed with '{namespace}/'
         """
         # Create namespaced nodes
-        namespaced_nodes = [node.with_namespace(namespace) for node in self.nodes]
-
-        # Create namespaced edges (update source_id and target_id)
-        namespaced_edges = [
-            edge.model_copy(
-                update={
-                    "source_id": f"{namespace}/{edge.source_id}",
-                    "target_id": f"{namespace}/{edge.target_id}",
-                }
-            )
-            for edge in self.edges
-        ]
-
-        # Create namespaced input edges (update target_id only)
-        namespaced_input_edges = [
-            input_edge.model_copy(
-                update={"target_id": f"{namespace}/{input_edge.target_id}"}
-            )
-            for input_edge in self.input_edges
-        ]
-
-        # Create namespaced output edges (update source_id only)
-        namespaced_output_edges = [
-            output_edge.model_copy(
-                update={"source_id": f"{namespace}/{output_edge.source_id}"}
-            )
-            for output_edge in self.output_edges
-        ]
-
         return Workflow(
-            nodes=namespaced_nodes,
-            edges=namespaced_edges,
-            input_edges=namespaced_input_edges,
-            output_edges=namespaced_output_edges,
+            input_node=self.input_node.with_namespace(namespace),
+            inner_nodes=[node.with_namespace(namespace) for node in self.inner_nodes],
+            output_node=self.output_node.with_namespace(namespace),
+            edges=[edge.with_namespace(namespace) for edge in self.edges],
         )
 
 

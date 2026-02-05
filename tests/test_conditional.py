@@ -3,12 +3,13 @@ import pytest
 from workflow_engine import (
     BooleanValue,
     Edge,
-    InputEdge,
     IntegerValue,
-    OutputEdge,
+    StringMapValue,
+    ValueSchemaValue,
     Workflow,
 )
 from workflow_engine.contexts import InMemoryContext
+from workflow_engine.core.io import InputNode, OutputNode, SchemaParams
 from workflow_engine.execution import TopologicalExecutionAlgorithm
 from workflow_engine.nodes import AddNode, ConstantIntegerNode, IfElseNode
 
@@ -16,12 +17,30 @@ from workflow_engine.nodes import AddNode, ConstantIntegerNode, IfElseNode
 @pytest.fixture
 def add_one_workflow() -> Workflow:
     """Create a workflow that adds one to a number."""
+    input_node = InputNode(
+        id="input",
+        params=SchemaParams(
+            fields=StringMapValue[ValueSchemaValue](
+                {"start": ValueSchemaValue(IntegerValue.to_value_schema())}
+            )
+        ),
+    )
+    output_node = OutputNode(
+        id="output",
+        params=SchemaParams(
+            fields=StringMapValue[ValueSchemaValue](
+                {"result": ValueSchemaValue(IntegerValue.to_value_schema())}
+            )
+        ),
+    )
+
+    one = ConstantIntegerNode.from_value(id="one", value=1)
+    add_one = AddNode(id="add_one")
 
     return Workflow(
-        nodes=[
-            one := ConstantIntegerNode.from_value(id="one", value=1),
-            add_one := AddNode(id="add_one"),
-        ],
+        input_node=input_node,
+        output_node=output_node,
+        inner_nodes=[one, add_one],
         edges=[
             Edge.from_nodes(
                 source=one,
@@ -29,19 +48,17 @@ def add_one_workflow() -> Workflow:
                 target=add_one,
                 target_key="b",
             ),
-        ],
-        input_edges=[
-            InputEdge.from_node(
-                input_key="start",
+            Edge.from_nodes(
+                source=input_node,
+                source_key="start",
                 target=add_one,
                 target_key="a",
             ),
-        ],
-        output_edges=[
-            OutputEdge.from_node(
+            Edge.from_nodes(
                 source=add_one,
                 source_key="sum",
-                output_key="result",
+                target=output_node,
+                target_key="result",
             ),
         ],
     )
@@ -50,12 +67,30 @@ def add_one_workflow() -> Workflow:
 @pytest.fixture
 def subtract_one_workflow() -> Workflow:
     """Create a workflow that subtracts one from a number."""
+    input_node = InputNode(
+        id="input",
+        params=SchemaParams(
+            fields=StringMapValue[ValueSchemaValue](
+                {"start": ValueSchemaValue(IntegerValue.to_value_schema())}
+            )
+        ),
+    )
+    output_node = OutputNode(
+        id="output",
+        params=SchemaParams(
+            fields=StringMapValue[ValueSchemaValue](
+                {"result": ValueSchemaValue(IntegerValue.to_value_schema())}
+            )
+        ),
+    )
+
+    negative_one = ConstantIntegerNode.from_value(id="negative_one", value=-1)
+    subtract_one = AddNode(id="subtract_one")
 
     return Workflow(
-        nodes=[
-            negative_one := ConstantIntegerNode.from_value(id="negative_one", value=-1),
-            subtract_one := AddNode(id="subtract_one"),
-        ],
+        input_node=input_node,
+        output_node=output_node,
+        inner_nodes=[negative_one, subtract_one],
         edges=[
             Edge.from_nodes(
                 source=negative_one,
@@ -63,19 +98,17 @@ def subtract_one_workflow() -> Workflow:
                 target=subtract_one,
                 target_key="b",
             ),
-        ],
-        input_edges=[
-            InputEdge.from_node(
-                input_key="start",
+            Edge.from_nodes(
+                source=input_node,
+                source_key="start",
                 target=subtract_one,
                 target_key="a",
             ),
-        ],
-        output_edges=[
-            OutputEdge.from_node(
+            Edge.from_nodes(
                 source=subtract_one,
                 source_key="sum",
-                output_key="result",
+                target=output_node,
+                target_key="result",
             ),
         ],
     )
@@ -93,32 +126,54 @@ async def test_conditional_workflow(
 
     start_value = 42
 
+    input_node = InputNode(
+        id="input",
+        params=SchemaParams(
+            fields=StringMapValue[ValueSchemaValue](
+                {
+                    "start": ValueSchemaValue(IntegerValue.to_value_schema()),
+                    "condition": ValueSchemaValue(BooleanValue.to_value_schema()),
+                }
+            )
+        ),
+    )
+    output_node = OutputNode(
+        id="output",
+        params=SchemaParams(
+            fields=StringMapValue[ValueSchemaValue](
+                {"result": ValueSchemaValue(IntegerValue.to_value_schema())}
+            )
+        ),
+    )
+
+    conditional = IfElseNode.from_workflows(
+        id="conditional",
+        if_true=add_one_workflow,
+        if_false=subtract_one_workflow,
+    )
+
     workflow = Workflow(
-        nodes=[
-            conditional := IfElseNode.from_workflows(
-                id="conditional",
-                if_true=add_one_workflow,
-                if_false=subtract_one_workflow,
-            ),
-        ],
-        edges=[],
-        input_edges=[
-            InputEdge.from_node(
-                input_key="start",
+        input_node=input_node,
+        output_node=output_node,
+        inner_nodes=[conditional],
+        edges=[
+            Edge.from_nodes(
+                source=input_node,
+                source_key="start",
                 target=conditional,
                 target_key="start",
             ),
-            InputEdge.from_node(
-                input_key="condition",
+            Edge.from_nodes(
+                source=input_node,
+                source_key="condition",
                 target=conditional,
                 target_key="condition",
             ),
-        ],
-        output_edges=[
-            OutputEdge.from_node(
+            Edge.from_nodes(
                 source=conditional,
                 source_key="result",
-                output_key="result",
+                target=output_node,
+                target_key="result",
             ),
         ],
     )
@@ -158,19 +213,42 @@ async def test_conditional_workflow_twice_series(
 
     start_value = 42
 
+    input_node = InputNode(
+        id="input",
+        params=SchemaParams(
+            fields=StringMapValue[ValueSchemaValue](
+                {
+                    "start": ValueSchemaValue(IntegerValue.to_value_schema()),
+                    "condition_1": ValueSchemaValue(BooleanValue.to_value_schema()),
+                    "condition_2": ValueSchemaValue(BooleanValue.to_value_schema()),
+                }
+            )
+        ),
+    )
+    output_node = OutputNode(
+        id="output",
+        params=SchemaParams(
+            fields=StringMapValue[ValueSchemaValue](
+                {"result": ValueSchemaValue(IntegerValue.to_value_schema())}
+            )
+        ),
+    )
+
+    conditional_1 = IfElseNode.from_workflows(
+        id="conditional_1",
+        if_true=add_one_workflow,
+        if_false=subtract_one_workflow,
+    )
+    conditional_2 = IfElseNode.from_workflows(
+        id="conditional_2",
+        if_true=add_one_workflow,
+        if_false=subtract_one_workflow,
+    )
+
     workflow = Workflow(
-        nodes=[
-            conditional_1 := IfElseNode.from_workflows(
-                id="conditional_1",
-                if_true=add_one_workflow,
-                if_false=subtract_one_workflow,
-            ),
-            conditional_2 := IfElseNode.from_workflows(
-                id="conditional_2",
-                if_true=add_one_workflow,
-                if_false=subtract_one_workflow,
-            ),
-        ],
+        input_node=input_node,
+        output_node=output_node,
+        inner_nodes=[conditional_1, conditional_2],
         edges=[
             Edge.from_nodes(
                 source=conditional_1,
@@ -178,29 +256,29 @@ async def test_conditional_workflow_twice_series(
                 target=conditional_2,
                 target_key="start",
             ),
-        ],
-        input_edges=[
-            InputEdge.from_node(
-                input_key="start",
+            Edge.from_nodes(
+                source=input_node,
+                source_key="start",
                 target=conditional_1,
                 target_key="start",
             ),
-            InputEdge.from_node(
-                input_key="condition_1",
+            Edge.from_nodes(
+                source=input_node,
+                source_key="condition_1",
                 target=conditional_1,
                 target_key="condition",
             ),
-            InputEdge.from_node(
-                input_key="condition_2",
+            Edge.from_nodes(
+                source=input_node,
+                source_key="condition_2",
                 target=conditional_2,
                 target_key="condition",
             ),
-        ],
-        output_edges=[
-            OutputEdge.from_node(
+            Edge.from_nodes(
                 source=conditional_2,
                 source_key="result",
-                output_key="result",
+                target=output_node,
+                target_key="result",
             ),
         ],
     )

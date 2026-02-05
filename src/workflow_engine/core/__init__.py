@@ -1,9 +1,10 @@
 # workflow_engine/core/__init__.py
 from .context import Context
-from .edge import Edge, InputEdge, OutputEdge
+from .edge import Edge
 from .engine import WorkflowEngine
 from .error import NodeException, ShouldRetry, UserException, WorkflowErrors
 from .execution import ExecutionAlgorithm
+from .io import InputNode, OutputNode
 from .migration import (
     Migration,
     MigrationError,
@@ -55,14 +56,13 @@ __all__ = [
     "Data",
     "DataMapping",
     "DataValue",
-    "default_node_registry",
     "Edge",
     "Empty",
     "ExecutionAlgorithm",
     "File",
     "FileValue",
     "FloatValue",
-    "InputEdge",
+    "InputNode",
     "IntegerValue",
     "JSON",
     "JSONValue",
@@ -80,7 +80,7 @@ __all__ = [
     "NodeRegistry",
     "NodeTypeInfo",
     "NullValue",
-    "OutputEdge",
+    "OutputNode",
     "Params",
     "SequenceValue",
     "ShouldRetry",

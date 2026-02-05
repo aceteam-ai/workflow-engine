@@ -10,14 +10,17 @@ from workflow_engine import (
     Data,
     Edge,
     Empty,
-    InputEdge,
+    FloatValue,
     IntegerValue,
     Node,
-    OutputEdge,
     Params,
+    StringMapValue,
+    ValueSchemaValue,
     Workflow,
 )
+from workflow_engine.core.io import InputNode, OutputNode, SchemaParams
 from workflow_engine.core.node import NodeTypeInfo
+from workflow_engine.core.values.schema import SequenceValueSchema
 from workflow_engine.contexts import InMemoryContext
 from workflow_engine.execution import TopologicalExecutionAlgorithm
 from workflow_engine.execution.parallel import (
@@ -114,18 +117,24 @@ class SlowPassthroughNode(
 @pytest.fixture
 def parallel_workflow() -> Workflow:
     """Create a workflow with independent nodes that can run in parallel."""
+    input_node = InputNode(id="input")
+    output_node = OutputNode.from_fields(
+        id="output",
+        fields={"a": IntegerValue, "b": IntegerValue, "c": IntegerValue},
+    )
+
+    node_a = SlowNode.from_delay(id="node_a", delay_ms=100)
+    node_b = SlowNode.from_delay(id="node_b", delay_ms=100)
+    node_c = SlowNode.from_delay(id="node_c", delay_ms=100)
+
     return Workflow(
-        nodes=[
-            SlowNode.from_delay(id="node_a", delay_ms=100),
-            SlowNode.from_delay(id="node_b", delay_ms=100),
-            SlowNode.from_delay(id="node_c", delay_ms=100),
-        ],
-        edges=[],
-        input_edges=[],
-        output_edges=[
-            OutputEdge(source_id="node_a", source_key="value", output_key="a"),
-            OutputEdge(source_id="node_b", source_key="value", output_key="b"),
-            OutputEdge(source_id="node_c", source_key="value", output_key="c"),
+        input_node=input_node,
+        output_node=output_node,
+        inner_nodes=[node_a, node_b, node_c],
+        edges=[
+            Edge.from_nodes(source=node_a, source_key="value", target=output_node, target_key="a"),
+            Edge.from_nodes(source=node_b, source_key="value", target=output_node, target_key="b"),
+            Edge.from_nodes(source=node_c, source_key="value", target=output_node, target_key="c"),
         ],
     )
 
@@ -170,19 +179,21 @@ async def test_parallel_execution_faster_than_sequential(
 @pytest.mark.asyncio
 async def test_parallel_execution_respects_dependencies():
     """Test that dependent nodes wait for their dependencies."""
+    input_node = InputNode(id="input")
+    output_node = OutputNode.from_fields(id="output", fields={"result": IntegerValue})
+
+    a = ConstantIntegerNode.from_value(id="a", value=1)
+    b = ConstantIntegerNode.from_value(id="b", value=2)
+    c = AddNode(id="c")  # depends on a and b
+
     workflow = Workflow(
-        nodes=[
-            a := ConstantIntegerNode.from_value(id="a", value=1),
-            b := ConstantIntegerNode.from_value(id="b", value=2),
-            c := AddNode(id="c"),  # depends on a and b
-        ],
+        input_node=input_node,
+        output_node=output_node,
+        inner_nodes=[a, b, c],
         edges=[
             Edge.from_nodes(source=a, source_key="value", target=c, target_key="a"),
             Edge.from_nodes(source=b, source_key="value", target=c, target_key="b"),
-        ],
-        input_edges=[],
-        output_edges=[
-            OutputEdge.from_node(source=c, source_key="sum", output_key="result"),
+            Edge.from_nodes(source=c, source_key="sum", target=output_node, target_key="result"),
         ],
     )
 
@@ -214,23 +225,25 @@ async def test_parallel_execution_complex_dependencies():
     Node c runs after a, b complete.
     Node f runs after c, d complete.
     """
+    input_node = InputNode(id="input")
+    output_node = OutputNode.from_fields(id="output", fields={"result": IntegerValue})
+
+    a = ConstantIntegerNode.from_value(id="a", value=1)
+    b = ConstantIntegerNode.from_value(id="b", value=2)
+    c = AddNode(id="c")
+    d = ConstantIntegerNode.from_value(id="d", value=10)
+    f = AddNode(id="f")
+
     workflow = Workflow(
-        nodes=[
-            a := ConstantIntegerNode.from_value(id="a", value=1),
-            b := ConstantIntegerNode.from_value(id="b", value=2),
-            c := AddNode(id="c"),
-            d := ConstantIntegerNode.from_value(id="d", value=10),
-            f := AddNode(id="f"),
-        ],
+        input_node=input_node,
+        output_node=output_node,
+        inner_nodes=[a, b, c, d, f],
         edges=[
             Edge.from_nodes(source=a, source_key="value", target=c, target_key="a"),
             Edge.from_nodes(source=b, source_key="value", target=c, target_key="b"),
             Edge.from_nodes(source=c, source_key="sum", target=f, target_key="a"),
             Edge.from_nodes(source=d, source_key="value", target=f, target_key="b"),
-        ],
-        input_edges=[],
-        output_edges=[
-            OutputEdge.from_node(source=f, source_key="sum", output_key="result"),
+            Edge.from_nodes(source=f, source_key="sum", target=output_node, target_key="result"),
         ],
     )
 
@@ -253,12 +266,17 @@ async def test_parallel_execution_continue_on_error():
     """Test CONTINUE error handling mode collects all errors."""
     from workflow_engine import StringValue
 
+    input_node = InputNode(id="input")
+    output_node = OutputNode.from_fields(id="output", fields={"value": StringValue})
+
+    ok_node = ConstantStringNode.from_value(id="ok_node", value="test")
+    error1 = ErrorNode.from_name(id="error1", name="Error1")
+    error2 = ErrorNode.from_name(id="error2", name="Error2")
+
     workflow = Workflow(
-        nodes=[
-            ok_node := ConstantStringNode.from_value(id="ok_node", value="test"),
-            error1 := ErrorNode.from_name(id="error1", name="Error1"),
-            error2 := ErrorNode.from_name(id="error2", name="Error2"),
-        ],
+        input_node=input_node,
+        output_node=output_node,
+        inner_nodes=[ok_node, error1, error2],
         edges=[
             # Both error nodes depend on ok_node, so they run in parallel after it
             Edge.from_nodes(
@@ -267,11 +285,8 @@ async def test_parallel_execution_continue_on_error():
             Edge.from_nodes(
                 source=ok_node, source_key="value", target=error2, target_key="info"
             ),
-        ],
-        input_edges=[],
-        output_edges=[
-            OutputEdge.from_node(
-                source=ok_node, source_key="value", output_key="value"
+            Edge.from_nodes(
+                source=ok_node, source_key="value", target=output_node, target_key="value"
             ),
         ],
     )
@@ -297,20 +312,24 @@ async def test_parallel_execution_continue_on_error():
 @pytest.mark.asyncio
 async def test_parallel_execution_fail_fast():
     """Test FAIL_FAST error handling mode stops on first error."""
+    from workflow_engine import StringValue
+
+    input_node = InputNode(id="input")
+    output_node = OutputNode.from_fields(id="output", fields={"value": StringValue})
+
+    constant = ConstantStringNode.from_value(id="constant", value="test")
+    error = ErrorNode.from_name(id="error", name="TestError")
+
     workflow = Workflow(
-        nodes=[
-            constant := ConstantStringNode.from_value(id="constant", value="test"),
-            error := ErrorNode.from_name(id="error", name="TestError"),
-        ],
+        input_node=input_node,
+        output_node=output_node,
+        inner_nodes=[constant, error],
         edges=[
             Edge.from_nodes(
                 source=constant, source_key="value", target=error, target_key="info"
             ),
-        ],
-        input_edges=[],
-        output_edges=[
-            OutputEdge.from_node(
-                source=constant, source_key="value", output_key="value"
+            Edge.from_nodes(
+                source=constant, source_key="value", target=output_node, target_key="value"
             ),
         ],
     )
@@ -330,30 +349,59 @@ async def test_parallel_execution_fail_fast():
 @pytest.mark.asyncio
 async def test_parallel_execution_with_node_expansion():
     """Test that node expansion works correctly with parallel execution."""
+    add_input_node = InputNode.from_fields(
+        id="input",
+        fields={"a": FloatValue, "b": FloatValue},
+    )
+    add_output_node = OutputNode.from_fields(
+        id="output",
+        fields={"c": FloatValue},
+    )
+    add = AddNode(id="add")
     add_workflow = Workflow(
-        nodes=[AddNode(id="add")],
-        edges=[],
-        input_edges=[
-            InputEdge(input_key="a", target_id="add", target_key="a"),
-            InputEdge(input_key="b", target_id="add", target_key="b"),
-        ],
-        output_edges=[
-            OutputEdge(source_id="add", source_key="sum", output_key="c"),
+        input_node=add_input_node,
+        output_node=add_output_node,
+        inner_nodes=[add],
+        edges=[
+            Edge.from_nodes(source=add_input_node, source_key="a", target=add, target_key="a"),
+            Edge.from_nodes(source=add_input_node, source_key="b", target=add, target_key="b"),
+            Edge.from_nodes(source=add, source_key="sum", target=add_output_node, target_key="c"),
         ],
     )
 
+    outer_input_node = InputNode(
+        id="input",
+        params=SchemaParams(
+            fields=StringMapValue[ValueSchemaValue](
+                {
+                    "sequence": ValueSchemaValue(
+                        SequenceValueSchema(type="array", items=add_workflow.input_schema)
+                    )
+                }
+            )
+        ),
+    )
+    outer_output_node = OutputNode(
+        id="output",
+        params=SchemaParams(
+            fields=StringMapValue[ValueSchemaValue](
+                {
+                    "results": ValueSchemaValue(
+                        SequenceValueSchema(type="array", items=add_workflow.output_schema)
+                    )
+                }
+            )
+        ),
+    )
+    foreach = ForEachNode.from_workflow(id="foreach", workflow=add_workflow)
+
     workflow = Workflow(
-        nodes=[
-            ForEachNode.from_workflow(id="foreach", workflow=add_workflow),
-        ],
-        edges=[],
-        input_edges=[
-            InputEdge(input_key="sequence", target_id="foreach", target_key="sequence"),
-        ],
-        output_edges=[
-            OutputEdge(
-                source_id="foreach", source_key="sequence", output_key="results"
-            ),
+        input_node=outer_input_node,
+        output_node=outer_output_node,
+        inner_nodes=[foreach],
+        edges=[
+            Edge.from_nodes(source=outer_input_node, source_key="sequence", target=foreach, target_key="sequence"),
+            Edge.from_nodes(source=foreach, source_key="sequence", target=outer_output_node, target_key="results"),
         ],
     )
 
@@ -376,24 +424,31 @@ async def test_parallel_execution_with_node_expansion():
     )
 
     assert not errors.any(), errors
-    expected = workflow.output_type.model_validate(
-        {"results": [{"c": 3.0}, {"c": 7.0}]}
-    ).to_dict()
-    assert output == expected
+    # Compare values directly
+    results = output["results"]
+    assert len(results) == 2
+    assert results[0].root.c == FloatValue(3.0)
+    assert results[1].root.c == FloatValue(7.0)
 
 
 @pytest.mark.asyncio
 async def test_parallel_execution_max_concurrency():
     """Test that max_concurrency limits parallel execution."""
     # Create 5 slow nodes that each take 50ms
-    nodes = [SlowNode.from_delay(id=f"node_{i}", delay_ms=50) for i in range(5)]
+    slow_nodes = [SlowNode.from_delay(id=f"node_{i}", delay_ms=50) for i in range(5)]
+
+    input_node = InputNode(id="input")
+    output_node = OutputNode.from_fields(
+        id="output",
+        fields={f"out_{i}": IntegerValue for i in range(5)},
+    )
 
     workflow = Workflow(
-        nodes=nodes,
-        edges=[],
-        input_edges=[],
-        output_edges=[
-            OutputEdge(source_id=f"node_{i}", source_key="value", output_key=f"out_{i}")
+        input_node=input_node,
+        output_node=output_node,
+        inner_nodes=slow_nodes,
+        edges=[
+            Edge.from_nodes(source=slow_nodes[i], source_key="value", target=output_node, target_key=f"out_{i}")
             for i in range(5)
         ],
     )
@@ -420,11 +475,14 @@ async def test_parallel_execution_max_concurrency():
 @pytest.mark.asyncio
 async def test_parallel_execution_empty_workflow():
     """Test that parallel execution handles empty workflows."""
+    input_node = InputNode(id="input")
+    output_node = OutputNode(id="output")
+
     workflow = Workflow(
-        nodes=[],
+        input_node=input_node,
+        output_node=output_node,
+        inner_nodes=[],
         edges=[],
-        input_edges=[],
-        output_edges=[],
     )
 
     context = InMemoryContext()
@@ -443,14 +501,17 @@ async def test_parallel_execution_empty_workflow():
 @pytest.mark.asyncio
 async def test_parallel_execution_single_node():
     """Test that parallel execution works with a single node."""
+    input_node = InputNode(id="input")
+    output_node = OutputNode.from_fields(id="output", fields={"result": IntegerValue})
+
+    a = ConstantIntegerNode.from_value(id="a", value=42)
+
     workflow = Workflow(
-        nodes=[
-            a := ConstantIntegerNode.from_value(id="a", value=42),
-        ],
-        edges=[],
-        input_edges=[],
-        output_edges=[
-            OutputEdge.from_node(source=a, source_key="value", output_key="result"),
+        input_node=input_node,
+        output_node=output_node,
+        inner_nodes=[a],
+        edges=[
+            Edge.from_nodes(source=a, source_key="value", target=output_node, target_key="result"),
         ],
     )
 
@@ -470,13 +531,18 @@ async def test_parallel_execution_single_node():
 @pytest.mark.asyncio
 async def test_parallel_execution_matches_sequential_output():
     """Test that parallel execution produces the same output as sequential."""
+    input_node = InputNode.from_fields(id="input", fields={"c": IntegerValue})
+    output_node = OutputNode.from_fields(id="output", fields={"sum": IntegerValue})
+
+    a = ConstantIntegerNode.from_value(id="a", value=42)
+    b = ConstantIntegerNode.from_value(id="b", value=2025)
+    a_plus_b = AddNode(id="a+b")
+    a_plus_b_plus_c = AddNode(id="a+b+c")
+
     workflow = Workflow(
-        nodes=[
-            a := ConstantIntegerNode.from_value(id="a", value=42),
-            b := ConstantIntegerNode.from_value(id="b", value=2025),
-            a_plus_b := AddNode(id="a+b"),
-            a_plus_b_plus_c := AddNode(id="a+b+c"),
-        ],
+        input_node=input_node,
+        output_node=output_node,
+        inner_nodes=[a, b, a_plus_b, a_plus_b_plus_c],
         edges=[
             Edge.from_nodes(
                 source=a, source_key="value", target=a_plus_b, target_key="a"
@@ -490,13 +556,11 @@ async def test_parallel_execution_matches_sequential_output():
                 target=a_plus_b_plus_c,
                 target_key="a",
             ),
-        ],
-        input_edges=[
-            InputEdge.from_node(input_key="c", target=a_plus_b_plus_c, target_key="b"),
-        ],
-        output_edges=[
-            OutputEdge.from_node(
-                source=a_plus_b_plus_c, source_key="sum", output_key="sum"
+            Edge.from_nodes(
+                source=input_node, source_key="c", target=a_plus_b_plus_c, target_key="b"
+            ),
+            Edge.from_nodes(
+                source=a_plus_b_plus_c, source_key="sum", target=output_node, target_key="sum"
             ),
         ],
     )
@@ -539,22 +603,25 @@ async def test_parallel_execution_eager_dispatch():
 
     With batch dispatch: A+B batch completes at 200ms, then C runs, finishes at 250ms.
     """
+    input_node = InputNode(id="input")
+    output_node = OutputNode.from_fields(
+        id="output",
+        fields={"a": IntegerValue, "b": IntegerValue, "c": IntegerValue},
+    )
+
+    a = SlowNode.from_delay(id="a", delay_ms=50)
+    b = SlowNode.from_delay(id="b", delay_ms=200)  # Not referenced, only used by id
+    c = SlowPassthroughNode.from_delay(id="c", delay_ms=50)
+
     workflow = Workflow(
-        nodes=[
-            a := SlowNode.from_delay(id="a", delay_ms=50),
-            SlowNode.from_delay(
-                id="b", delay_ms=200
-            ),  # Not referenced, only used by id
-            c := SlowPassthroughNode.from_delay(id="c", delay_ms=50),
-        ],
+        input_node=input_node,
+        output_node=output_node,
+        inner_nodes=[a, b, c],
         edges=[
             Edge.from_nodes(source=a, source_key="value", target=c, target_key="value"),
-        ],
-        input_edges=[],
-        output_edges=[
-            OutputEdge(source_id="a", source_key="value", output_key="a"),
-            OutputEdge(source_id="b", source_key="value", output_key="b"),
-            OutputEdge(source_id="c", source_key="value", output_key="c"),
+            Edge.from_nodes(source=a, source_key="value", target=output_node, target_key="a"),
+            Edge.from_nodes(source=b, source_key="value", target=output_node, target_key="b"),
+            Edge.from_nodes(source=c, source_key="value", target=output_node, target_key="c"),
         ],
     )
 

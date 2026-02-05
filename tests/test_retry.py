@@ -12,13 +12,13 @@ from workflow_engine import (
     Data,
     Edge,
     Node,
-    OutputEdge,
     Params,
     ShouldRetry,
     StringValue,
     Workflow,
 )
 from workflow_engine.core import NodeTypeInfo
+from workflow_engine.core.io import InputNode, OutputNode
 from workflow_engine.contexts import InMemoryContext
 from workflow_engine.execution import TopologicalExecutionAlgorithm
 from workflow_engine.execution.retry import NodeRetryState, RetryTracker
@@ -282,13 +282,16 @@ class TestRetryIntegration:
         """Test that a node succeeds after retrying within the limit."""
         from workflow_engine.nodes import ConstantStringNode
 
+        input_node = InputNode(id="input")
+        output_node = OutputNode.from_fields(id="output", fields={"result": StringValue})
+
+        constant = ConstantStringNode.from_value(id="constant", value="input")
+        retryable = RetryableNode.from_fail_count(id="retryable", fail_count=2)
+
         workflow = Workflow(
-            nodes=[
-                constant := ConstantStringNode.from_value(id="constant", value="input"),
-                retryable := RetryableNode.from_fail_count(
-                    id="retryable", fail_count=2
-                ),
-            ],
+            input_node=input_node,
+            output_node=output_node,
+            inner_nodes=[constant, retryable],
             edges=[
                 Edge.from_nodes(
                     source=constant,
@@ -296,13 +299,11 @@ class TestRetryIntegration:
                     target=retryable,
                     target_key="value",
                 ),
-            ],
-            input_edges=[],
-            output_edges=[
-                OutputEdge.from_node(
+                Edge.from_nodes(
                     source=retryable,
                     source_key="result",
-                    output_key="result",
+                    target=output_node,
+                    target_key="result",
                 ),
             ],
         )
@@ -325,13 +326,16 @@ class TestRetryIntegration:
         """Test that a node fails after exhausting retries."""
         from workflow_engine.nodes import ConstantStringNode
 
+        input_node = InputNode(id="input")
+        output_node = OutputNode.from_fields(id="output", fields={"result": StringValue})
+
+        constant = ConstantStringNode.from_value(id="constant", value="input")
+        retryable = RetryableNode.from_fail_count(id="retryable", fail_count=5)
+
         workflow = Workflow(
-            nodes=[
-                constant := ConstantStringNode.from_value(id="constant", value="input"),
-                retryable := RetryableNode.from_fail_count(
-                    id="retryable", fail_count=5
-                ),
-            ],
+            input_node=input_node,
+            output_node=output_node,
+            inner_nodes=[constant, retryable],
             edges=[
                 Edge.from_nodes(
                     source=constant,
@@ -339,13 +343,11 @@ class TestRetryIntegration:
                     target=retryable,
                     target_key="value",
                 ),
-            ],
-            input_edges=[],
-            output_edges=[
-                OutputEdge.from_node(
+                Edge.from_nodes(
                     source=retryable,
                     source_key="result",
-                    output_key="result",
+                    target=output_node,
+                    target_key="result",
                 ),
             ],
         )
@@ -369,13 +371,16 @@ class TestRetryIntegration:
         """Test that the on_node_retry hook is called."""
         from workflow_engine.nodes import ConstantStringNode
 
+        input_node = InputNode(id="input")
+        output_node = OutputNode.from_fields(id="output", fields={"result": StringValue})
+
+        constant = ConstantStringNode.from_value(id="constant", value="input")
+        retryable = RetryableNode.from_fail_count(id="retryable", fail_count=2)
+
         workflow = Workflow(
-            nodes=[
-                constant := ConstantStringNode.from_value(id="constant", value="input"),
-                retryable := RetryableNode.from_fail_count(
-                    id="retryable", fail_count=2
-                ),
-            ],
+            input_node=input_node,
+            output_node=output_node,
+            inner_nodes=[constant, retryable],
             edges=[
                 Edge.from_nodes(
                     source=constant,
@@ -383,13 +388,11 @@ class TestRetryIntegration:
                     target=retryable,
                     target_key="value",
                 ),
-            ],
-            input_edges=[],
-            output_edges=[
-                OutputEdge.from_node(
+                Edge.from_nodes(
                     source=retryable,
                     source_key="result",
-                    output_key="result",
+                    target=output_node,
+                    target_key="result",
                 ),
             ],
         )
@@ -424,11 +427,16 @@ class TestRetryIntegration:
         """Test that NodeTypeInfo.max_retries overrides algorithm default."""
         from workflow_engine.nodes import ConstantStringNode
 
+        input_node = InputNode(id="input")
+        output_node = OutputNode.from_fields(id="output", fields={"result": StringValue})
+
+        constant = ConstantStringNode.from_value(id="constant", value="input")
+        custom = CustomRetryNode.from_fail_count(id="custom", fail_count=4)
+
         workflow = Workflow(
-            nodes=[
-                constant := ConstantStringNode.from_value(id="constant", value="input"),
-                custom := CustomRetryNode.from_fail_count(id="custom", fail_count=4),
-            ],
+            input_node=input_node,
+            output_node=output_node,
+            inner_nodes=[constant, custom],
             edges=[
                 Edge.from_nodes(
                     source=constant,
@@ -436,13 +444,11 @@ class TestRetryIntegration:
                     target=custom,
                     target_key="value",
                 ),
-            ],
-            input_edges=[],
-            output_edges=[
-                OutputEdge.from_node(
+                Edge.from_nodes(
                     source=custom,
                     source_key="result",
-                    output_key="result",
+                    target=output_node,
+                    target_key="result",
                 ),
             ],
         )
@@ -468,13 +474,16 @@ class TestRetryIntegration:
         from workflow_engine.nodes import ConstantStringNode
         from workflow_engine.execution import RateLimitConfig, RateLimitRegistry
 
+        input_node = InputNode(id="input")
+        output_node = OutputNode.from_fields(id="output", fields={"result": StringValue})
+
+        constant = ConstantStringNode.from_value(id="constant", value="input")
+        retryable = RetryableNode.from_fail_count(id="retryable", fail_count=1)
+
         workflow = Workflow(
-            nodes=[
-                constant := ConstantStringNode.from_value(id="constant", value="input"),
-                retryable := RetryableNode.from_fail_count(
-                    id="retryable", fail_count=1
-                ),
-            ],
+            input_node=input_node,
+            output_node=output_node,
+            inner_nodes=[constant, retryable],
             edges=[
                 Edge.from_nodes(
                     source=constant,
@@ -482,13 +491,11 @@ class TestRetryIntegration:
                     target=retryable,
                     target_key="value",
                 ),
-            ],
-            input_edges=[],
-            output_edges=[
-                OutputEdge.from_node(
+                Edge.from_nodes(
                     source=retryable,
                     source_key="result",
-                    output_key="result",
+                    target=output_node,
+                    target_key="result",
                 ),
             ],
         )
@@ -528,12 +535,17 @@ class TestRetryIntegration:
         # Reset counts
         RetryableNode2._attempt_counts = {}
 
+        input_node = InputNode(id="input")
+        output_node = OutputNode.from_fields(id="output", fields={"final_result": StringValue})
+
+        constant = ConstantStringNode.from_value(id="constant", value="start")
+        node1 = RetryableNode.from_fail_count(id="node1", fail_count=1)
+        node2 = RetryableNode2.from_fail_count(id="node2", fail_count=1)
+
         workflow = Workflow(
-            nodes=[
-                constant := ConstantStringNode.from_value(id="constant", value="start"),
-                node1 := RetryableNode.from_fail_count(id="node1", fail_count=1),
-                node2 := RetryableNode2.from_fail_count(id="node2", fail_count=1),
-            ],
+            input_node=input_node,
+            output_node=output_node,
+            inner_nodes=[constant, node1, node2],
             edges=[
                 Edge.from_nodes(
                     source=constant,
@@ -547,13 +559,11 @@ class TestRetryIntegration:
                     target=node2,
                     target_key="value",
                 ),
-            ],
-            input_edges=[],
-            output_edges=[
-                OutputEdge.from_node(
+                Edge.from_nodes(
                     source=node2,
                     source_key="result",
-                    output_key="final_result",
+                    target=output_node,
+                    target_key="final_result",
                 ),
             ],
         )
