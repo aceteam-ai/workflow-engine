@@ -8,7 +8,7 @@ from typing import Any, ClassVar, Literal
 
 import pytest
 
-from workflow_engine import StringValue
+from workflow_engine import NodeRegistry, StringValue, WorkflowEngine
 from workflow_engine.core import Empty, Node, NodeTypeInfo, Params
 from workflow_engine.core.migration import Migration, migration_registry
 from workflow_engine.core.values import Data
@@ -97,7 +97,9 @@ class TestNodeMigration:
 
         with warnings.catch_warnings(record=True) as w:
             warnings.simplefilter("always")
-            node = Node.model_validate(data)
+            # First deserialize as base Node, then load via registry to get typed node
+            untyped_node = Node.model_validate(data)
+            node = NodeRegistry.DEFAULT.load_node(untyped_node)
 
             # Should not warn
             assert len(w) == 0
@@ -121,7 +123,9 @@ class TestNodeMigration:
 
         with warnings.catch_warnings(record=True) as w:
             warnings.simplefilter("always")
-            node = Node.model_validate(data)
+            # First deserialize as base Node, then load via registry to get typed node
+            untyped_node = Node.model_validate(data)
+            node = NodeRegistry.DEFAULT.load_node(untyped_node)
 
             # Should not warn since migration was successful
             assert len(w) == 0
@@ -144,7 +148,9 @@ class TestNodeMigration:
 
         with warnings.catch_warnings(record=True) as w:
             warnings.simplefilter("always")
-            node = Node.model_validate(data)
+            # First deserialize as base Node, then load via registry to get typed node
+            untyped_node = Node.model_validate(data)
+            node = NodeRegistry.DEFAULT.load_node(untyped_node)
 
             # Should have at least one warning about old version
             version_warnings = [
@@ -197,7 +203,10 @@ class TestNodeMigration:
             ],
         }
 
+        # Deserialize workflow, then load via engine to get typed nodes
         workflow = Workflow.model_validate(workflow_data)
+        engine = WorkflowEngine()
+        workflow = engine.load(workflow)
 
         # Node should be migrated (inner_nodes[0] is the MigratableNode)
         node = workflow.inner_nodes[0]
@@ -250,7 +259,9 @@ class TestNodeMigration:
 
         with warnings.catch_warnings(record=True) as w:
             warnings.simplefilter("always")
-            node = Node.model_validate(data)
+            # First deserialize as base Node, then load via registry to get typed node
+            untyped_node = Node.model_validate(data)
+            node = NodeRegistry.DEFAULT.load_node(untyped_node)
             assert len(w) == 0
 
         assert node.version == "2.0.0"
@@ -269,7 +280,9 @@ class TestNodeMigration:
             "position": {"x": 100, "y": 200},
         }
 
-        node = Node.model_validate(data)
+        # First deserialize as base Node, then load via registry to get typed node
+        untyped_node = Node.model_validate(data)
+        node = NodeRegistry.DEFAULT.load_node(untyped_node)
 
         # Extra field should be preserved
         dumped = node.model_dump()
@@ -279,12 +292,12 @@ class TestNodeMigration:
     def test_direct_class_validation_requires_current_schema(self):
         """Test that calling concrete class directly requires current version schema.
 
-        Migration only works when deserializing via Node.model_validate(), not
+        Migration only works when loading via NodeRegistry.load_node(), not
         when calling the concrete class directly. This is by design - direct
-        class validation bypasses the dispatch mechanism where migration occurs.
+        class validation bypasses the registry mechanism where migration occurs.
 
-        Users should use Node.model_validate() for loading workflows with
-        potentially old node versions.
+        Users should use NodeRegistry.load_node() for loading nodes with
+        potentially old versions.
         """
         migration_registry.register(MigratableNodeMigration_1_0_0_to_2_0_0)
 
@@ -302,8 +315,9 @@ class TestNodeMigration:
         with pytest.raises(ValidationError):
             MigratableNode.model_validate(old_data)
 
-        # But Node.model_validate works with migration
-        node = Node.model_validate(old_data)
+        # But NodeRegistry.load_node works with migration
+        untyped_node = Node.model_validate(old_data)
+        node = NodeRegistry.DEFAULT.load_node(untyped_node)
         assert node.version == "2.0.0"
         assert node.params.value.root == "hello"
 
@@ -331,7 +345,9 @@ class TestMigrationEdgeCases:
             "params": {"value": "hello"},
         }
 
-        node = Node.model_validate(data)
+        # First deserialize as base Node, then load via registry to get typed node
+        untyped_node = Node.model_validate(data)
+        node = NodeRegistry.DEFAULT.load_node(untyped_node)
 
         # Should resolve to current version
         assert node.version == "2.0.0"
@@ -348,7 +364,10 @@ class TestMigrationEdgeCases:
             "params": {"value": "hello"},
         }
 
+        # First deserialize as base Node, then try to load via registry
+        untyped_node = Node.model_validate(data)
+
         with pytest.raises(ValidationError) as exc_info:
-            Node.model_validate(data)
+            NodeRegistry.DEFAULT.load_node(untyped_node)
 
         assert "newer than the latest version" in str(exc_info.value)

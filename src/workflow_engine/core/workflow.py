@@ -114,24 +114,6 @@ class Workflow(ImmutableBaseModel):
         return graph
 
     @model_validator(mode="after")
-    def _validate_nodes(self):
-        # make sure that for each node, all input edges are present
-        for node in self.nodes:
-            for key, (_, required) in node.input_fields.items():
-                if required and key not in self.edges_by_target[node.id]:
-                    raise ValueError(f"Node {node.id} has no required input edge {key}")
-        return self
-
-    @model_validator(mode="after")
-    def _validate_edges(self):
-        for edge in self.edges:
-            edge.validate_types(
-                source=self.nodes_by_id[edge.source_id],
-                target=self.nodes_by_id[edge.target_id],
-            )
-        return self
-
-    @model_validator(mode="after")
     def _validate_dag(self):
         if not nx.is_directed_acyclic_graph(self.nx_graph):
             cycles = list(nx.simple_cycles(self.nx_graph))
