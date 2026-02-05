@@ -88,17 +88,28 @@ Nodes auto-register via `__init_subclass__` when they define a `type` field with
 
 Node serialization uses Pydantic's discriminated union pattern. Each node class has a `type: Literal["NodeName"]` field that acts as the discriminator, enabling efficient deserialization without trying every possible node type.
 
+## Workflow Structure
+
+A `Workflow` consists of:
+- **input_node**: An `InputNode` that defines the workflow's input schema via `SchemaParams`
+- **inner_nodes**: The processing nodes that perform computations
+- **output_node**: An `OutputNode` that defines the workflow's output schema via `SchemaParams`
+- **edges**: Connections between any nodes (including input/output nodes)
+
+All edges use a unified format with `source_id`, `source_key`, `target_id`, `target_key`. There are no separate "input_edges" or "output_edges" - edges from the input_node and to the output_node use the same structure as edges between inner nodes.
+
 ## Execution Flow
 
 1. **Load**: Parse workflow JSON into a `Workflow` object (validates structure, detects cycles, checks types)
 2. **Prepare**: Create a `Context` and `ExecutionAlgorithm`
 3. **Execute**: The algorithm processes nodes according to its strategy:
-   - Resolves input edges (collects outputs from upstream nodes)
+   - Starts with the input_node (passes through workflow input)
+   - Resolves edges (collects outputs from upstream nodes)
    - Casts values to match expected input types
    - Calls `node.run(context, input)`
    - Stores outputs for downstream nodes
    - Handles node expansion (composite nodes like `ForEach` replace themselves with sub-workflows)
-4. **Collect**: Resolves output edges to build the final result
+4. **Collect**: Resolves edges to the output_node to build the final result
 5. **Return**: Returns `(WorkflowErrors, DataMapping)` tuple
 
 ## Error Propagation

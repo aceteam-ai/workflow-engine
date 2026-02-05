@@ -81,17 +81,24 @@ If node migrations rename/remove fields, edges may become invalid:
 ```python
 # Before migration: Node v1.0.0 has output field "result"
 workflow_data = {
-    "nodes": [{
+    "input_node": {"type": "Input", "version": "1.0.0", "id": "input", "params": {"fields": {}}},
+    "inner_nodes": [{
         "type": "MyNode",
         "id": "node1",
         "version": "1.0.0",
         "params": {...}
     }],
-    "edges": [],
-    "output_edges": [{
+    "output_node": {
+        "type": "Output",
+        "version": "1.0.0",
+        "id": "output",
+        "params": {"fields": {"final_result": {"type": "string"}}}
+    },
+    "edges": [{
         "source_id": "node1",
         "source_key": "result",  # ← This field gets renamed to "output" in v2.0.0
-        "output_key": "final_result"
+        "target_id": "output",
+        "target_key": "final_result"
     }]
 }
 
@@ -100,8 +107,8 @@ workflow = load_workflow_with_migration(workflow_data)
 
 # Result:
 # - Node migrated to v2.0.0
-# - Output edge removed (field "result" no longer exists)
-# - Warning logged: "Removing output edge 'final_result' from node1.result: field does not exist"
+# - Edge removed (field "result" no longer exists)
+# - Warning logged: "Removing invalid edge from node1.result to output.final_result"
 ```
 
 ## Edge Filtering Details
@@ -132,13 +139,19 @@ Edge filtering **only** happens when migrations occur. If all nodes are already 
 ```python
 # All nodes at v2.0.0 - no migrations needed
 workflow_data = {
-    "nodes": [{
+    "input_node": {"type": "Input", "version": "1.0.0", "id": "input", "params": {"fields": {}}},
+    "inner_nodes": [{
         "type": "MyNode",
+        "id": "node1",
         "version": "2.0.0",  # Current version
         "params": {...}
     }],
-    "output_edges": [{
-        "source_key": "invalid_field"  # ← This will FAIL validation
+    "output_node": {"type": "Output", "version": "1.0.0", "id": "output", "params": {"fields": {}}},
+    "edges": [{
+        "source_id": "node1",
+        "source_key": "invalid_field",  # ← This will FAIL validation
+        "target_id": "output",
+        "target_key": "result"
     }]
 }
 
@@ -200,22 +213,21 @@ workflow = Workflow.model_validate(workflow_data)
 When creating workflows in code, you don't need migration support:
 
 ```python
-from workflow_engine.core import Workflow
+from workflow_engine import StringValue, Workflow
+from workflow_engine.core.io import InputNode, OutputNode
 from workflow_engine.nodes import ConstantStringNode
 
 # Create nodes programmatically
-node = ConstantStringNode(
-    id="greeting",
-    params={"value": StringValue("Hello")}
-    # version automatically set to current
-)
+node = ConstantStringNode.from_value(id="greeting", value="Hello")
 
-# Create workflow directly
+# Create workflow directly with InputNode/OutputNode
 workflow = Workflow(
-    nodes=[node],
-    edges=[],
-    input_edges=[],
-    output_edges=[]
+    input_node=InputNode(id="input"),
+    inner_nodes=[node],
+    output_node=OutputNode.from_fields(id="output", fields={"result": StringValue}),
+    edges=[
+        Edge(source_id="greeting", source_key="value", target_id="output", target_key="result")
+    ]
 )
 ```
 

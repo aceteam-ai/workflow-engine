@@ -52,7 +52,7 @@ def workflow():
 
 
 @pytest.mark.unit
-@pytest.mark.skip(reason="Serialization test needs update after InputNode/OutputNode migration")
+@pytest.mark.skip(reason="Workflow serialization from from_fields() needs schema serialization fix")
 def test_workflow_serialization(workflow: Workflow):
     """Test that the append workflow can be serialized and deserialized correctly."""
     # Test round-trip serialization/deserialization

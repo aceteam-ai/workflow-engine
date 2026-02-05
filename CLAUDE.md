@@ -35,9 +35,11 @@ uv run pyright
 
 ### Core Concepts
 
-- **Workflow**: A DAG of nodes with typed data flow between them
+- **Workflow**: A DAG of nodes with typed data flow between them. Contains an `input_node`, `inner_nodes`, `output_node`, and `edges`.
+- **InputNode**: Special node that defines the workflow's input schema. Created with `InputNode.from_fields()`.
+- **OutputNode**: Special node that defines the workflow's output schema. Created with `OutputNode.from_fields()`.
 - **Node**: A unit of computation with typed inputs, outputs, and parameters
-- **Edge**: Connects a node output field to another node's input field with type validation
+- **Edge**: Connects a node output field to another node's input field with type validation. All edges (including to/from input/output nodes) use the same format.
 - **Value**: Type-safe immutable wrapper around data (IntegerValue, StringValue, FileValue, etc.)
 - **Data**: Immutable Pydantic model containing only Value fields
 - **Context**: Execution environment providing file I/O and lifecycle hooks

@@ -158,7 +158,6 @@ class TestNodeMigration:
         assert node.version == "1.5.0"  # Version unchanged (no migration)
 
     @pytest.mark.unit
-    @pytest.mark.skip(reason="Needs update after InputNode/OutputNode migration - old JSON format")
     def test_migration_via_workflow_deserialization(self):
         """Test that migration works when loading workflow from JSON."""
         from workflow_engine import Workflow
@@ -167,7 +166,13 @@ class TestNodeMigration:
         migration_registry.register(MigratableNodeMigration_1_0_0_to_2_0_0)
 
         workflow_data = {
-            "nodes": [
+            "input_node": {
+                "type": "Input",
+                "version": "1.0.0",
+                "id": "input",
+                "params": {"fields": {}},
+            },
+            "inner_nodes": [
                 {
                     "type": "MigratableNode",
                     "id": "old_node",
@@ -175,21 +180,30 @@ class TestNodeMigration:
                     "params": {"text": "old_value"},
                 }
             ],
-            "edges": [],
-            "input_edges": [],
-            "output_edges": [
+            "output_node": {
+                "type": "Output",
+                "version": "1.0.0",
+                "id": "output",
+                "params": {
+                    "fields": {
+                        "output": {"type": "string"}
+                    }
+                },
+            },
+            "edges": [
                 {
                     "source_id": "old_node",
                     "source_key": "result",
-                    "output_key": "output",
+                    "target_id": "output",
+                    "target_key": "output",
                 }
             ],
         }
 
         workflow = Workflow.model_validate(workflow_data)
 
-        # Node should be migrated
-        node = workflow.nodes[0]
+        # Node should be migrated (inner_nodes[0] is the MigratableNode)
+        node = workflow.inner_nodes[0]
         assert isinstance(node, MigratableNode)
         assert node.version == "2.0.0"
         assert node.params.value.root == "old_value"
