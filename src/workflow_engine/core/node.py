@@ -583,7 +583,13 @@ class NodeRegistry(ABC):
     def builder(*, lazy: bool = False):
         return LazyNodeRegistry() if lazy else EagerNodeRegistryBuilder()
 
-    def extend(self, lazy: bool = False) -> NodeRegistryBuilder:
+    @overload
+    def extend(self, *, lazy: Literal[True]) -> LazyNodeRegistry: ...
+
+    @overload
+    def extend(self, *, lazy: Literal[False] = False) -> EagerNodeRegistryBuilder: ...
+
+    def extend(self, *, lazy: bool = False):
         """
         Extend the registry with a new builder.
         """

@@ -312,19 +312,6 @@ class ValueRegistry(ABC):
         """Return all registered value classes as (name, class) pairs."""
         pass
 
-    @overload
-    def extend(self, *, lazy: Literal[True]) -> LazyValueRegistry: ...
-
-    @overload
-    def extend(self, *, lazy: Literal[False] = False) -> EagerValueRegistryBuilder: ...
-
-    def extend(self, *, lazy: bool = False):
-        """Create a new builder pre-populated with all value classes from this registry."""
-        builder = ValueRegistry.builder(lazy=lazy)
-        for _name, value_cls in self.all_value_classes():
-            builder.register_value_class(value_cls)
-        return builder
-
     def load_value(self, schema: ValueSchema) -> ValueType | None:
         """
         Load a value type from a schema by looking up the title in the registry.
@@ -354,6 +341,19 @@ class ValueRegistry(ABC):
     @staticmethod
     def builder(*, lazy: bool = False):
         return LazyValueRegistry() if lazy else EagerValueRegistryBuilder()
+
+    @overload
+    def extend(self, *, lazy: Literal[True]) -> LazyValueRegistry: ...
+
+    @overload
+    def extend(self, *, lazy: Literal[False] = False) -> EagerValueRegistryBuilder: ...
+
+    def extend(self, *, lazy: bool = False):
+        """Create a new builder pre-populated with all value classes from this registry."""
+        builder = ValueRegistry.builder(lazy=lazy)
+        for _name, value_cls in self.all_value_classes():
+            builder.register_value_class(value_cls)
+        return builder
 
 
 class ValueRegistryBuilder(ABC):
@@ -485,9 +485,7 @@ class LazyValueRegistry(ValueRegistry, ValueRegistryBuilder):
                     )
             else:
                 _value_classes[name] = value_cls
-                logger.debug(
-                    "Registering value type %s", name
-                )
+                logger.debug("Registering value type %s", name)
 
         del self._registrations  # Memory optimization
         self._value_classes = _value_classes

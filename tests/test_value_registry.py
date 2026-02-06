@@ -43,9 +43,7 @@ class TestImmutableValueRegistry:
 
     def test_get_value_class_not_found(self):
         """Test that ValueError is raised for missing value types."""
-        registry = ImmutableValueRegistry(
-            value_classes={"SampleValueA": SampleValueA}
-        )
+        registry = ImmutableValueRegistry(value_classes={"SampleValueA": SampleValueA})
 
         with pytest.raises(
             ValueError, match='Value type "NonExistent" is not registered'
@@ -64,9 +62,7 @@ class TestImmutableValueRegistry:
 
     def test_getitem_syntax(self):
         """Test get_value_class syntax for retrieving value types."""
-        registry = ImmutableValueRegistry(
-            value_classes={"SampleValueA": SampleValueA}
-        )
+        registry = ImmutableValueRegistry(value_classes={"SampleValueA": SampleValueA})
 
         assert registry.get_value_class("SampleValueA") is SampleValueA
 
@@ -380,9 +376,7 @@ class TestValueRegistryExtend:
 
     def test_extend_eager(self):
         """Test extending a registry into an eager builder."""
-        registry = ImmutableValueRegistry(
-            value_classes={"SampleValueA": SampleValueA}
-        )
+        registry = ImmutableValueRegistry(value_classes={"SampleValueA": SampleValueA})
 
         builder = registry.extend(lazy=False)
         new_registry = builder.build()
@@ -391,9 +385,7 @@ class TestValueRegistryExtend:
 
     def test_extend_lazy(self):
         """Test extending a registry into a lazy builder."""
-        registry = ImmutableValueRegistry(
-            value_classes={"SampleValueA": SampleValueA}
-        )
+        registry = ImmutableValueRegistry(value_classes={"SampleValueA": SampleValueA})
 
         lazy_registry = registry.extend(lazy=True)
         assert lazy_registry.get_value_class("SampleValueA") is SampleValueA
