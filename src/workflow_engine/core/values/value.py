@@ -4,7 +4,7 @@ from __future__ import annotations
 import inspect
 import re
 from abc import ABC, abstractmethod
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from functools import cached_property
 from hashlib import md5
 from logging import getLogger
@@ -153,7 +153,7 @@ class Value(ImmutableRootModel[T], Generic[T]):
             assert cls.__base__ is not None
             cls = cls.__base__
         if get_origin(cls) is None:
-            ValueRegistry.DEFAULT.register_value_class(cls.__name__, cls)
+            ValueRegistry.DEFAULT.register_value_class(cls)
 
     @classmethod
     def _get_casters(cls) -> dict[str, GenericCaster]:
@@ -307,6 +307,24 @@ class ValueRegistry(ABC):
         """Check if a value type name is registered."""
         pass
 
+    @abstractmethod
+    def all_value_classes(self) -> Iterable[tuple[str, ValueType]]:
+        """Return all registered value classes as (name, class) pairs."""
+        pass
+
+    @overload
+    def extend(self, *, lazy: Literal[True]) -> LazyValueRegistry: ...
+
+    @overload
+    def extend(self, *, lazy: Literal[False] = False) -> EagerValueRegistryBuilder: ...
+
+    def extend(self, *, lazy: bool = False):
+        """Create a new builder pre-populated with all value classes from this registry."""
+        builder = ValueRegistry.builder(lazy=lazy)
+        for _name, value_cls in self.all_value_classes():
+            builder.register_value_class(value_cls)
+        return builder
+
     def load_value(self, schema: ValueSchema) -> ValueType | None:
         """
         Load a value type from a schema by looking up the title in the registry.
@@ -344,8 +362,8 @@ class ValueRegistryBuilder(ABC):
     """
 
     @abstractmethod
-    def register_value_class(self, name: str, value_cls: ValueType) -> Self:
-        """Register a value type by name."""
+    def register_value_class(self, value_cls: ValueType) -> Self:
+        """Register a value type using its class name."""
         pass
 
     @abstractmethod
@@ -373,6 +391,10 @@ class ImmutableValueRegistry(ValueRegistry):
             raise ValueError(f'Value type "{name}" is not registered')
         return self._value_classes[name]
 
+    @override
+    def all_value_classes(self) -> Iterable[tuple[str, ValueType]]:
+        return self._value_classes.items()
+
 
 class EagerValueRegistryBuilder(ValueRegistryBuilder):
     """
@@ -383,7 +405,8 @@ class EagerValueRegistryBuilder(ValueRegistryBuilder):
         self._value_classes: dict[str, ValueType] = {}
 
     @override
-    def register_value_class(self, name: str, value_cls: ValueType) -> Self:
+    def register_value_class(self, value_cls: ValueType) -> Self:
+        name = value_cls.__name__
         if name in self._value_classes:
             conflict = self._value_classes[name]
             if value_cls is not conflict:
@@ -392,7 +415,7 @@ class EagerValueRegistryBuilder(ValueRegistryBuilder):
                     f"registered to a different class ({conflict.__name__})"
                 )
         self._value_classes[name] = value_cls
-        logger.debug("Registering class %s as value type %s", value_cls.__name__, name)
+        logger.debug("Registering value type %s", name)
         return self
 
     @override
@@ -413,7 +436,7 @@ class LazyValueRegistry(ValueRegistry, ValueRegistryBuilder):
     """
 
     def __init__(self):
-        self._registrations: list[tuple[str, ValueType]] = []
+        self._registrations: list[ValueType] = []
         self._frozen: bool = False
 
         # initialized after freeze
@@ -422,20 +445,20 @@ class LazyValueRegistry(ValueRegistry, ValueRegistryBuilder):
     # REGISTRATION PHASE
 
     @override
-    def register_value_class(self, name: str, value_cls: ValueType) -> Self:
+    def register_value_class(self, value_cls: ValueType) -> Self:
         if self._frozen:
             # Allow re-registration of the same class (for testing/reloading)
+            name = value_cls.__name__
             if name in self._value_classes and self._value_classes[name] is value_cls:
                 logger.debug(
-                    "Value type %s already registered to class %s, skipping",
+                    "Value type %s already registered, skipping",
                     name,
-                    value_cls.__name__,
                 )
                 return self
             raise ValueError(
                 f"Value registry is frozen, cannot register new value type '{name}' (class {value_cls.__name__})"
             )
-        self._registrations.append((name, value_cls))
+        self._registrations.append(value_cls)
         return self
 
     @override
@@ -445,7 +468,8 @@ class LazyValueRegistry(ValueRegistry, ValueRegistryBuilder):
 
         self._frozen = True
         _value_classes = {}
-        for name, value_cls in self._registrations:
+        for value_cls in self._registrations:
+            name = value_cls.__name__
             if name in _value_classes:
                 conflict = _value_classes[name]
                 if value_cls is conflict:
@@ -462,7 +486,7 @@ class LazyValueRegistry(ValueRegistry, ValueRegistryBuilder):
             else:
                 _value_classes[name] = value_cls
                 logger.debug(
-                    "Registering class %s as value type %s", value_cls.__name__, name
+                    "Registering value type %s", name
                 )
 
         del self._registrations  # Memory optimization
@@ -483,6 +507,11 @@ class LazyValueRegistry(ValueRegistry, ValueRegistryBuilder):
         if name not in self._value_classes:
             raise ValueError(f'Value type "{name}" is not registered')
         return self._value_classes[name]
+
+    @override
+    def all_value_classes(self) -> Iterable[tuple[str, ValueType]]:
+        self.build()
+        return self._value_classes.items()
 
 
 ValueRegistry.DEFAULT = ValueRegistry.builder(lazy=True)

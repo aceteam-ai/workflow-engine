@@ -14,10 +14,11 @@ def main():
     # Build directed graph
     G = nx.DiGraph()
 
-    for source_name, source_cls in ValueRegistry.DEFAULT._value_classes.items():
+    all_classes = dict(ValueRegistry.DEFAULT.all_value_classes())
+    for source_name, source_cls in all_classes.items():
         G.add_node(source_name)
         for target_name in source_cls._get_casters().keys():
-            if target_name in ValueRegistry.DEFAULT._value_classes:
+            if target_name in all_classes:
                 G.add_edge(source_name, target_name)
 
     # Export to SVG via pydot
