@@ -151,6 +151,89 @@ def test_integer_schema_manual():
 
 
 @pytest.mark.unit
+def test_integer_schema_with_extra_fields():
+    """Schemas with JSON Schema extra fields (min, max, etc.) from Pydantic Field constraints."""
+    json_schema = {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 100,
+    }
+    schema = validate_value_schema(json_schema)
+    assert isinstance(schema, IntegerValueSchema)
+    U = schema.to_value_cls()
+    assert U == IntegerValue
+
+    # Extra fields are preserved on the schema instance
+    assert getattr(schema, "minimum", None) == 0
+    assert getattr(schema, "maximum", None) == 100
+
+    t1 = IntegerValue(50)
+    u1 = U.model_validate(t1)
+    assert u1 == t1
+
+
+@pytest.mark.unit
+def test_float_schema_with_extra_fields():
+    """Schemas with JSON Schema extra fields (minimum, maximum) from Pydantic Field."""
+    json_schema = {
+        "type": "number",
+        "minimum": 0.0,
+        "maximum": 1.0,
+    }
+    schema = validate_value_schema(json_schema)
+    assert isinstance(schema, FloatValueSchema)
+    U = schema.to_value_cls()
+    assert U == FloatValue
+
+    assert getattr(schema, "minimum", None) == 0.0
+    assert getattr(schema, "maximum", None) == 1.0
+
+    t1 = FloatValue(0.5)
+    u1 = U.model_validate(t1)
+    assert u1 == t1
+
+
+@pytest.mark.unit
+def test_string_schema_with_extra_fields():
+    """Schemas with JSON Schema extra fields (minLength, maxLength) from Pydantic Field."""
+    json_schema = {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 100,
+    }
+    schema = validate_value_schema(json_schema)
+    assert isinstance(schema, StringValueSchema)
+    U = schema.to_value_cls()
+    assert U == StringValue
+
+    assert getattr(schema, "minLength", None) == 1
+    assert getattr(schema, "maxLength", None) == 100
+
+
+@pytest.mark.unit
+def test_schema_from_pydantic_model_with_field_constraints():
+    """Validate schemas extracted from Pydantic models that use Field(ge=, le=)."""
+    from pydantic import BaseModel, Field
+
+    class ModelWithConstraints(BaseModel):
+        count: int = Field(ge=0, le=100)
+        score: float = Field(ge=0.0, le=1.0)
+
+    pydantic_schema = ModelWithConstraints.model_json_schema()
+    # Each property has type + minimum + maximum from Field(ge=, le=)
+    count_schema = pydantic_schema["properties"]["count"]
+    score_schema = pydantic_schema["properties"]["score"]
+
+    count_value_schema = validate_value_schema(count_schema)
+    assert isinstance(count_value_schema, IntegerValueSchema)
+    assert count_value_schema.to_value_cls() == IntegerValue
+
+    score_value_schema = validate_value_schema(score_schema)
+    assert isinstance(score_value_schema, FloatValueSchema)
+    assert score_value_schema.to_value_cls() == FloatValue
+
+
+@pytest.mark.unit
 def test_integer_schema_aliasing():
     T = IntegerValue
     json_schema = {
