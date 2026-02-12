@@ -400,8 +400,9 @@ async def test_parallel_execution_with_node_expansion():
     outer_input_node = InputNode.from_fields(
         sequence=SequenceValue[DataValue[add_workflow.input_type]],
     )
+    # add_workflow has single output (c: FloatValue), so ForEach outputs SequenceValue[FloatValue]
     outer_output_node = OutputNode.from_fields(
-        results=SequenceValue[DataValue[add_workflow.output_type]],
+        results=SequenceValue[FloatValue],
     )
     foreach = ForEachNode.from_workflow(id="foreach", workflow=add_workflow)
 
@@ -444,12 +445,12 @@ async def test_parallel_execution_with_node_expansion():
     )
 
     assert not errors.any(), errors
-    # Compare values directly
+    # Compare values directly (single output: each element is FloatValue)
     results = output["results"]
     assert isinstance(results, SequenceValue)
     assert len(results) == 2
-    assert results[0].root.c == FloatValue(3.0)
-    assert results[1].root.c == FloatValue(7.0)
+    assert results[0].root == 3.0
+    assert results[1].root == 7.0
 
 
 @pytest.mark.asyncio

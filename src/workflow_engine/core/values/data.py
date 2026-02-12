@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Any, ClassVar, Generic, TypeVar
 from pydantic import ConfigDict, create_model
 
 from ...utils.immutable import ImmutableBaseModel
+from ...utils.iter import only
 from .mapping import StringMapValue
 from .value import Caster, Value, ValueType, get_origin_and_args
 
@@ -44,6 +45,27 @@ class Data(ImmutableBaseModel):
         from .schema import validate_value_schema  # avoid circular import
 
         return validate_value_schema(cls.model_json_schema())
+
+    @classmethod
+    def field_annotations(cls) -> Mapping[str, type[Value]]:
+        """Iterate through the name and type annotation of each field."""
+        fields: Mapping[str, type[Value]] = {}
+        for field_name, field_info in cls.model_fields.items():
+            assert field_info.annotation is not None
+            assert issubclass(field_info.annotation, Value)
+            fields[field_name] = field_info.annotation
+        return fields
+
+    @classmethod
+    def only_field(cls) -> tuple[str, type[Value]]:
+        """
+        Get the name and type annotation of the only field. Will raise an error
+        if there is not exactly one field.
+        """
+        fields = cls.field_annotations()
+        if len(fields) != 1:
+            raise ValueError(f"Expected 1 field, got {len(fields)}")
+        return only(fields.items())
 
 
 type DataMapping = Mapping[str, Value]
