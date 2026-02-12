@@ -1,6 +1,6 @@
 # workflow_engine/core/values/model.py
 
-from typing import TYPE_CHECKING, Generic, Type, TypeVar
+from typing import TYPE_CHECKING, Generic, TypeVar
 
 from pydantic import BaseModel
 
@@ -25,8 +25,8 @@ TargetType = TypeVar("TargetType", bound=Value)
 
 @JSONValue.register_generic_cast_to(ModelValue)
 def cast_json_to_model(
-    source_type: Type[JSONValue],
-    target_type: Type[ModelValue],
+    source_type: type[JSONValue],
+    target_type: type[ModelValue],
 ) -> Caster[JSONValue, ModelValue] | None:
     _origin, args = get_origin_and_args(target_type)
     if not args:
@@ -46,8 +46,8 @@ def cast_json_to_model(
 
 @ModelValue.register_generic_cast_to(ModelValue)
 def cast_model_to_model(
-    source_type: Type[ModelValue],
-    target_type: Type[ModelValue],
+    source_type: type[ModelValue],
+    target_type: type[ModelValue],
 ) -> Caster[ModelValue, ModelValue] | None:
     _source_origin, source_args = get_origin_and_args(source_type)
     _target_origin, target_args = get_origin_and_args(target_type)
@@ -70,13 +70,13 @@ def cast_model_to_model(
     # Identity shortcut
     if source_model_cls is target_model_cls:
 
-        def _identity(value: ModelValue, context: "Context") -> ModelValue:
+        def _identity(value: ModelValue, context: Context) -> ModelValue:
             return target_type(value.root)
 
         return _identity
 
     # Cross-model cast: serialize then validate
-    def _cast(value: ModelValue, context: "Context") -> ModelValue:
+    def _cast(value: ModelValue, context: Context) -> ModelValue:
         dumped = source_model_cls.model_validate(value.root).model_dump()
         validated = target_model_cls.model_validate(dumped)
         return target_type(validated)
