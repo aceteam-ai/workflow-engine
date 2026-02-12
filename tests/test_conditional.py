@@ -1,15 +1,8 @@
 import pytest
 
-from workflow_engine import (
-    BooleanValue,
-    Edge,
-    IntegerValue,
-    StringMapValue,
-    ValueSchemaValue,
-    Workflow,
-)
+from workflow_engine import BooleanValue, Edge, IntegerValue, Workflow
 from workflow_engine.contexts import InMemoryContext
-from workflow_engine.core.io import InputNode, OutputNode, SchemaParams
+from workflow_engine.core.io import InputNode, OutputNode
 from workflow_engine.execution import TopologicalExecutionAlgorithm
 from workflow_engine.nodes import AddNode, ConstantIntegerNode, IfElseNode
 
@@ -17,21 +10,11 @@ from workflow_engine.nodes import AddNode, ConstantIntegerNode, IfElseNode
 @pytest.fixture
 def add_one_workflow() -> Workflow:
     """Create a workflow that adds one to a number."""
-    input_node = InputNode(
-        id="input",
-        params=SchemaParams(
-            fields=StringMapValue[ValueSchemaValue](
-                {"start": ValueSchemaValue(IntegerValue.to_value_schema())}
-            )
-        ),
+    input_node = InputNode.from_fields(
+        start=IntegerValue,
     )
-    output_node = OutputNode(
-        id="output",
-        params=SchemaParams(
-            fields=StringMapValue[ValueSchemaValue](
-                {"result": ValueSchemaValue(IntegerValue.to_value_schema())}
-            )
-        ),
+    output_node = OutputNode.from_fields(
+        result=IntegerValue,
     )
 
     one = ConstantIntegerNode.from_value(id="one", value=1)
@@ -67,21 +50,11 @@ def add_one_workflow() -> Workflow:
 @pytest.fixture
 def subtract_one_workflow() -> Workflow:
     """Create a workflow that subtracts one from a number."""
-    input_node = InputNode(
-        id="input",
-        params=SchemaParams(
-            fields=StringMapValue[ValueSchemaValue](
-                {"start": ValueSchemaValue(IntegerValue.to_value_schema())}
-            )
-        ),
+    input_node = InputNode.from_fields(
+        start=IntegerValue,
     )
-    output_node = OutputNode(
-        id="output",
-        params=SchemaParams(
-            fields=StringMapValue[ValueSchemaValue](
-                {"result": ValueSchemaValue(IntegerValue.to_value_schema())}
-            )
-        ),
+    output_node = OutputNode.from_fields(
+        result=IntegerValue,
     )
 
     negative_one = ConstantIntegerNode.from_value(id="negative_one", value=-1)
@@ -126,24 +99,12 @@ async def test_conditional_workflow(
 
     start_value = 42
 
-    input_node = InputNode(
-        id="input",
-        params=SchemaParams(
-            fields=StringMapValue[ValueSchemaValue](
-                {
-                    "start": ValueSchemaValue(IntegerValue.to_value_schema()),
-                    "condition": ValueSchemaValue(BooleanValue.to_value_schema()),
-                }
-            )
-        ),
+    input_node = InputNode.from_fields(
+        start=IntegerValue,
+        condition=BooleanValue,
     )
-    output_node = OutputNode(
-        id="output",
-        params=SchemaParams(
-            fields=StringMapValue[ValueSchemaValue](
-                {"result": ValueSchemaValue(IntegerValue.to_value_schema())}
-            )
-        ),
+    output_node = OutputNode.from_fields(
+        result=IntegerValue,
     )
 
     conditional = IfElseNode.from_workflows(
@@ -213,25 +174,13 @@ async def test_conditional_workflow_twice_series(
 
     start_value = 42
 
-    input_node = InputNode(
-        id="input",
-        params=SchemaParams(
-            fields=StringMapValue[ValueSchemaValue](
-                {
-                    "start": ValueSchemaValue(IntegerValue.to_value_schema()),
-                    "condition_1": ValueSchemaValue(BooleanValue.to_value_schema()),
-                    "condition_2": ValueSchemaValue(BooleanValue.to_value_schema()),
-                }
-            )
-        ),
+    input_node = InputNode.from_fields(
+        start=IntegerValue,
+        condition_1=BooleanValue,
+        condition_2=BooleanValue,
     )
-    output_node = OutputNode(
-        id="output",
-        params=SchemaParams(
-            fields=StringMapValue[ValueSchemaValue](
-                {"result": ValueSchemaValue(IntegerValue.to_value_schema())}
-            )
-        ),
+    output_node = OutputNode.from_fields(
+        result=IntegerValue,
     )
 
     conditional_1 = IfElseNode.from_workflows(

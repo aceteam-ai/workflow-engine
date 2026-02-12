@@ -4,13 +4,11 @@ from workflow_engine import (
     Edge,
     FloatValue,
     SequenceValue,
-    StringMapValue,
-    ValueSchemaValue,
     Workflow,
+    DataValue,
 )
 from workflow_engine.contexts import InMemoryContext
-from workflow_engine.core.io import InputNode, OutputNode, SchemaParams
-from workflow_engine.core.values.schema import SequenceValueSchema
+from workflow_engine.core.io import InputNode, OutputNode
 from workflow_engine.execution import TopologicalExecutionAlgorithm
 from workflow_engine.nodes import AddNode, ForEachNode
 
@@ -18,26 +16,12 @@ from workflow_engine.nodes import AddNode, ForEachNode
 @pytest.fixture
 def add_workflow() -> Workflow:
     """Create a workflow that adds two numbers: a + b = c."""
-    input_node = InputNode(
-        id="input",
-        params=SchemaParams(
-            fields=StringMapValue[ValueSchemaValue](
-                {
-                    "a": ValueSchemaValue(FloatValue.to_value_schema()),
-                    "b": ValueSchemaValue(FloatValue.to_value_schema()),
-                }
-            )
-        ),
+    input_node = InputNode.from_fields(
+        a=FloatValue,
+        b=FloatValue,
     )
-    output_node = OutputNode(
-        id="output",
-        params=SchemaParams(
-            fields=StringMapValue[ValueSchemaValue](
-                {
-                    "c": ValueSchemaValue(FloatValue.to_value_schema()),
-                }
-            )
-        ),
+    output_node = OutputNode.from_fields(
+        c=FloatValue,
     )
 
     add = AddNode(id="add")
@@ -71,35 +55,11 @@ def add_workflow() -> Workflow:
 
 @pytest.fixture
 def workflow(add_workflow: Workflow) -> Workflow:
-    input_node = InputNode(
-        id="input",
-        params=SchemaParams(
-            fields=StringMapValue[ValueSchemaValue](
-                {
-                    "sequence": ValueSchemaValue(
-                        SequenceValueSchema(
-                            type="array",
-                            items=add_workflow.input_schema,
-                        )
-                    ),
-                }
-            )
-        ),
+    input_node = InputNode.from_fields(
+        sequence=SequenceValue[DataValue[add_workflow.input_type]],
     )
-    output_node = OutputNode(
-        id="output",
-        params=SchemaParams(
-            fields=StringMapValue[ValueSchemaValue](
-                {
-                    "results": ValueSchemaValue(
-                        SequenceValueSchema(
-                            type="array",
-                            items=add_workflow.output_schema,
-                        )
-                    ),
-                }
-            )
-        ),
+    output_node = OutputNode.from_fields(
+        results=SequenceValue[DataValue[add_workflow.output_type]],
     )
 
     for_each = ForEachNode.from_workflow(

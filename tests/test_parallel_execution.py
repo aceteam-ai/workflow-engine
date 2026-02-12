@@ -9,6 +9,7 @@ import pytest
 from workflow_engine import (
     Context,
     Data,
+    DataValue,
     Edge,
     Empty,
     FloatValue,
@@ -16,14 +17,11 @@ from workflow_engine import (
     Node,
     Params,
     SequenceValue,
-    StringMapValue,
-    ValueSchemaValue,
     Workflow,
 )
 from workflow_engine.contexts import InMemoryContext
-from workflow_engine.core.io import InputNode, OutputNode, SchemaParams
+from workflow_engine.core.io import InputNode, OutputNode
 from workflow_engine.core.node import NodeTypeInfo
-from workflow_engine.core.values.schema import SequenceValueSchema
 from workflow_engine.execution import TopologicalExecutionAlgorithm
 from workflow_engine.execution.parallel import (
     ErrorHandlingMode,
@@ -399,33 +397,11 @@ async def test_parallel_execution_with_node_expansion():
         ],
     )
 
-    outer_input_node = InputNode(
-        id="input",
-        params=SchemaParams(
-            fields=StringMapValue[ValueSchemaValue](
-                {
-                    "sequence": ValueSchemaValue(
-                        SequenceValueSchema(
-                            type="array", items=add_workflow.input_schema
-                        )
-                    )
-                }
-            )
-        ),
+    outer_input_node = InputNode.from_fields(
+        sequence=SequenceValue[DataValue[add_workflow.input_type]],
     )
-    outer_output_node = OutputNode(
-        id="output",
-        params=SchemaParams(
-            fields=StringMapValue[ValueSchemaValue](
-                {
-                    "results": ValueSchemaValue(
-                        SequenceValueSchema(
-                            type="array", items=add_workflow.output_schema
-                        )
-                    )
-                }
-            )
-        ),
+    outer_output_node = OutputNode.from_fields(
+        results=SequenceValue[DataValue[add_workflow.output_type]],
     )
     foreach = ForEachNode.from_workflow(id="foreach", workflow=add_workflow)
 
