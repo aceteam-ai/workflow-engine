@@ -70,13 +70,13 @@ def cast_model_to_model(
     # Identity shortcut
     if source_model_cls is target_model_cls:
 
-        def _identity(value: ModelValue, context: Context) -> ModelValue:
+        def _identity(value: ModelValue, context: "Context") -> ModelValue:
             return target_type(value.root)
 
         return _identity
 
     # Cross-model cast: serialize then validate
-    def _cast(value: ModelValue, context: Context) -> ModelValue:
+    def _cast(value: ModelValue, context: "Context") -> ModelValue:
         dumped = source_model_cls.model_validate(value.root).model_dump()
         validated = target_model_cls.model_validate(dumped)
         return target_type(validated)
