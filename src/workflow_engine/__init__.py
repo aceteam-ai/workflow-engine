@@ -1,6 +1,6 @@
 # workflow_engine/__init__.py
 
-__version__ = "1.1.0rc1"
+__version__ = "2.0.0rc2"
 
 from .core import (
     JSON,

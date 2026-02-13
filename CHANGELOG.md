@@ -4,6 +4,45 @@ All notable changes to this project will be documented in this file.
 
 This project uses [PEP 440](https://peps.python.org/pep-0440/) versioning with release candidates (rcN) for pre-release versions.
 
+## [2.0.0rc2] - 2026-02-13
+
+### Added
+- Adaptive `ForEachNode` wiring based on inner workflow I/O (#72)
+- `FieldSchemaMappingValue` convenience data type for string-field schema mappings (#71)
+- First-class support for CSV, DocX, and Markdown file types (#69)
+- Iterable APIs and typed `extend()` method for registries (#64)
+- Comprehensive tests for round-trip type (de)serialization and failure cases (#73)
+
+### Changed
+- Schemas now allow extra fields (#70)
+- Updated `cryptography` dependency from 46.0.3 to 46.0.5
+
+## [2.0.0rc1] - 2025-02-05
+
+### Added
+- `WorkflowEngine` class with node and workflow deserialization capabilities
+- Execution capabilities to `WorkflowEngine`
+
+### Changed
+- **BREAKING**: Migrated workflow format from `InputEdge`/`OutputEdge` to `InputNode`/`OutputNode`
+- Moved node/edge validation from `Workflow` to `WorkflowEngine`
+- Updated examples and documentation for new `InputNode`/`OutputNode` format
+
+## [1.2.0rc1] - 2025-02-01
+
+### Added
+- Generic `ModelValue[M]` type for arbitrary Pydantic models
+- `ExtractionResultValue` type
+- Comprehensive tests for `NodeRegistry` implementations
+- Coding best practices to CLAUDE.md about explicit methods vs dunder overrides
+
+### Changed
+- Refactored `ValueRegistry` with builder pattern and comprehensive tests
+- Updated codebase to use new `ValueRegistry` API
+
+### Fixed
+- Pytest warning by renaming `TestValue` to `ExampleValue`
+
 ## [1.1.0rc1] - 2025-01-30
 
 ### Added
@@ -103,6 +142,9 @@ This project uses [PEP 440](https://peps.python.org/pep-0440/) versioning with r
 - Basic arithmetic, constant, text, and error nodes
 - Topological execution algorithm
 
+[2.0.0rc2]: https://github.com/aceteam-ai/workflow-engine/compare/v2.0.0rc1...v2.0.0rc2
+[2.0.0rc1]: https://github.com/aceteam-ai/workflow-engine/compare/v1.2.0rc1...v2.0.0rc1
+[1.2.0rc1]: https://github.com/aceteam-ai/workflow-engine/compare/v1.1.0rc1...v1.2.0rc1
 [1.1.0rc1]: https://github.com/aceteam-ai/workflow-engine/compare/v1.0.0rc2...v1.1.0rc1
 [1.0.0rc2]: https://github.com/aceteam-ai/workflow-engine/compare/v1.0.0rc1...v1.0.0rc2
 [1.0.0rc1]: https://github.com/aceteam-ai/workflow-engine/compare/v0.3.3...v1.0.0rc1
