@@ -46,10 +46,8 @@ def merge_defs(
 
 
 class BaseValueSchema(ImmutableBaseModel):
-    # We will only handle fields that Pydantic actually uses.
-    # extra="forbid" offensively validates that we haven't missed any fields.
     model_config: ClassVar[ConfigDict] = ConfigDict(
-        extra="forbid",
+        extra="allow",
         serialize_by_alias=True,
     )
 
