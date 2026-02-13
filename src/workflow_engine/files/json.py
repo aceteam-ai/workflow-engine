@@ -183,7 +183,8 @@ def cast_json_lines_to_sequence(
     ):
 
         async def _read_lines(
-            value: JSONLinesFileValue, context: "Context"
+            value: JSONLinesFileValue,
+            context: Context,
         ) -> SequenceValue[Any]:
             return target_type(
                 [
@@ -196,7 +197,10 @@ def cast_json_lines_to_sequence(
 
     if issubclass(target_item_type, JSONFileValue):
 
-        async def _read_then_recast(value: JSONLinesFileValue, context: "Context"):
+        async def _read_then_recast(
+            value: JSONLinesFileValue,
+            context: Context,
+        ):
             items = SequenceValue[Value](
                 [Value(item) for item in await value.read_data(context)]
             )
@@ -210,7 +214,7 @@ def cast_json_lines_to_sequence(
 @SequenceValue.register_cast_to(JSONLinesFileValue)
 async def cast_sequence_to_json_lines(
     value: SequenceValue[Value],
-    context: "Context",
+    context: Context,
 ) -> JSONLinesFileValue:
     file = JSONLinesFileValue(File(path=f"{value.md5}.jsonl"))
     return await file.write_data(context, [v.model_dump() for v in value])
