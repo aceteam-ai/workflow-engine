@@ -9,7 +9,6 @@ from typing import ClassVar, Literal, Self
 from overrides import override
 
 from workflow_engine.core.io import SchemaParams
-from workflow_engine.core.values.schema import SequenceValueSchema
 
 from ..core import (
     Context,
@@ -20,8 +19,7 @@ from ..core import (
     NodeTypeInfo,
     OutputNode,
     Params,
-    StringMapValue,
-    ValueSchemaValue,
+    SequenceValue,
     Workflow,
     WorkflowValue,
 )
@@ -79,29 +77,11 @@ class ForEachNode(Node[SequenceData, SequenceData, ForEachParams]):
     async def run(self, context: Context, input: SequenceData) -> Workflow:
         N = len(input.sequence)
 
-        input_params = SchemaParams(
-            fields=StringMapValue[ValueSchemaValue](
-                {
-                    "sequence": ValueSchemaValue(
-                        SequenceValueSchema(
-                            type="array",
-                            items=self.workflow.input_schema,
-                        )
-                    ),
-                }
-            )
+        input_params = SchemaParams.from_fields(
+            sequence=SequenceValue[DataValue[self.workflow.input_type]],
         )
-        output_params = SchemaParams(
-            fields=StringMapValue[ValueSchemaValue](
-                {
-                    "sequence": ValueSchemaValue(
-                        SequenceValueSchema(
-                            type="array",
-                            items=self.workflow.output_schema,
-                        )
-                    ),
-                }
-            )
+        output_params = SchemaParams.from_fields(
+            sequence=SequenceValue[DataValue[self.workflow.output_type]],
         )
 
         input_node = InputNode(id="input", params=input_params)

@@ -14,7 +14,12 @@ from .json import JSON, JSONValue
 from .mapping import StringMapValue
 from .model import ModelValue
 from .primitives import BooleanValue, FloatValue, IntegerValue, NullValue, StringValue
-from .schema import ValueSchema, ValueSchemaValue, validate_value_schema
+from .schema import (
+    FieldSchemaMappingValue,
+    ValueSchema,
+    ValueSchemaValue,
+    validate_value_schema,
+)
 from .sequence import SequenceValue
 from .value import (
     Caster,
@@ -31,6 +36,7 @@ __all__ = [
     "Data",
     "DataMapping",
     "DataValue",
+    "FieldSchemaMappingValue",
     "dump_data_mapping",
     "Entity",
     "ExtractionResult",

@@ -51,6 +51,9 @@ def test_build_data_type(
 
     cls = build_data_type("ExampleData", example_fields)
 
+    # build_data_type preserves field ordering (used by InputNode/OutputNode.from_fields)
+    assert list(cls.model_fields.keys()) == ["name", "age", "active"]
+
     # can't exactly just test equality, instead we need to test that both
     # classes behave identically in instantiation, serialization, etc.
     assert cls.__name__ == ExampleData.__name__

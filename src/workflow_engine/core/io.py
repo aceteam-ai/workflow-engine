@@ -2,18 +2,33 @@
 from functools import cached_property
 from typing import TYPE_CHECKING, ClassVar, Literal, Self
 
+from pydantic import Field
 from overrides import override
 
+from workflow_engine.core.values.schema import DataValueSchema
+
 from .node import Node, NodeTypeInfo, Params
-from .values import Data, StringMapValue, ValueSchemaValue, ValueType
-from .values.schema import DataValueSchema
+from .values import (
+    Data,
+    ValueSchemaValue,
+    ValueType,
+    FieldSchemaMappingValue,
+)
 
 if TYPE_CHECKING:
     from .context import Context
 
 
 class SchemaParams(Params):
-    fields: StringMapValue[ValueSchemaValue] = StringMapValue({})
+    fields: FieldSchemaMappingValue = Field(
+        title="Fields",
+        description="A mapping of field names to value schemas.",
+        default_factory=lambda: FieldSchemaMappingValue({}),
+    )
+
+    @classmethod
+    def from_fields(cls, **fields: ValueType) -> Self:
+        return cls(fields=FieldSchemaMappingValue.from_fields(**fields))
 
 
 class InputNode(Node[Data, Data, SchemaParams]):
@@ -36,16 +51,11 @@ class InputNode(Node[Data, Data, SchemaParams]):
         return self.input_type
 
     @cached_property
-    def input_schema(self) -> DataValueSchema:
-        return DataValueSchema(
-            type="object",
-            title="InputData",
-            properties={key: field.root for key, field in self.params.fields.items()},
-            additionalProperties=False,
-        )
+    def input_schema(self):
+        return self.params.fields.to_data_schema("InputData")
 
     @cached_property
-    def output_schema(self) -> DataValueSchema:
+    def output_schema(self):
         return self.input_schema
 
     @override
@@ -62,7 +72,7 @@ class InputNode(Node[Data, Data, SchemaParams]):
         Args:
             fields: Mapping from field name to Value type (e.g., {"a": IntegerValue})
         """
-        schema_fields = StringMapValue[ValueSchemaValue](
+        schema_fields = FieldSchemaMappingValue(
             {
                 name: ValueSchemaValue(vtype.to_value_schema())
                 for name, vtype in fields.items()
@@ -104,12 +114,7 @@ class OutputNode(Node[Data, Data, SchemaParams]):
 
     @cached_property
     def output_schema(self) -> DataValueSchema:
-        return DataValueSchema(
-            type="object",
-            title="OutputData",
-            properties={key: field.root for key, field in self.params.fields.items()},
-            additionalProperties=False,
-        )
+        return self.params.fields.to_data_schema("OutputData")
 
     @override
     async def run(self, context: "Context", input: Data) -> Data:
@@ -125,7 +130,7 @@ class OutputNode(Node[Data, Data, SchemaParams]):
         Args:
             fields: Mapping from field name to Value type (e.g., {"result": IntegerValue})
         """
-        schema_fields = StringMapValue[ValueSchemaValue](
+        schema_fields = FieldSchemaMappingValue(
             {
                 name: ValueSchemaValue(vtype.to_value_schema())
                 for name, vtype in fields.items()

@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from functools import cached_property
-from typing import Any, ClassVar, Final, Literal
+from typing import Any, ClassVar, Final, Literal, Self
 
 from overrides import override
 from pydantic import (
@@ -367,7 +367,37 @@ def validate_value_schema(schema: Any) -> ValueSchema:
         raise ValueError(f"Invalid value schema: {schema}") from e
 
 
+class FieldSchemaMappingValue(StringMapValue[ValueSchemaValue]):
+    def to_data_schema(self, title: str) -> DataValueSchema:
+        return DataValueSchema(
+            type="object",
+            title=title,
+            properties={k: v.root for k, v in self.root.items()},
+            additionalProperties=False,
+        )
+
+    @classmethod
+    def from_fields(cls, **fields: ValueType) -> Self:
+        return cls(
+            {
+                name: ValueSchemaValue(vtype.to_value_schema())
+                for name, vtype in fields.items()
+            }
+        )
+
+
 __all__ = [
+    "BooleanValueSchema",
+    "DataValueSchema",
+    "FieldSchemaMappingValue",
+    "FloatValueSchema",
+    "IntegerValueSchema",
+    "NullValueSchema",
+    "ReferenceValueSchema",
+    "SequenceValueSchema",
+    "StringMapValueSchema",
+    "StringValueSchema",
+    "UnionValueSchema",
     "ValueSchema",
     "ValueSchemaValue",
 ]
