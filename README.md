@@ -87,6 +87,8 @@ The workflow engine supports automatic type casting between Value types. The gra
 
 ![Value Typecasting Graph](docs/typecast_graph.svg)
 
+Value types serialize to JSON Schema for validation and type resolution. See [Values](docs/values.md#value-schemas-and-type-resolution) for how the schema system works and limitations around deeply nested generics.
+
 ## Architecture
 
 ```text

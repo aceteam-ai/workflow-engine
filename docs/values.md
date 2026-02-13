@@ -2,6 +2,26 @@
 
 Values are type-safe, immutable wrappers around data. They are the currency of data flow between nodes.
 
+## Value Schemas and Type Resolution
+
+Value types serialize to JSON Schema via `to_value_schema()` (which uses Pydantic’s `model_json_schema()`). These schemas describe the structure of values for validation and type resolution.
+
+### How schema resolution works
+
+1. **Title-based lookup**: Each Value type can register itself in a `ValueRegistry` by name (e.g. `"IntegerValue"`, `"JSONValue"`). When a schema has a `title` that matches a registered type, it resolves to that type immediately.
+
+2. **$defs and $ref**: Nested and recursive types use JSON Schema `$defs` and `$ref`. For example, `SequenceValue[JSONValue]` produces a schema where the array’s `items` is a `$ref` to `#/$defs/JSONValue`. The registry can supply these defs via `extra_defs` so references resolve without embedding `$defs` in the schema.
+
+3. **Composite def IDs**: For types nested beyond one level (e.g. `StringMapValue[SequenceValue[StringMapValue[IntegerValue]]]`), Pydantic generates composite def IDs such as `SequenceValue_StringMapValue_IntegerValue__`. These IDs are internal to that schema and do **not** correspond to any registry entry.
+
+### Limitation: deeply nested generics require $defs
+
+For types with **one level of nesting** (e.g. `SequenceValue[JSONValue]`, `StringMapValue[IntegerValue]`), you can omit `$defs` from the schema and still resolve correctly by passing the registry’s types as `extra_defs`, since the referenced type (e.g. `JSONValue`) is registered.
+
+For **two or more levels of nesting**, resolution fails without `$defs`. The composite def IDs (like `SequenceValue_StringMapValue_IntegerValue__`) are schema-specific; they cannot be reconstructed from the registry alone. The registry only knows base types (`SequenceValue`, `StringMapValue`, `IntegerValue`), not parameterized combinations. If you strip `$defs`, those references cannot be resolved.
+
+**Takeaway**: Schemas with deeply nested generics must include `$defs` for full round-trip type resolution. This is a limitation of how Pydantic generates JSON Schema for recursive generics.
+
 ## Primitive Values
 
 | Type           | Wraps   | Notes                                                |
