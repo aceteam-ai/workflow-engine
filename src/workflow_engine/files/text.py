@@ -30,7 +30,9 @@ class MarkdownFileValue(TextFileValue):
 
 
 @StringValue.register_cast_to(MarkdownFileValue)
-async def cast_string_to_markdown(value: StringValue, context: Context) -> MarkdownFileValue:
+async def cast_string_to_markdown(
+    value: StringValue, context: Context
+) -> MarkdownFileValue:
     file = MarkdownFileValue(File(path=f"{value.md5}.md"))
     return await file.write_text(context, value.root)
 

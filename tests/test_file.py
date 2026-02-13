@@ -142,7 +142,9 @@ async def test_csv_cast_json_to_csv(context: Context):
 @pytest.mark.unit
 async def test_csv_cast_string_map_to_csv(context: Context):
     """Test that StringMapValue can be cast to CSVFileValue via JSON."""
-    str_map = StringMapValue[IntegerValue]({"foo": IntegerValue(1), "bar": IntegerValue(2)})
+    str_map = StringMapValue[IntegerValue](
+        {"foo": IntegerValue(1), "bar": IntegerValue(2)}
+    )
     csv_file = await str_map.cast_to(CSVFileValue, context=context)
     assert isinstance(csv_file, CSVFileValue)
     data = await csv_file.read_data(context)
@@ -152,10 +154,12 @@ async def test_csv_cast_string_map_to_csv(context: Context):
 @pytest.mark.unit
 async def test_csv_cast_sequence_to_csv(context: Context):
     """Test that SequenceValue of mappings can be cast to CSVFileValue."""
-    seq = SequenceValue[StringMapValue[IntegerValue]]([
-        StringMapValue[IntegerValue]({"a": IntegerValue(1), "b": IntegerValue(2)}),
-        StringMapValue[IntegerValue]({"a": IntegerValue(3), "b": IntegerValue(4)}),
-    ])
+    seq = SequenceValue[StringMapValue[IntegerValue]](
+        [
+            StringMapValue[IntegerValue]({"a": IntegerValue(1), "b": IntegerValue(2)}),
+            StringMapValue[IntegerValue]({"a": IntegerValue(3), "b": IntegerValue(4)}),
+        ]
+    )
     csv_file = await seq.cast_to(CSVFileValue, context=context)
     assert isinstance(csv_file, CSVFileValue)
     data = await csv_file.read_data(context)
@@ -175,7 +179,7 @@ async def test_csv_cast_csv_to_json(context: Context):
     json_val = await csv_file.cast_to(JSONValue, context=context)
     assert isinstance(json_val, JSONValue)
     # read_data returns a tuple; JSONValue preserves that
-    assert list(json_val.root) == [{"col1": "val1", "col2": "val2"}]
+    assert json_val.root == ({"col1": "val1", "col2": "val2"},)
 
 
 @pytest.mark.unit
