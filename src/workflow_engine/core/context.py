@@ -114,6 +114,25 @@ class Context(ABC, EnforceOverrides):
         """
         return output
 
+    async def on_node_expand(
+        self,
+        *,
+        node: "Node",
+        input: DataMapping,
+        workflow: "Workflow",
+    ) -> "Workflow":
+        """
+        A hook that is called when a node finishes execution by returning a
+        Workflow (i.e., it expands into a subgraph).
+
+        node: the node that emitted the workflow
+        input: the input data to the node
+        workflow: the workflow emitted by the node
+
+        The context can modify the workflow by returning a different Workflow.
+        """
+        return workflow
+
     async def on_workflow_start(
         self,
         *,
