@@ -221,6 +221,24 @@ def test_string_schema_with_extra_fields():
 
 
 @pytest.mark.unit
+def test_unknown_extras_preserved_in_constrained_cls():
+    """Extras not in the field map are carried through as json_schema_extra."""
+    json_schema = {
+        "type": "number",
+        "minimum": 0.0,
+        "x-foo": "bar",
+    }
+    schema = validate_value_schema(json_schema)
+    U = schema.to_value_cls()
+
+    assert issubclass(U, FloatValue)
+    assert U.model_json_schema()["minimum"] == 0.0
+    assert U.model_json_schema()["x-foo"] == "bar"
+    with pytest.raises(Exception):
+        U.model_validate(-0.1)
+
+
+@pytest.mark.unit
 def test_schema_from_pydantic_model_with_field_constraints():
     """Schemas extracted from Pydantic Field constraints produce enforcing subclasses."""
     from pydantic import BaseModel, Field
