@@ -33,6 +33,7 @@ from workflow_engine.core.values import validate_value_schema
 from workflow_engine.core.values.schema import (
     BooleanValueSchema,
     BaseValueSchema,
+    FieldSchemaMappingValue,
     FloatValueSchema,
     IntegerValueSchema,
     NullValueSchema,
@@ -783,6 +784,29 @@ def test_data_schema_with_multiple_constrained_float_properties():
     defs = full_schema.get("$defs", {})
     float_defs = [v for v in defs.values() if v.get("type") == "number"]
     assert len(float_defs) == 2
+
+
+@pytest.mark.unit
+def test_field_schema_mapping_preserves_extras():
+    """FieldSchemaMappingValue preserves schema extras (both known and unknown) on property schemas."""
+    from workflow_engine.core.values.schema import ValueSchemaValue
+
+    score_schema = FloatValueSchema(**{"type": "number", "minimum": 0.0, "maximum": 1.0, "x-foo": "bar"})
+    mapping = FieldSchemaMappingValue({"score": ValueSchemaValue(score_schema)})
+    data_schema = mapping.to_data_schema("TestData")
+    U = data_schema.to_value_cls()
+
+    # Known constraints are enforced
+    assert U.model_validate({"score": 0.5}).root.score.root == 0.5
+    with pytest.raises(Exception):
+        U.model_validate({"score": 1.5})
+    with pytest.raises(Exception):
+        U.model_validate({"score": -0.1})
+
+    # Unknown extras survive into the property's schema
+    score_field_schema = U.model_json_schema()["$defs"]
+    score_def = next(v for v in score_field_schema.values() if v.get("type") == "number")
+    assert score_def["x-foo"] == "bar"
 
 
 @pytest.mark.unit
