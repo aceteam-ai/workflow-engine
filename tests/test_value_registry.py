@@ -407,13 +407,38 @@ class TestValueRegistryLoadValue:
     """Tests for ValueRegistry.load_value() method."""
 
     def test_load_value_with_matching_title(self):
-        """Test loading a value type from schema with matching title."""
+        """Test loading a value type from schema with matching title (backwards compat)."""
         from workflow_engine.core.values.schema import IntegerValueSchema
 
         registry = ValueRegistry.builder(lazy=True)
         registry.register_value_class(SampleValueA)
 
         schema = IntegerValueSchema(type="integer", title="SampleValueA")
+        loaded_value = registry.load_value(schema)
+
+        assert loaded_value is SampleValueA
+
+    def test_load_value_with_matching_value_type(self):
+        """Test loading a value type from schema with matching x-value-type (preferred)."""
+        from workflow_engine.core.values.schema import IntegerValueSchema
+
+        registry = ValueRegistry.builder(lazy=True)
+        registry.register_value_class(SampleValueA)
+
+        schema = IntegerValueSchema(**{"type": "integer", "x-value-type": "SampleValueA"})
+        loaded_value = registry.load_value(schema)
+
+        assert loaded_value is SampleValueA
+
+    def test_load_value_prefers_value_type_over_title(self):
+        """Test that x-value-type takes priority over title when both are present."""
+        from workflow_engine.core.values.schema import IntegerValueSchema
+
+        registry = ValueRegistry.builder(lazy=True)
+        registry.register_value_class(SampleValueA)
+        registry.register_value_class(SampleValueB)
+
+        schema = IntegerValueSchema(**{"type": "integer", "x-value-type": "SampleValueA", "title": "SampleValueB"})
         loaded_value = registry.load_value(schema)
 
         assert loaded_value is SampleValueA
