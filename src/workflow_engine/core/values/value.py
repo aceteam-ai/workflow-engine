@@ -140,12 +140,15 @@ class Value(ImmutableRootModel[T], Generic[T]):
         default_factory=dict,
     )
 
-    def __init_subclass__(cls, **kwargs):
+    def __init_subclass__(cls, register: bool = True, **kwargs):
         super().__init_subclass__(**kwargs)
 
         # reinitialize for each subclass so it doesn't just reference the parent
         cls._casters = {}
         cls._resolved_casters = None
+
+        if not register:
+            return
 
         # NOTE: something about this hack does not work when using
         # `from __future__ import annotations`.
@@ -287,7 +290,9 @@ class Value(ImmutableRootModel[T], Generic[T]):
     def to_value_schema(cls) -> "ValueSchema":
         from .schema import validate_value_schema  # avoid circular import
 
-        return validate_value_schema(cls.model_json_schema())
+        schema = cls.model_json_schema()
+        schema["x-value-type"] = cls.__name__
+        return validate_value_schema(schema)
 
 
 class ValueRegistry(ABC):
@@ -314,18 +319,20 @@ class ValueRegistry(ABC):
 
     def load_value(self, schema: ValueSchema) -> ValueType | None:
         """
-        Load a value type from a schema by looking up the title in the registry.
+        Load a value type from a schema by looking up the registry.
 
-        This method only handles registered value types (where schema.title matches
-        a registered name). If no match is found, returns None to indicate that
-        the caller should fall back to building the value class from the schema.
+        Checks x-value-type first, then falls back to title for backwards
+        compatibility. If no match is found, returns None to indicate that the
+        caller should fall back to building the value class from the schema.
 
         Args:
-            schema: A ValueSchema with an optional title field
+            schema: A ValueSchema with an optional value_type or title field
 
         Returns:
-            The registered value class if the title matches, None otherwise
+            The registered value class if a match is found, None otherwise
         """
+        if schema.value_type is not None and self.has_name(schema.value_type):
+            return self.get_value_class(schema.value_type)
         if schema.title is not None and self.has_name(schema.title):
             return self.get_value_class(schema.title)
         return None
