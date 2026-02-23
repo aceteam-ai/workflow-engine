@@ -4,7 +4,7 @@ from typing import TypeVar
 
 from overrides import EnforceOverrides
 
-from .error import ShouldRetry, WorkflowErrors
+from .error import ShouldRetry, ShouldYield, WorkflowErrors
 from .node import Node
 from .values import DataMapping, FileValue
 from .workflow import Workflow
@@ -75,6 +75,28 @@ class Context(ABC, EnforceOverrides):
         it can silence the error by returning an output.
         """
         return exception
+
+    async def on_node_yield(
+        self,
+        *,
+        node: "Node",
+        input: DataMapping,
+        exception: ShouldYield,
+    ) -> None:
+        """
+        A hook that is called when a node raises ShouldYield, signalling that
+        it has dispatched work externally and cannot return a value yet.
+
+        The context can use this hook to persist the node's yield state so that
+        a future execution can detect that the external work is complete and
+        allow the node to resume.
+
+        node: the node that yielded
+        input: the input data the node was given
+        exception: the ShouldYield exception, whose message describes what the
+                   node is waiting for
+        """
+        pass
 
     async def on_node_retry(
         self,

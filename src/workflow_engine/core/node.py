@@ -33,7 +33,7 @@ from ..utils.semver import (
     SEMANTIC_VERSION_PATTERN,
     parse_semantic_version,
 )
-from .error import NodeException, UserException
+from .error import NodeException, ShouldYield, UserException
 from .values import (
     Data,
     DataMapping,
@@ -418,6 +418,8 @@ class Node(ImmutableBaseModel, Generic[Input_contra, Output_co, Params_co]):
                 )
             logger.info("Finished node %s", self.id)
             return output
+        except ShouldYield:
+            raise
         except Exception as e:
             # In subclasses, you don't have to worry about logging the error,
             # since it'll be logged here.

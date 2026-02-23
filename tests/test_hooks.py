@@ -13,9 +13,11 @@ from workflow_engine import (
     Edge,
     Node,
     Params,
+    ShouldYield,
     StringValue,
     Workflow,
     WorkflowErrors,
+    WorkflowYield,
 )
 from workflow_engine.contexts import InMemoryContext
 from workflow_engine.core import NodeTypeInfo
@@ -120,6 +122,47 @@ class ExpandingNode(Node[Data, ExpandingOutput, Params]):
     @classmethod
     def create(cls, id: str, output_value: str = "expanded") -> "ExpandingNode":
         return cls(id=id, params=Params(), output_value=output_value)
+
+
+class YieldingNode(Node[Data, ExpandingOutput, Params]):
+    TYPE_INFO: ClassVar[NodeTypeInfo] = NodeTypeInfo.from_parameter_type(
+        name="HookYielding",
+        display_name="HookYielding",
+        description="Always raises ShouldYield.",
+        version="1.0.0",
+        parameter_type=Params,
+    )
+    type: Literal["HookYielding"] = "HookYielding"  # pyright: ignore[reportIncompatibleVariableOverride]
+
+    @cached_property
+    def input_type(self):
+        return Data
+
+    @cached_property
+    def output_type(self):
+        return ExpandingOutput
+
+    async def run(self, context: Context, input: Data) -> ExpandingOutput:
+        raise ShouldYield("waiting for approval")
+
+
+def _yielding_workflow() -> Workflow:
+    yielding = YieldingNode(id="yielding", params=Params())
+    input_node = InputNode.empty()
+    output_node = OutputNode.from_fields(value=StringValue)
+    return Workflow(
+        input_node=input_node,
+        output_node=output_node,
+        inner_nodes=[yielding],
+        edges=[
+            Edge.from_nodes(
+                source=yielding,
+                source_key="value",
+                target=output_node,
+                target_key="value",
+            )
+        ],
+    )
 
 
 def _expanding_workflow(output_value: str = "expanded") -> Workflow:
@@ -296,6 +339,67 @@ class TestOnNodeExpand:
 
         assert not errors.any()
         assert output == {"value": StringValue("replaced")}
+
+
+class TestOnNodeYield:
+    @pytest.mark.asyncio
+    async def test_called_when_node_yields(self):
+        workflow = _yielding_workflow()
+        context = InMemoryContext()
+        mock = AsyncMock()
+        context.on_node_yield = mock
+
+        with pytest.raises(WorkflowYield):
+            await TopologicalExecutionAlgorithm().execute(
+                context=context, workflow=workflow, input={}
+            )
+
+        mock.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_called_with_correct_arguments(self):
+        workflow = _yielding_workflow()
+        context = InMemoryContext()
+        mock = AsyncMock()
+        context.on_node_yield = mock
+
+        with pytest.raises(WorkflowYield):
+            await TopologicalExecutionAlgorithm().execute(
+                context=context, workflow=workflow, input={}
+            )
+
+        kwargs = mock.call_args.kwargs
+        assert kwargs["node"].id == "yielding"
+        assert isinstance(kwargs["exception"], ShouldYield)
+        assert kwargs["exception"].message == "waiting for approval"
+
+    @pytest.mark.asyncio
+    async def test_not_called_for_regular_error(self):
+        """on_node_yield must not fire when a node raises a plain error."""
+        workflow = _error_workflow()
+        context = InMemoryContext()
+        mock = AsyncMock()
+        context.on_node_yield = mock
+
+        await TopologicalExecutionAlgorithm().execute(
+            context=context, workflow=workflow, input={}
+        )
+
+        mock.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_not_called_on_success(self):
+        workflow = _simple_workflow()
+        context = InMemoryContext()
+        mock = AsyncMock()
+        context.on_node_yield = mock
+
+        errors, _ = await TopologicalExecutionAlgorithm().execute(
+            context=context, workflow=workflow, input={}
+        )
+
+        assert not errors.any()
+        mock.assert_not_called()
 
 
 class TestOnWorkflowStart:

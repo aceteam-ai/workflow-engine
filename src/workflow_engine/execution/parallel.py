@@ -7,7 +7,7 @@ from typing import NamedTuple
 from overrides import override
 
 from ..core import Context, DataMapping, ExecutionAlgorithm, Workflow, WorkflowErrors
-from ..core.error import NodeException, ShouldRetry
+from ..core.error import NodeException, ShouldRetry, ShouldYield, WorkflowYield
 from .rate_limit import RateLimitRegistry
 from .retry import RetryTracker
 
@@ -25,6 +25,7 @@ class NodeResult(NamedTuple):
     node_id: str
     result: DataMapping | Workflow | Exception
     should_retry: ShouldRetry | None = None  # Set if this is a retryable failure
+    should_yield: ShouldYield | None = None  # Set if the node yielded
 
 
 class ParallelExecutionAlgorithm(ExecutionAlgorithm):
@@ -92,6 +93,8 @@ class ParallelExecutionAlgorithm(ExecutionAlgorithm):
 
         # Track nodes that are waiting for retry (node_id -> input)
         pending_retry: dict[str, DataMapping] = {}
+        # Track nodes that yielded (node_id -> ShouldYield exception)
+        node_yields: dict[str, ShouldYield] = {}
 
         try:
             # Initial dispatch - start all initially ready nodes
@@ -154,6 +157,17 @@ class ParallelExecutionAlgorithm(ExecutionAlgorithm):
                         failed_nodes.add(node_id)
                         continue
 
+                    # Handle yielded nodes
+                    if node_result.should_yield is not None:
+                        node = workflow.nodes_by_id[node_id]
+                        node_yields[node_id] = node_result.should_yield
+                        await context.on_node_yield(
+                            node=node,
+                            input=node_result.result,  # type: ignore[arg-type]
+                            exception=node_result.should_yield,
+                        )
+                        continue
+
                     # Handle retryable failures
                     if node_result.should_retry is not None:
                         should_retry_error = node_result.should_retry
@@ -212,6 +226,7 @@ class ParallelExecutionAlgorithm(ExecutionAlgorithm):
                     if nid not in failed_nodes
                     and nid not in in_flight
                     and nid not in pending_set
+                    and nid not in node_yields
                 }
 
                 for node_id, node_input in ready_nodes.items():
@@ -227,11 +242,16 @@ class ParallelExecutionAlgorithm(ExecutionAlgorithm):
                     )
                     running_tasks[task] = node_id
 
+            if node_yields:
+                raise WorkflowYield(node_yields)
+
             output = await workflow.get_output(
                 context=context,
                 node_outputs=node_outputs,
             )
 
+        except WorkflowYield:
+            raise
         except Exception as e:
             errors.add(e)
             partial_output = await workflow.get_output(
@@ -304,6 +324,10 @@ class ParallelExecutionAlgorithm(ExecutionAlgorithm):
                 result = await node(context, node_input)
 
             return NodeResult(node_id, result)
+
+        except ShouldYield as e:
+            # Store input in result so the on_node_yield hook receives it
+            return NodeResult(node_id, node_input, should_yield=e)
 
         except NodeException as e:
             # Check if the underlying cause is ShouldRetry
