@@ -5,8 +5,9 @@ Tests two sets of functionalities:
 1. that .to_value_cls() is the inverse of .to_value_schema()
 2. that we can manually write JSON Schemas that will turn into the correct Value
    classes when .to_value_cls() is called on them.
-3. that the aliasing system (e.g. { "title": "StringValue" } -> StringValue)
-   works for all non-generic Value classes.
+3. that the aliasing system (e.g. { "x-value-type": "StringValue" } -> StringValue)
+   works for all non-generic Value classes. { "title": "..." } also works as a
+   backwards-compatible fallback.
 
 In this file we follow the convention of using T for the expected type and U for
 the type returned by .to_value_cls().
@@ -32,6 +33,7 @@ from workflow_engine.core.values import validate_value_schema
 from workflow_engine.core.values.schema import (
     BooleanValueSchema,
     BaseValueSchema,
+    FieldSchemaMappingValue,
     FloatValueSchema,
     IntegerValueSchema,
     NullValueSchema,
@@ -96,7 +98,7 @@ def test_boolean_schema_manual():
 def test_boolean_schema_aliasing():
     T = BooleanValue
     json_schema = {
-        "title": "BooleanValue",
+        "x-value-type": "BooleanValue",
     }
     schema = validate_value_schema(json_schema)
     assert isinstance(schema, BaseValueSchema)
@@ -152,7 +154,7 @@ def test_integer_schema_manual():
 
 @pytest.mark.unit
 def test_integer_schema_with_extra_fields():
-    """Schemas with JSON Schema extra fields (min, max, etc.) from Pydantic Field constraints."""
+    """Constrained integer schemas produce subclasses that enforce the constraints."""
     json_schema = {
         "type": "integer",
         "minimum": 0,
@@ -161,20 +163,21 @@ def test_integer_schema_with_extra_fields():
     schema = validate_value_schema(json_schema)
     assert isinstance(schema, IntegerValueSchema)
     U = schema.to_value_cls()
-    assert U == IntegerValue
 
-    # Extra fields are preserved on the schema instance
-    assert getattr(schema, "minimum", None) == 0
-    assert getattr(schema, "maximum", None) == 100
+    assert issubclass(U, IntegerValue)
+    assert U.model_json_schema()["minimum"] == 0
+    assert U.model_json_schema()["maximum"] == 100
 
-    t1 = IntegerValue(50)
-    u1 = U.model_validate(t1)
-    assert u1 == t1
+    assert U.model_validate(50).root == 50
+    with pytest.raises(Exception):
+        U.model_validate(-1)
+    with pytest.raises(Exception):
+        U.model_validate(101)
 
 
 @pytest.mark.unit
 def test_float_schema_with_extra_fields():
-    """Schemas with JSON Schema extra fields (minimum, maximum) from Pydantic Field."""
+    """Constrained float schemas produce subclasses that enforce the constraints."""
     json_schema = {
         "type": "number",
         "minimum": 0.0,
@@ -183,36 +186,62 @@ def test_float_schema_with_extra_fields():
     schema = validate_value_schema(json_schema)
     assert isinstance(schema, FloatValueSchema)
     U = schema.to_value_cls()
-    assert U == FloatValue
 
-    assert getattr(schema, "minimum", None) == 0.0
-    assert getattr(schema, "maximum", None) == 1.0
+    assert issubclass(U, FloatValue)
+    assert U.model_json_schema()["minimum"] == 0.0
+    assert U.model_json_schema()["maximum"] == 1.0
 
-    t1 = FloatValue(0.5)
-    u1 = U.model_validate(t1)
-    assert u1 == t1
+    assert U.model_validate(0.5).root == 0.5
+    with pytest.raises(Exception):
+        U.model_validate(-0.1)
+    with pytest.raises(Exception):
+        U.model_validate(1.1)
 
 
 @pytest.mark.unit
 def test_string_schema_with_extra_fields():
-    """Schemas with JSON Schema extra fields (minLength, maxLength) from Pydantic Field."""
+    """Constrained string schemas produce subclasses that enforce the constraints."""
     json_schema = {
         "type": "string",
-        "minLength": 1,
-        "maxLength": 100,
+        "minLength": 2,
+        "maxLength": 5,
     }
     schema = validate_value_schema(json_schema)
     assert isinstance(schema, StringValueSchema)
     U = schema.to_value_cls()
-    assert U == StringValue
 
-    assert getattr(schema, "minLength", None) == 1
-    assert getattr(schema, "maxLength", None) == 100
+    assert issubclass(U, StringValue)
+    assert U.model_json_schema()["minLength"] == 2
+    assert U.model_json_schema()["maxLength"] == 5
+
+    assert U.model_validate("hi").root == "hi"
+    with pytest.raises(Exception):
+        U.model_validate("x")
+    with pytest.raises(Exception):
+        U.model_validate("toolong")
+
+
+@pytest.mark.unit
+def test_unknown_extras_preserved_in_constrained_cls():
+    """Extras not in the field map are carried through as json_schema_extra."""
+    json_schema = {
+        "type": "number",
+        "minimum": 0.0,
+        "x-foo": "bar",
+    }
+    schema = validate_value_schema(json_schema)
+    U = schema.to_value_cls()
+
+    assert issubclass(U, FloatValue)
+    assert U.model_json_schema()["minimum"] == 0.0
+    assert U.model_json_schema()["x-foo"] == "bar"
+    with pytest.raises(Exception):
+        U.model_validate(-0.1)
 
 
 @pytest.mark.unit
 def test_schema_from_pydantic_model_with_field_constraints():
-    """Validate schemas extracted from Pydantic models that use Field(ge=, le=)."""
+    """Schemas extracted from Pydantic Field constraints produce enforcing subclasses."""
     from pydantic import BaseModel, Field
 
     class ModelWithConstraints(BaseModel):
@@ -220,24 +249,27 @@ def test_schema_from_pydantic_model_with_field_constraints():
         score: float = Field(ge=0.0, le=1.0)
 
     pydantic_schema = ModelWithConstraints.model_json_schema()
-    # Each property has type + minimum + maximum from Field(ge=, le=)
     count_schema = pydantic_schema["properties"]["count"]
     score_schema = pydantic_schema["properties"]["score"]
 
-    count_value_schema = validate_value_schema(count_schema)
-    assert isinstance(count_value_schema, IntegerValueSchema)
-    assert count_value_schema.to_value_cls() == IntegerValue
+    count_cls = validate_value_schema(count_schema).to_value_cls()
+    assert issubclass(count_cls, IntegerValue)
+    count_cls.model_validate(50)
+    with pytest.raises(Exception):
+        count_cls.model_validate(101)
 
-    score_value_schema = validate_value_schema(score_schema)
-    assert isinstance(score_value_schema, FloatValueSchema)
-    assert score_value_schema.to_value_cls() == FloatValue
+    score_cls = validate_value_schema(score_schema).to_value_cls()
+    assert issubclass(score_cls, FloatValue)
+    score_cls.model_validate(0.5)
+    with pytest.raises(Exception):
+        score_cls.model_validate(1.5)
 
 
 @pytest.mark.unit
 def test_integer_schema_aliasing():
     T = IntegerValue
     json_schema = {
-        "title": "IntegerValue",
+        "x-value-type": "IntegerValue",
     }
     schema = validate_value_schema(json_schema)
     assert isinstance(schema, BaseValueSchema)
@@ -295,7 +327,7 @@ def test_float_schema_manual():
 def test_float_schema_aliasing():
     T = FloatValue
     json_schema = {
-        "title": "FloatValue",
+        "x-value-type": "FloatValue",
     }
     schema = validate_value_schema(json_schema)
     assert isinstance(schema, BaseValueSchema)
@@ -353,7 +385,7 @@ def test_null_schema_manual():
 def test_null_schema_aliasing():
     T = NullValue
     json_schema = {
-        "title": "NullValue",
+        "x-value-type": "NullValue",
     }
     schema = validate_value_schema(json_schema)
     assert isinstance(schema, BaseValueSchema)
@@ -411,7 +443,7 @@ def test_string_schema_manual():
 def test_string_schema_aliasing():
     T = StringValue
     json_schema = {
-        "title": "StringValue",
+        "x-value-type": "StringValue",
     }
     schema = validate_value_schema(json_schema)
     assert isinstance(schema, BaseValueSchema)
@@ -479,13 +511,41 @@ def test_sequence_schema_aliasing():
         T = SequenceValue[ItemType]
         json_schema = {
             "type": "array",
-            "items": {"title": ItemType.__name__},
+            "items": {"x-value-type": ItemType.__name__},
         }
         schema = validate_value_schema(json_schema)
         assert isinstance(schema, SequenceValueSchema)
         assert isinstance(schema.items, BaseValueSchema)
         U = schema.to_value_cls()
         assert U == T
+
+
+@pytest.mark.unit
+def test_constrained_sequence_is_castable():
+    """Constrained SequenceValue subclasses must remain compatible with the casting system."""
+    import asyncio
+    from workflow_engine.contexts import InMemoryContext
+
+    json_schema = {"type": "array", "items": {"type": "number"}, "minItems": 2, "maxItems": 4}
+    U = validate_value_schema(json_schema).to_value_cls()
+
+    assert issubclass(U, SequenceValue)
+
+    # Constraint is enforced at validation time
+    assert U.model_validate([1.0, 2.0]) == [1.0, 2.0]
+    with pytest.raises(Exception):
+        U.model_validate([1.0])  # too short
+
+    # A plain SequenceValue[FloatValue] can be cast to the constrained subclass
+    source = SequenceValue[FloatValue].model_validate([1.0, 2.0, 3.0])
+    context = InMemoryContext()
+    result = asyncio.run(source.cast_to(U, context=context))
+    assert isinstance(result, U)
+
+    # A constrained instance can be cast to a plain SequenceValue[FloatValue]
+    constrained = U.model_validate([1.0, 2.0])
+    result2 = asyncio.run(constrained.cast_to(SequenceValue[FloatValue], context=context))
+    assert isinstance(result2, SequenceValue)
 
 
 @pytest.mark.unit
@@ -540,7 +600,7 @@ def test_string_map_schema_aliasing():
         T = StringMapValue[ItemType]
         json_schema = {
             "type": "object",
-            "additionalProperties": {"title": ItemType.__name__},
+            "additionalProperties": {"x-value-type": ItemType.__name__},
         }
         schema = validate_value_schema(json_schema)
         assert isinstance(schema, StringMapValueSchema)
@@ -572,7 +632,7 @@ def test_super_recursive_schema_manual():
             "type": "array",
             "items": {
                 "type": "object",
-                "additionalProperties": {"title": "StringValue"},
+                "additionalProperties": {"x-value-type": "StringValue"},
             },
         },
     }
@@ -691,8 +751,8 @@ def test_data_schema_aliasing():
         "title": "FooBarData",
         "type": "object",
         "properties": {
-            "foo": {"title": "StringValue"},
-            "bar": {"title": "IntegerValue"},
+            "foo": {"x-value-type": "StringValue"},
+            "bar": {"x-value-type": "IntegerValue"},
         },
         "required": ["foo", "bar"],
     }
@@ -719,6 +779,62 @@ def test_data_schema_aliasing():
     t2 = T.model_validate(u2.model_dump())
     assert u2.root.foo == t2.foo
     assert u2.root.bar == t2.bar
+
+
+@pytest.mark.unit
+def test_data_schema_with_multiple_constrained_float_properties():
+    """Two FloatValue properties with different constraints must not collide in $defs."""
+    json_schema = {
+        "title": "BoundedData",
+        "type": "object",
+        "properties": {
+            "probability": {"type": "number", "minimum": 0, "maximum": 1},
+            "temperature": {"type": "number", "minimum": -273.15},
+        },
+        "required": ["probability", "temperature"],
+    }
+    schema = validate_value_schema(json_schema)
+    U = schema.to_value_cls()
+
+    # Both fields enforce their own distinct constraints
+    instance = U.model_validate({"probability": 0.5, "temperature": 20.0})
+    assert instance.root.probability.root == 0.5
+    assert instance.root.temperature.root == 20.0
+
+    with pytest.raises(Exception):
+        U.model_validate({"probability": 1.5, "temperature": 20.0})
+
+    with pytest.raises(Exception):
+        U.model_validate({"probability": 0.5, "temperature": -300.0})
+
+    # Schema must have two distinct $defs entries, not one clobbering the other
+    full_schema = U.model_json_schema()
+    defs = full_schema.get("$defs", {})
+    float_defs = [v for v in defs.values() if v.get("type") == "number"]
+    assert len(float_defs) == 2
+
+
+@pytest.mark.unit
+def test_field_schema_mapping_preserves_extras():
+    """FieldSchemaMappingValue preserves schema extras (both known and unknown) on property schemas."""
+    from workflow_engine.core.values.schema import ValueSchemaValue
+
+    score_schema = FloatValueSchema(**{"type": "number", "minimum": 0.0, "maximum": 1.0, "x-foo": "bar"})
+    mapping = FieldSchemaMappingValue({"score": ValueSchemaValue(score_schema)})
+    data_schema = mapping.to_data_schema("TestData")
+    U = data_schema.to_value_cls()
+
+    # Known constraints are enforced
+    assert U.model_validate({"score": 0.5}).root.score.root == 0.5
+    with pytest.raises(Exception):
+        U.model_validate({"score": 1.5})
+    with pytest.raises(Exception):
+        U.model_validate({"score": -0.1})
+
+    # Unknown extras survive into the property's schema
+    score_field_schema = U.model_json_schema()["$defs"]
+    score_def = next(v for v in score_field_schema.values() if v.get("type") == "number")
+    assert score_def["x-foo"] == "bar"
 
 
 @pytest.mark.unit
@@ -754,7 +870,7 @@ def test_file_schema_aliasing():
         PDFFileValue,
         TextFileValue,
     ):
-        json_schema = {"title": T.__name__}
+        json_schema = {"x-value-type": T.__name__}
         schema = validate_value_schema(json_schema)
         U = schema.to_value_cls()
         assert U == T
@@ -788,7 +904,7 @@ def test_workflow_schema_roundtrip():
 @pytest.mark.unit
 def test_workflow_schema_aliasing():
     T = WorkflowValue
-    json_schema = {"title": T.__name__}
+    json_schema = {"x-value-type": T.__name__}
     schema = validate_value_schema(json_schema)
     U = schema.to_value_cls()
     assert U == T
@@ -821,7 +937,7 @@ def test_value_schema_value_roundtrip():
 @pytest.mark.unit
 def test_value_schema_value_manual():
     T = ValueSchemaValue
-    json_schema = {"title": T.__name__}
+    json_schema = {"x-value-type": T.__name__}
     schema = validate_value_schema(json_schema)
     U = schema.to_value_cls()
     assert U == T
@@ -838,7 +954,7 @@ def test_value_schema_value_manual():
 @pytest.mark.unit
 def test_value_schema_value_aliasing():
     T = ValueSchemaValue
-    json_schema = {"title": T.__name__}
+    json_schema = {"x-value-type": T.__name__}
     schema = validate_value_schema(json_schema)
     U = schema.to_value_cls()
     assert U == T

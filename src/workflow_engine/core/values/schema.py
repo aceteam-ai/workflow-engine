@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from functools import cached_property
-from typing import Any, ClassVar, Final, Literal, Self
+from typing import Annotated, Any, ClassVar, Final, Literal, Self, TypeVar
 
 from overrides import override
 from pydantic import (
@@ -20,7 +20,7 @@ from pydantic import (
     model_validator,
 )
 
-from ...utils.immutable import ImmutableBaseModel
+from workflow_engine.utils.immutable import ImmutableBaseModel
 from .data import Data, DataValue, build_data_type
 from .mapping import StringMapValue
 from .primitives import (
@@ -32,6 +32,7 @@ from .primitives import (
 )
 from .sequence import SequenceValue
 from .value import Value, ValueRegistry, ValueType
+from workflow_engine.utils.hash import json_digest
 
 
 def merge_defs(
@@ -43,6 +44,145 @@ def merge_defs(
     if b is None:
         return {} if a is None else a
     return dict(**a, **b)
+
+
+# Maps JSON Schema keywords to pydantic Field kwargs for each value category.
+_NUMERIC_FIELD_MAP: dict[str, str] = {
+    "minimum": "ge",
+    "maximum": "le",
+    "exclusiveMinimum": "gt",
+    "exclusiveMaximum": "lt",
+    "multipleOf": "multiple_of",
+}
+_STRING_FIELD_MAP: dict[str, str] = {
+    "minLength": "min_length",
+    "maxLength": "max_length",
+    "pattern": "pattern",
+}
+_SEQUENCE_FIELD_MAP: dict[str, str] = {
+    "minItems": "min_length",
+    "maxItems": "max_length",
+}
+_MAP_FIELD_MAP: dict[str, str] = {
+    "minProperties": "min_length",
+    "maxProperties": "max_length",
+}
+
+
+def _build_constrained_cls(
+    base_cls: type,
+    field_map: dict[str, str],
+    extras: dict[str, Any],
+) -> type:
+    """
+    Return a constrained subclass of *base_cls*, or *base_cls* itself if there
+    is nothing to add.
+
+    Known JSON Schema keywords (per *field_map*) become Pydantic Field
+    constraints on the ``root`` annotation, so they are both enforced at
+    runtime and reflected correctly in the schema.  Anything not in the map
+    is passed through as ``json_schema_extra`` (schema-only, no enforcement).
+    """
+    if not extras:
+        return base_cls
+
+    field_kwargs: dict[str, Any] = {}
+    schema_extras: dict[str, Any] = {}
+    for key, value in extras.items():
+        if key in field_map:
+            field_kwargs[field_map[key]] = value
+        else:
+            schema_extras[key] = value
+
+    root_annotation = base_cls.model_fields["root"].annotation
+    if field_kwargs:
+        root_annotation = Annotated[root_annotation, Field(**field_kwargs)]
+
+    # Give the subclass a unique title so that multiple constrained variants of
+    # the same base type (e.g. two FloatValue fields with different bounds in a
+    # DataValue) produce distinct $defs keys instead of colliding.
+    digest = json_digest(extras)
+    unique_title = f"{base_cls.__name__}_{digest}"
+
+    config_updates: dict[str, Any] = {"title": unique_title}
+    if schema_extras:
+        config_updates["json_schema_extra"] = schema_extras
+    namespace: dict[str, Any] = {
+        "__annotations__": {"root": root_annotation},
+        "model_config": base_cls.model_config | ConfigDict(**config_updates),
+    }
+
+    return type(base_cls.__name__, (base_cls,), namespace, register=False)
+
+
+def _build_constrained_sequence_cls(
+    item_type: type,
+    extras: dict[str, Any],
+) -> type:
+    """
+    Return a constrained SequenceValue subclass that remains a proper Pydantic
+    generic specialisation.  Unlike calling _build_constrained_cls on an already-
+    concrete SequenceValue[T], this creates an intermediate generic class and then
+    binds the item type, so __pydantic_generic_metadata__ has origin=<subclass>
+    (not None).  That keeps get_origin_and_args() — and therefore the casting
+    system — working correctly.
+    """
+    field_kwargs: dict[str, Any] = {}
+    schema_extras: dict[str, Any] = {}
+    for key, value in extras.items():
+        if key in _SEQUENCE_FIELD_MAP:
+            field_kwargs[_SEQUENCE_FIELD_MAP[key]] = value
+        else:
+            schema_extras[key] = value
+
+    # Include item type name so that SequenceValue[FloatValue] and
+    # SequenceValue[IntegerValue] with identical extras get distinct $defs keys.
+    digest = json_digest({"item_type": item_type.__name__, **extras})
+    unique_title = f"SequenceValue_{digest}"
+
+    T_item = TypeVar("T_item", bound=Value)  # fresh TypeVar per call
+    namespace: dict[str, Any] = {}
+    if field_kwargs:
+        namespace["__annotations__"] = {"root": Annotated[Sequence[T_item], Field(**field_kwargs)]}
+    config_updates: dict[str, Any] = {"title": unique_title}
+    if schema_extras:
+        config_updates["json_schema_extra"] = schema_extras
+    namespace["model_config"] = SequenceValue.model_config | ConfigDict(**config_updates)
+
+    cls = type("SequenceValue", (SequenceValue[T_item],), namespace, register=False)
+    return cls[item_type]
+
+
+def _build_constrained_map_cls(
+    item_type: type,
+    extras: dict[str, Any],
+) -> type:
+    """
+    Return a constrained StringMapValue subclass using the same generic approach
+    as _build_constrained_sequence_cls.
+    """
+    field_kwargs: dict[str, Any] = {}
+    schema_extras: dict[str, Any] = {}
+    for key, value in extras.items():
+        if key in _MAP_FIELD_MAP:
+            field_kwargs[_MAP_FIELD_MAP[key]] = value
+        else:
+            schema_extras[key] = value
+
+    digest = json_digest({"item_type": item_type.__name__, **extras})
+    unique_title = f"StringMapValue_{digest}"
+
+    T_item = TypeVar("T_item", bound=Value)
+    namespace: dict[str, Any] = {}
+    if field_kwargs:
+        namespace["__annotations__"] = {"root": Annotated[Mapping[str, T_item], Field(**field_kwargs)]}
+    config_updates: dict[str, Any] = {"title": unique_title}
+    if schema_extras:
+        config_updates["json_schema_extra"] = schema_extras
+    namespace["model_config"] = StringMapValue.model_config | ConfigDict(**config_updates)
+
+    cls = type("StringMapValue", (StringMapValue[T_item],), namespace, register=False)
+    return cls[item_type]
 
 
 class BaseValueSchema(ImmutableBaseModel):
@@ -61,6 +201,11 @@ class BaseValueSchema(ImmutableBaseModel):
     description: str | None = None
     default: Any | None = None
     const: Any | None = None
+    value_type: str | None = Field(
+        None,
+        serialization_alias="x-value-type",
+        validation_alias="x-value-type",
+    )
 
     @model_validator(mode="before")
     @classmethod
@@ -68,13 +213,17 @@ class BaseValueSchema(ImmutableBaseModel):
         """
         A Pydantic bug causes model_validate() to break when called on an
         instance of BaseValueSchema.
-        This is because the validator receives the .defs property from the
-        object, whereas it is expecting $defs.
-        To fix this, we move the property to the expected key.
+        This is because the validator receives Python attribute names from the
+        object, whereas it is expecting their aliased forms.
+        To fix this, we move the properties to the expected keys.
         """
-        if isinstance(data, Mapping) and ("$defs" not in data) and ("defs" in data):
-            data = dict(data)
+        if not isinstance(data, Mapping):
+            return data
+        data = dict(data)
+        if "$defs" not in data and "defs" in data:
             data["$defs"] = data.pop("defs")
+        if "x-value-type" not in data and "value_type" in data:
+            data["x-value-type"] = data.pop("value_type")
         return data
 
     @model_serializer(mode="wrap")
@@ -106,6 +255,12 @@ class BaseValueSchema(ImmutableBaseModel):
         ):
             keys_to_keep.add("$defs")
 
+        # x-value-type uses a serialization alias so __pydantic_fields_set__ contains
+        # "value_type" (the field name) but the serialized dict has "x-value-type".
+        # Handle it explicitly, like $defs above.
+        if data.get("x-value-type") is not None:
+            keys_to_keep.add("x-value-type")
+
         return {k: v for k, v in data.items() if k in keys_to_keep}
 
     def to_value_cls(
@@ -114,18 +269,22 @@ class BaseValueSchema(ImmutableBaseModel):
     ) -> ValueType:
         """
         Resolves this schema to a Pydantic class.
-        If the title matches a concrete Value class, then it returns that class
-        right away, regardless the other contents of the schema.
-        This is technically a hack, but it is a massive quality of life boost
-        for users, who can just provide { "title": "CustomValue" } as an alias
-        for the entire CustomValue schema.
+        If the x-value-type field matches a registered Value class and the
+        schema carries no additional fields, that class is returned directly.
+        This lets users provide { "x-value-type": "CustomValue" } as a
+        shorthand for the entire CustomValue schema.
+
+        If extra fields are present alongside x-value-type (e.g. constraints
+        such as ``minimum`` or ``maxLength``), the schema is built normally so
+        that a constrained subclass is produced and the constraints are not lost.
 
         References, if any, are resolved using self.defs first, then any
         extra_defs in order of decreasing precedence.
         """
-        value_cls = ValueRegistry.DEFAULT.load_value(self)
-        if value_cls is not None:
-            return value_cls
+        if not self.model_extra:
+            value_cls = ValueRegistry.DEFAULT.load_value(self)
+            if value_cls is not None:
+                return value_cls
         return self.build_value_cls(*extra_defs)
 
     def build_value_cls(
@@ -162,7 +321,6 @@ class NullValueSchema(BaseValueSchema):
 
 
 class IntegerValueSchema(BaseValueSchema):
-    # unused JSON Schema fields include minimum, maximum, multipleOf, etc.
     type: Final[Literal["integer"]]
 
     @override
@@ -170,11 +328,10 @@ class IntegerValueSchema(BaseValueSchema):
         self,
         *extra_defs: Mapping[str, ValueSchema],
     ) -> type[IntegerValue]:
-        return IntegerValue
+        return _build_constrained_cls(IntegerValue, _NUMERIC_FIELD_MAP, self.model_extra or {})
 
 
 class FloatValueSchema(BaseValueSchema):
-    # unused JSON Schema fields include minimum, maximum, multipleOf, etc.
     type: Final[Literal["number"]]
 
     @override
@@ -182,11 +339,10 @@ class FloatValueSchema(BaseValueSchema):
         self,
         *extra_defs: Mapping[str, ValueSchema],
     ) -> type[FloatValue]:
-        return FloatValue
+        return _build_constrained_cls(FloatValue, _NUMERIC_FIELD_MAP, self.model_extra or {})
 
 
 class StringValueSchema(BaseValueSchema):
-    # unused JSON Schema fields include length
     type: Final[Literal["string"]]
     enum: Sequence[str] | None = None
     pattern: str | None = None
@@ -196,7 +352,12 @@ class StringValueSchema(BaseValueSchema):
         self,
         *extra_defs: Mapping[str, ValueSchema],
     ) -> type[StringValue]:
-        return StringValue
+        # `pattern` is a declared field so it doesn't appear in model_extra;
+        # merge it in explicitly so the constraint helper can see it.
+        extras = dict(self.model_extra or {})
+        if self.pattern is not None:
+            extras["pattern"] = self.pattern
+        return _build_constrained_cls(StringValue, _STRING_FIELD_MAP, extras)
 
 
 class SequenceValueSchema(BaseValueSchema):
@@ -209,7 +370,10 @@ class SequenceValueSchema(BaseValueSchema):
         *extra_defs: Mapping[str, ValueSchema],
     ) -> type[SequenceValue]:
         T = self.items.to_value_cls(self.defs, *extra_defs)
-        return SequenceValue[T]
+        extras = dict(self.model_extra or {})
+        if not extras:
+            return SequenceValue[T]
+        return _build_constrained_sequence_cls(T, extras)
 
 
 class StringMapValueSchema(BaseValueSchema):
@@ -222,10 +386,13 @@ class StringMapValueSchema(BaseValueSchema):
         *extra_defs: Mapping[str, ValueSchema],
     ) -> type[StringMapValue]:
         if self.additionalProperties is True:
-            return StringMapValue[Value]
+            item_type = Value
         else:
-            V = self.additionalProperties.to_value_cls(self.defs, *extra_defs)
-            return StringMapValue[V]
+            item_type = self.additionalProperties.to_value_cls(self.defs, *extra_defs)
+        extras = dict(self.model_extra or {})
+        if not extras:
+            return StringMapValue[item_type]
+        return _build_constrained_map_cls(item_type, extras)
 
 
 class DataValueSchema(BaseValueSchema):

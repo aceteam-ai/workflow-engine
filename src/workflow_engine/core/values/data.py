@@ -153,11 +153,11 @@ def cast_data_to_data(
     target_type: type[DataValue],
 ) -> Caster[DataValue, DataValue] | None:
     source_origin, (source_value_type,) = get_origin_and_args(source_type)
-    assert source_origin is DataValue
+    assert issubclass(source_origin, DataValue)
     assert issubclass(source_value_type, Data)
 
     target_origin, (target_value_type,) = get_origin_and_args(target_type)
-    assert target_origin is DataValue
+    assert issubclass(target_origin, DataValue)
     assert issubclass(target_value_type, Data)
 
     source_fields = get_data_fields(source_value_type)
@@ -200,11 +200,11 @@ def cast_data_to_string_map(
     """
 
     source_origin, (source_value_type,) = get_origin_and_args(source_type)
-    assert source_origin is DataValue
+    assert issubclass(source_origin, DataValue)
     assert issubclass(source_value_type, Data)
 
     target_origin, (target_value_type,) = get_origin_and_args(target_type)
-    assert target_origin is StringMapValue
+    assert issubclass(target_origin, StringMapValue)
     assert issubclass(target_value_type, Value)
 
     source_fields = get_data_fields(source_value_type)
@@ -242,11 +242,11 @@ def cast_string_map_to_data(
     """
 
     source_origin, (source_value_type,) = get_origin_and_args(source_type)
-    assert source_origin is StringMapValue
+    assert issubclass(source_origin, StringMapValue)
     assert issubclass(source_value_type, Value)
 
     target_origin, (target_value_type,) = get_origin_and_args(target_type)
-    assert target_origin is DataValue
+    assert issubclass(target_origin, DataValue)
     assert issubclass(target_value_type, Data)
 
     target_fields = get_data_fields(target_value_type)
