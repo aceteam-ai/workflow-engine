@@ -521,6 +521,34 @@ def test_sequence_schema_aliasing():
 
 
 @pytest.mark.unit
+def test_constrained_sequence_is_castable():
+    """Constrained SequenceValue subclasses must remain compatible with the casting system."""
+    import asyncio
+    from workflow_engine.contexts import InMemoryContext
+
+    json_schema = {"type": "array", "items": {"type": "number"}, "minItems": 2, "maxItems": 4}
+    U = validate_value_schema(json_schema).to_value_cls()
+
+    assert issubclass(U, SequenceValue)
+
+    # Constraint is enforced at validation time
+    assert U.model_validate([1.0, 2.0]) == [1.0, 2.0]
+    with pytest.raises(Exception):
+        U.model_validate([1.0])  # too short
+
+    # A plain SequenceValue[FloatValue] can be cast to the constrained subclass
+    source = SequenceValue[FloatValue].model_validate([1.0, 2.0, 3.0])
+    context = InMemoryContext()
+    result = asyncio.run(source.cast_to(U, context=context))
+    assert isinstance(result, U)
+
+    # A constrained instance can be cast to a plain SequenceValue[FloatValue]
+    constrained = U.model_validate([1.0, 2.0])
+    result2 = asyncio.run(constrained.cast_to(SequenceValue[FloatValue], context=context))
+    assert isinstance(result2, SequenceValue)
+
+
+@pytest.mark.unit
 def test_string_map_schema_roundtrip():
     for ItemType, ItemSchema in (
         (BooleanValue, BooleanValueSchema),

@@ -62,7 +62,7 @@ def cast_json_to_sequence(
     assert issubclass(source_type, JSONValue)
 
     target_origin, _ = get_origin_and_args(target_type)
-    assert target_origin is SequenceValue
+    assert issubclass(target_origin, SequenceValue)
 
     def _cast(value: JSONValue, context: "Context") -> SequenceValue:
         if not isinstance(value.root, Sequence) or isinstance(value.root, str):
@@ -82,7 +82,7 @@ def cast_json_to_string_map(
     assert issubclass(source_type, JSONValue)
 
     target_origin, _ = get_origin_and_args(target_type)
-    assert target_origin is StringMapValue
+    assert issubclass(target_origin, StringMapValue)
 
     def _cast(value: JSONValue, context: "Context") -> StringMapValue:
         if not isinstance(value.root, Mapping):

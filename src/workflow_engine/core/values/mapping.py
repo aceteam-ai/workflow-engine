@@ -60,8 +60,8 @@ def cast_string_map_to_string_map(
     source_origin, (source_value_type,) = get_origin_and_args(source_type)
     target_origin, (target_value_type,) = get_origin_and_args(target_type)
 
-    assert source_origin is StringMapValue
-    assert target_origin is StringMapValue
+    assert issubclass(source_origin, StringMapValue)
+    assert issubclass(target_origin, StringMapValue)
     if not source_value_type.can_cast_to(target_value_type):
         return None
 

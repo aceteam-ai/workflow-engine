@@ -43,8 +43,8 @@ def cast_sequence_to_sequence(
     source_origin, (source_item_type,) = get_origin_and_args(source_type)
     target_origin, (target_item_type,) = get_origin_and_args(target_type)
 
-    assert source_origin is SequenceValue
-    assert target_origin is SequenceValue
+    assert issubclass(source_origin, SequenceValue)
+    assert issubclass(target_origin, SequenceValue)
     if not source_item_type.can_cast_to(target_item_type):
         return None
 

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import inspect
 import re
+
 from abc import ABC, abstractmethod
 from collections.abc import Iterable, Mapping
 from functools import cached_property
@@ -113,7 +114,6 @@ class GenericCaster(Protocol, Generic[SourceType, TargetType]):  # type: ignore
         target_type: type[TargetType],
     ) -> Caster[SourceType, TargetType] | None: ...
 
-
 generic_pattern = re.compile(r"^[a-zA-Z]\w+\[.*\]$")
 
 
@@ -150,12 +150,13 @@ class Value(ImmutableRootModel[T], Generic[T]):
         if not register:
             return
 
-        # NOTE: something about this hack does not work when using
-        # `from __future__ import annotations`.
         while generic_pattern.match(cls.__name__) is not None:
             assert cls.__base__ is not None
             cls = cls.__base__
-        if get_origin(cls) is None:
+        # Skip generic base classes (e.g. SequenceValue, StringMapValue) whose
+        # __pydantic_generic_metadata__["parameters"] still contains unbound
+        # TypeVars — only fully-concrete classes belong in the registry.
+        if get_origin(cls) is None and len(cls.__pydantic_generic_metadata__["parameters"]) == 0:
             ValueRegistry.DEFAULT.register_value_class(cls)
 
     @classmethod
