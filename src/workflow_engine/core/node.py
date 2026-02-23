@@ -402,7 +402,11 @@ class Node(ImmutableBaseModel, Generic[Input_contra, Output_co, Params_co]):
             from .workflow import Workflow  # lazy to avoid circular import
 
             if isinstance(output_obj, Workflow):
-                output = output_obj
+                output = await context.on_node_expand(
+                    node=self,
+                    input=input,
+                    workflow=output_obj,
+                )
                 # TODO: once that workflow eventually finishes running, its
                 # output should be the output of this node, and we should call
                 # context.on_node_finish.
