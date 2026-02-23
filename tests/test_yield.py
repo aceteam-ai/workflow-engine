@@ -88,6 +88,7 @@ class YieldingNode(Node[SimpleInput, SimpleOutput, Params]):
     type: Literal["YieldTestYielding"] = "YieldTestYielding"  # pyright: ignore[reportIncompatibleVariableOverride]
 
     message: str = "yielding"
+    calls: ClassVar[dict[str, int]] = {}
 
     @cached_property
     def input_type(self):
@@ -98,6 +99,7 @@ class YieldingNode(Node[SimpleInput, SimpleOutput, Params]):
         return SimpleOutput
 
     async def run(self, context: Context, input: SimpleInput) -> SimpleOutput:
+        YieldingNode.calls[self.id] = YieldingNode.calls.get(self.id, 0) + 1
         raise ShouldYield(self.message)
 
 
@@ -135,6 +137,7 @@ class ResumableNode(Node[SimpleInput, SimpleOutput, Params]):
 @pytest.fixture(autouse=True)
 def reset_echo_ran():
     EchoNode.ran = set()
+    YieldingNode.calls = {}
     ResumableNode.calls = {}
     yield
 
@@ -167,7 +170,7 @@ def _fan_out_workflow(
                  ──> echo_b  ──> output.echo_b
     """
     input_node = InputNode.empty()
-    all_keys = {id: StringValue for id in yielding_ids + echo_ids}
+    all_keys = {node_id: StringValue for node_id in yielding_ids + echo_ids}
     output_node = OutputNode.from_fields(**all_keys)
     constant = ConstantStringNode.from_value(id="constant", value="hello")
 
@@ -239,7 +242,10 @@ def _chain_workflow(*, yield_first: bool) -> Workflow:
                 source=node_a, source_key="result", target=node_b, target_key="value"
             ),
             Edge.from_nodes(
-                source=node_b, source_key="result", target=output_node, target_key="result"
+                source=node_b,
+                source_key="result",
+                target=output_node,
+                target_key="result",
             ),
         ],
     )
@@ -254,15 +260,15 @@ class TestYieldContinuesProgress:
     @pytest.mark.asyncio
     async def test_independent_nodes_run_after_yield(self, algorithm):
         """Nodes in independent branches still execute when another branch yields."""
-        workflow, _ = _fan_out_workflow(
-            yielding_ids=["y"], echo_ids=["e"]
-        )
+        workflow, _ = _fan_out_workflow(yielding_ids=["y"], echo_ids=["e"])
         context = InMemoryContext()
 
         with pytest.raises(WorkflowYield):
             await algorithm.execute(context=context, workflow=workflow, input={})
 
         assert "e" in EchoNode.ran
+        # Yielding node must run exactly once — never re-dispatched
+        assert YieldingNode.calls.get("y") == 1
 
     @pytest.mark.asyncio
     async def test_downstream_nodes_do_not_run_after_yield(self, algorithm):
@@ -292,9 +298,7 @@ class TestMultipleYields:
     @pytest.mark.asyncio
     async def test_all_yielding_nodes_collected(self, algorithm):
         """WorkflowYield contains every node that yielded, not just the first."""
-        workflow, _ = _fan_out_workflow(
-            yielding_ids=["y1", "y2", "y3"], echo_ids=[]
-        )
+        workflow, _ = _fan_out_workflow(yielding_ids=["y1", "y2", "y3"], echo_ids=[])
         context = InMemoryContext()
 
         with pytest.raises(WorkflowYield) as exc_info:
@@ -305,9 +309,7 @@ class TestMultipleYields:
     @pytest.mark.asyncio
     async def test_yield_messages_preserved(self, algorithm):
         """Each yielded node's message is available in WorkflowYield.node_yields."""
-        workflow, _ = _fan_out_workflow(
-            yielding_ids=["y1", "y2"], echo_ids=[]
-        )
+        workflow, _ = _fan_out_workflow(yielding_ids=["y1", "y2"], echo_ids=[])
         context = InMemoryContext()
 
         with pytest.raises(WorkflowYield) as exc_info:
@@ -336,9 +338,7 @@ class TestMultipleYields:
     @pytest.mark.asyncio
     async def test_workflow_yield_not_raised_if_no_nodes_yield(self, algorithm):
         """WorkflowYield is not raised when all nodes complete normally."""
-        workflow, _ = _fan_out_workflow(
-            yielding_ids=[], echo_ids=["e1", "e2"]
-        )
+        workflow, _ = _fan_out_workflow(yielding_ids=[], echo_ids=["e1", "e2"])
         context = InMemoryContext()
 
         errors, output = await algorithm.execute(
@@ -365,7 +365,10 @@ class TestResumption:
                     source=constant, source_key="value", target=node, target_key="value"
                 ),
                 Edge.from_nodes(
-                    source=node, source_key="result", target=output_node, target_key="result"
+                    source=node,
+                    source_key="result",
+                    target=output_node,
+                    target_key="result",
                 ),
             ],
         )

@@ -138,12 +138,14 @@ class TopologicalExecutionAlgorithm(ExecutionAlgorithm):
                     if limiter is not None:
                         limiter.release()
 
-                ready_nodes = dict(
-                    workflow.get_ready_nodes(
+                ready_nodes = {
+                    node_id: node_input
+                    for node_id, node_input in workflow.get_ready_nodes(
                         node_outputs=node_outputs,
                         partial_results=ready_nodes,
-                    )
-                )
+                    ).items()
+                    if node_id not in node_yields
+                }
 
             if node_yields:
                 raise WorkflowYield(node_yields)

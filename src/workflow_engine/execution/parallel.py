@@ -24,6 +24,7 @@ class NodeResult(NamedTuple):
 
     node_id: str
     result: DataMapping | Workflow | Exception
+    input: DataMapping  # Original input to the node
     should_retry: ShouldRetry | None = None  # Set if this is a retryable failure
     should_yield: ShouldYield | None = None  # Set if the node yielded
 
@@ -163,7 +164,7 @@ class ParallelExecutionAlgorithm(ExecutionAlgorithm):
                         node_yields[node_id] = node_result.should_yield
                         await context.on_node_yield(
                             node=node,
-                            input=node_result.result,  # type: ignore[arg-type]
+                            input=node_result.input,
                             exception=node_result.should_yield,
                         )
                         continue
@@ -173,19 +174,17 @@ class ParallelExecutionAlgorithm(ExecutionAlgorithm):
                         should_retry_error = node_result.should_retry
                         node = workflow.nodes_by_id[node_id]
                         node_max_retries = self._get_node_max_retries(node)
-                        node_input = (
-                            node_result.result
-                        )  # Input was stored in result for retry
+                        node_input = node_result.input
 
                         if retry_tracker.should_retry(node_id, node_max_retries):
                             retry_tracker.record_retry(node_id, should_retry_error)
-                            pending_retry[node_id] = node_input  # type: ignore
+                            pending_retry[node_id] = node_input
 
                             # Call the on_node_retry hook
                             state = retry_tracker.get_state(node_id)
                             await context.on_node_retry(
                                 node=node,
-                                input=node_input,  # type: ignore
+                                input=node_input,
                                 exception=should_retry_error,
                                 attempt=state.attempt,
                             )
@@ -323,17 +322,22 @@ class ParallelExecutionAlgorithm(ExecutionAlgorithm):
             else:
                 result = await node(context, node_input)
 
-            return NodeResult(node_id, result)
+            return NodeResult(node_id, result, input=node_input)
 
         except ShouldYield as e:
-            # Store input in result so the on_node_yield hook receives it
-            return NodeResult(node_id, node_input, should_yield=e)
+            return NodeResult(
+                node_id, result=node_input, input=node_input, should_yield=e
+            )
 
         except NodeException as e:
             # Check if the underlying cause is ShouldRetry
             if isinstance(e.__cause__, ShouldRetry):
-                # Return with should_retry flag, storing input in result for later use
-                return NodeResult(node_id, node_input, should_retry=e.__cause__)
+                return NodeResult(
+                    node_id,
+                    result=node_input,
+                    input=node_input,
+                    should_retry=e.__cause__,
+                )
             raise
 
         finally:
