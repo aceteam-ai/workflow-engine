@@ -13,15 +13,25 @@ from workflow_engine import (
     Edge,
     Node,
     Params,
+    ShouldYield,
     StringValue,
     Workflow,
     WorkflowErrors,
+    WorkflowYield,
 )
 from workflow_engine.contexts import InMemoryContext
 from workflow_engine.core import NodeTypeInfo
 from workflow_engine.core.io import InputNode, OutputNode
 from workflow_engine.execution import TopologicalExecutionAlgorithm
+from workflow_engine.execution.parallel import ParallelExecutionAlgorithm
 from workflow_engine.nodes import ConstantStringNode, ErrorNode
+
+
+@pytest.fixture(params=["topological", "parallel"])
+def any_algorithm(request):
+    if request.param == "topological":
+        return TopologicalExecutionAlgorithm()
+    return ParallelExecutionAlgorithm()
 
 
 def _simple_workflow() -> Workflow:
@@ -122,6 +132,47 @@ class ExpandingNode(Node[Data, ExpandingOutput, Params]):
         return cls(id=id, params=Params(), output_value=output_value)
 
 
+class YieldingNode(Node[Data, ExpandingOutput, Params]):
+    TYPE_INFO: ClassVar[NodeTypeInfo] = NodeTypeInfo.from_parameter_type(
+        name="HookYielding",
+        display_name="HookYielding",
+        description="Always raises ShouldYield.",
+        version="1.0.0",
+        parameter_type=Params,
+    )
+    type: Literal["HookYielding"] = "HookYielding"  # pyright: ignore[reportIncompatibleVariableOverride]
+
+    @cached_property
+    def input_type(self):
+        return Data
+
+    @cached_property
+    def output_type(self):
+        return ExpandingOutput
+
+    async def run(self, context: Context, input: Data) -> ExpandingOutput:
+        raise ShouldYield("waiting for approval")
+
+
+def _yielding_workflow() -> Workflow:
+    yielding = YieldingNode(id="yielding", params=Params())
+    input_node = InputNode.empty()
+    output_node = OutputNode.from_fields(value=StringValue)
+    return Workflow(
+        input_node=input_node,
+        output_node=output_node,
+        inner_nodes=[yielding],
+        edges=[
+            Edge.from_nodes(
+                source=yielding,
+                source_key="value",
+                target=output_node,
+                target_key="value",
+            )
+        ],
+    )
+
+
 def _expanding_workflow(output_value: str = "expanded") -> Workflow:
     expanding = ExpandingNode.create(id="expanding", output_value=output_value)
     input_node = InputNode.empty()
@@ -157,7 +208,11 @@ class TestOnNodeStart:
         assert not errors.any()
         assert mock.call_count == 3  # input_node, constant, output_node
         called_ids = {call.kwargs["node"].id for call in mock.call_args_list}
-        assert called_ids == {workflow.input_node.id, "constant", workflow.output_node.id}
+        assert called_ids == {
+            workflow.input_node.id,
+            "constant",
+            workflow.output_node.id,
+        }
 
     @pytest.mark.asyncio
     async def test_can_skip_node_execution(self):
@@ -198,7 +253,11 @@ class TestOnNodeFinish:
         assert not errors.any()
         assert mock.call_count == 3  # input_node, constant, output_node
         called_ids = {call.kwargs["node"].id for call in mock.call_args_list}
-        assert called_ids == {workflow.input_node.id, "constant", workflow.output_node.id}
+        assert called_ids == {
+            workflow.input_node.id,
+            "constant",
+            workflow.output_node.id,
+        }
 
     @pytest.mark.asyncio
     async def test_can_modify_output(self):
@@ -235,7 +294,9 @@ class TestOnNodeFinish:
         context.on_node_finish = on_node_finish
 
         algorithm = TopologicalExecutionAlgorithm()
-        errors, _ = await algorithm.execute(context=context, workflow=workflow, input={})
+        errors, _ = await algorithm.execute(
+            context=context, workflow=workflow, input={}
+        )
 
         assert not errors.any()
         assert "expanding" not in finish_ids
@@ -296,6 +357,61 @@ class TestOnNodeExpand:
 
         assert not errors.any()
         assert output == {"value": StringValue("replaced")}
+
+
+class TestOnNodeYield:
+    @pytest.mark.asyncio
+    async def test_called_when_node_yields(self, any_algorithm):
+        workflow = _yielding_workflow()
+        context = InMemoryContext()
+        mock = AsyncMock()
+        context.on_node_yield = mock
+
+        with pytest.raises(WorkflowYield):
+            await any_algorithm.execute(context=context, workflow=workflow, input={})
+
+        mock.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_called_with_correct_arguments(self, any_algorithm):
+        workflow = _yielding_workflow()
+        context = InMemoryContext()
+        mock = AsyncMock()
+        context.on_node_yield = mock
+
+        with pytest.raises(WorkflowYield):
+            await any_algorithm.execute(context=context, workflow=workflow, input={})
+
+        kwargs = mock.call_args.kwargs
+        assert kwargs["node"].id == "yielding"
+        assert isinstance(kwargs["exception"], ShouldYield)
+        assert kwargs["exception"].message == "waiting for approval"
+
+    @pytest.mark.asyncio
+    async def test_not_called_for_regular_error(self, any_algorithm):
+        """on_node_yield must not fire when a node raises a plain error."""
+        workflow = _error_workflow()
+        context = InMemoryContext()
+        mock = AsyncMock()
+        context.on_node_yield = mock
+
+        await any_algorithm.execute(context=context, workflow=workflow, input={})
+
+        mock.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_not_called_on_success(self, any_algorithm):
+        workflow = _simple_workflow()
+        context = InMemoryContext()
+        mock = AsyncMock()
+        context.on_node_yield = mock
+
+        errors, _ = await any_algorithm.execute(
+            context=context, workflow=workflow, input={}
+        )
+
+        assert not errors.any()
+        mock.assert_not_called()
 
 
 class TestOnWorkflowStart:
@@ -390,7 +506,9 @@ class TestOnWorkflowFinish:
         context.on_workflow_finish = mock
 
         algorithm = TopologicalExecutionAlgorithm()
-        errors, _ = await algorithm.execute(context=context, workflow=workflow, input={})
+        errors, _ = await algorithm.execute(
+            context=context, workflow=workflow, input={}
+        )
 
         assert errors.any()
         mock.assert_not_called()
@@ -405,7 +523,9 @@ class TestOnWorkflowError:
         context.on_workflow_error = mock
 
         algorithm = TopologicalExecutionAlgorithm()
-        errors, _ = await algorithm.execute(context=context, workflow=workflow, input={})
+        errors, _ = await algorithm.execute(
+            context=context, workflow=workflow, input={}
+        )
 
         assert errors.any()
         mock.assert_called_once()
@@ -423,7 +543,9 @@ class TestOnWorkflowError:
         context.on_workflow_error = on_workflow_error
 
         algorithm = TopologicalExecutionAlgorithm()
-        errors, _ = await algorithm.execute(context=context, workflow=workflow, input={})
+        errors, _ = await algorithm.execute(
+            context=context, workflow=workflow, input={}
+        )
 
         assert not errors.any()
 
@@ -435,7 +557,9 @@ class TestOnWorkflowError:
         context.on_workflow_error = mock
 
         algorithm = TopologicalExecutionAlgorithm()
-        errors, _ = await algorithm.execute(context=context, workflow=workflow, input={})
+        errors, _ = await algorithm.execute(
+            context=context, workflow=workflow, input={}
+        )
 
         assert not errors.any()
         mock.assert_not_called()

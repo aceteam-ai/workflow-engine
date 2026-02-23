@@ -8,7 +8,7 @@ import asyncio
 from overrides import override
 
 from ..core import Context, DataMapping, ExecutionAlgorithm, Workflow, WorkflowErrors
-from ..core.error import NodeException, ShouldRetry
+from ..core.error import NodeException, ShouldRetry, ShouldYield, WorkflowYield
 from .rate_limit import RateLimitRegistry
 from .retry import RetryTracker
 
@@ -61,6 +61,8 @@ class TopologicalExecutionAlgorithm(ExecutionAlgorithm):
 
         # Track nodes that are waiting for retry (node_id -> input)
         pending_retry: dict[str, DataMapping] = {}
+        # Track nodes that yielded (node_id -> ShouldYield exception)
+        node_yields: dict[str, ShouldYield] = {}
 
         try:
             ready_nodes = {workflow.input_node.id: input}
@@ -98,6 +100,15 @@ class TopologicalExecutionAlgorithm(ExecutionAlgorithm):
                     else:
                         node_outputs[node.id] = node_result
 
+                except ShouldYield as e:
+                    node_yields[node_id] = e
+                    await context.on_node_yield(
+                        node=node,
+                        input=node_input,
+                        exception=e,
+                    )
+                    continue
+
                 except NodeException as e:
                     # Check if the underlying cause is ShouldRetry
                     if isinstance(e.__cause__, ShouldRetry):
@@ -127,17 +138,24 @@ class TopologicalExecutionAlgorithm(ExecutionAlgorithm):
                     if limiter is not None:
                         limiter.release()
 
-                ready_nodes = dict(
-                    workflow.get_ready_nodes(
+                ready_nodes = {
+                    node_id: node_input
+                    for node_id, node_input in workflow.get_ready_nodes(
                         node_outputs=node_outputs,
                         partial_results=ready_nodes,
-                    )
-                )
+                    ).items()
+                    if node_id not in node_yields
+                }
+
+            if node_yields:
+                raise WorkflowYield(node_yields)
 
             output = await workflow.get_output(
                 context=context,
                 node_outputs=node_outputs,
             )
+        except WorkflowYield:
+            raise
         except Exception as e:
             errors.add(e)
             partial_output = await workflow.get_output(

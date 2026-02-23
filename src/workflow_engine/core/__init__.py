@@ -2,7 +2,14 @@
 from .context import Context
 from .edge import Edge
 from .engine import WorkflowEngine
-from .error import NodeException, ShouldRetry, UserException, WorkflowErrors
+from .error import (
+    NodeException,
+    ShouldRetry,
+    ShouldYield,
+    UserException,
+    WorkflowErrors,
+    WorkflowYield,
+)
 from .execution import ExecutionAlgorithm
 from .io import InputNode, OutputNode
 from .migration import (
@@ -86,6 +93,7 @@ __all__ = [
     "Params",
     "SequenceValue",
     "ShouldRetry",
+    "ShouldYield",
     "StringMapValue",
     "StringValue",
     "UserException",
@@ -98,4 +106,5 @@ __all__ = [
     "WorkflowEngine",
     "WorkflowErrors",
     "WorkflowValue",
+    "WorkflowYield",
 ]

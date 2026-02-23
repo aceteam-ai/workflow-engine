@@ -33,6 +33,7 @@ from .core import (
     Params,
     SequenceValue,
     ShouldRetry,
+    ShouldYield,
     StringMapValue,
     StringValue,
     UserException,
@@ -45,6 +46,7 @@ from .core import (
     WorkflowEngine,
     WorkflowErrors,
     WorkflowValue,
+    WorkflowYield,
     migration_registry,
 )
 
@@ -81,6 +83,7 @@ __all__ = [
     "Params",
     "SequenceValue",
     "ShouldRetry",
+    "ShouldYield",
     "StringMapValue",
     "StringValue",
     "UserException",
@@ -93,4 +96,5 @@ __all__ = [
     "WorkflowEngine",
     "WorkflowErrors",
     "WorkflowValue",
+    "WorkflowYield",
 ]
