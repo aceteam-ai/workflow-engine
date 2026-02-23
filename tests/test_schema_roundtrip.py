@@ -249,6 +249,39 @@ def test_nested_value_type_roundtrip_without_defs():
     assert result == value_cls, f"Expected {value_cls!r}, got {result!r}"
 
 
+# --- Constrained subclass round-trips ---
+
+
+@pytest.mark.unit
+def test_constrained_float_roundtrip():
+    """FloatValue with numeric constraints round-trips without losing the constraints."""
+    from workflow_engine.core.values.schema import _NUMERIC_FIELD_MAP, _build_constrained_cls
+
+    original = _build_constrained_cls(FloatValue, _NUMERIC_FIELD_MAP, {"minimum": 0.0, "maximum": 1.0})
+    result = _value_type_roundtrip(original)
+    assert result.model_fields["root"].metadata == original.model_fields["root"].metadata
+
+
+@pytest.mark.unit
+def test_constrained_integer_roundtrip():
+    """IntegerValue with numeric constraints round-trips without losing the constraints."""
+    from workflow_engine.core.values.schema import _build_constrained_cls, _NUMERIC_FIELD_MAP
+
+    original = _build_constrained_cls(IntegerValue, _NUMERIC_FIELD_MAP, {"minimum": 1, "maximum": 100})
+    result = _value_type_roundtrip(original)
+    assert result.model_fields["root"].metadata == original.model_fields["root"].metadata
+
+
+@pytest.mark.unit
+def test_constrained_string_roundtrip():
+    """StringValue with length constraints round-trips without losing the constraints."""
+    from workflow_engine.core.values.schema import _STRING_FIELD_MAP, _build_constrained_cls
+
+    original = _build_constrained_cls(StringValue, _STRING_FIELD_MAP, {"minLength": 1, "maxLength": 50})
+    result = _value_type_roundtrip(original)
+    assert result.model_fields["root"].metadata == original.model_fields["root"].metadata
+
+
 # --- Nested generic types ---
 
 

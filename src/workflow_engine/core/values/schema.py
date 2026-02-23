@@ -6,8 +6,6 @@ Pydantic for Value subclasses.
 
 from __future__ import annotations
 
-import hashlib
-import json
 from collections.abc import Mapping, Sequence
 from functools import cached_property
 from typing import Annotated, Any, ClassVar, Final, Literal, Self, TypeVar
@@ -22,7 +20,7 @@ from pydantic import (
     model_validator,
 )
 
-from ...utils.immutable import ImmutableBaseModel
+from workflow_engine.utils.immutable import ImmutableBaseModel
 from .data import Data, DataValue, build_data_type
 from .mapping import StringMapValue
 from .primitives import (
@@ -34,6 +32,7 @@ from .primitives import (
 )
 from .sequence import SequenceValue
 from .value import Value, ValueRegistry, ValueType
+from workflow_engine.utils.hash import json_digest
 
 
 def merge_defs(
@@ -102,7 +101,7 @@ def _build_constrained_cls(
     # Give the subclass a unique title so that multiple constrained variants of
     # the same base type (e.g. two FloatValue fields with different bounds in a
     # DataValue) produce distinct $defs keys instead of colliding.
-    digest = hashlib.sha256(json.dumps(extras, sort_keys=True).encode()).hexdigest()
+    digest = json_digest(extras)
     unique_title = f"{base_cls.__name__}_{digest}"
 
     config_updates: dict[str, Any] = {"title": unique_title}
@@ -138,8 +137,7 @@ def _build_constrained_sequence_cls(
 
     # Include item type name so that SequenceValue[FloatValue] and
     # SequenceValue[IntegerValue] with identical extras get distinct $defs keys.
-    digest_input = {"item_type": item_type.__name__, **extras}
-    digest = hashlib.sha256(json.dumps(digest_input, sort_keys=True).encode()).hexdigest()
+    digest = json_digest({"item_type": item_type.__name__, **extras})
     unique_title = f"SequenceValue_{digest}"
 
     T_item = TypeVar("T_item", bound=Value)  # fresh TypeVar per call
@@ -171,8 +169,7 @@ def _build_constrained_map_cls(
         else:
             schema_extras[key] = value
 
-    digest_input = {"item_type": item_type.__name__, **extras}
-    digest = hashlib.sha256(json.dumps(digest_input, sort_keys=True).encode()).hexdigest()
+    digest = json_digest({"item_type": item_type.__name__, **extras})
     unique_title = f"StringMapValue_{digest}"
 
     T_item = TypeVar("T_item", bound=Value)
@@ -272,17 +269,22 @@ class BaseValueSchema(ImmutableBaseModel):
     ) -> ValueType:
         """
         Resolves this schema to a Pydantic class.
-        If the x-value-type field matches a registered Value class, then it
-        returns that class right away, regardless of the other contents of the
-        schema.  This lets users provide { "x-value-type": "CustomValue" } as a
+        If the x-value-type field matches a registered Value class and the
+        schema carries no additional fields, that class is returned directly.
+        This lets users provide { "x-value-type": "CustomValue" } as a
         shorthand for the entire CustomValue schema.
+
+        If extra fields are present alongside x-value-type (e.g. constraints
+        such as ``minimum`` or ``maxLength``), the schema is built normally so
+        that a constrained subclass is produced and the constraints are not lost.
 
         References, if any, are resolved using self.defs first, then any
         extra_defs in order of decreasing precedence.
         """
-        value_cls = ValueRegistry.DEFAULT.load_value(self)
-        if value_cls is not None:
-            return value_cls
+        if not self.model_extra:
+            value_cls = ValueRegistry.DEFAULT.load_value(self)
+            if value_cls is not None:
+                return value_cls
         return self.build_value_cls(*extra_defs)
 
     def build_value_cls(
