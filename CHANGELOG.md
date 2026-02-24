@@ -4,6 +4,19 @@ All notable changes to this project will be documented in this file.
 
 This project uses [PEP 440](https://peps.python.org/pep-0440/) versioning with release candidates (rcN) for pre-release versions.
 
+## [2.0.0rc3] - 2026-02-23
+
+### Added
+- `ShouldYield` / `WorkflowYield` control-flow signals for nodes that dispatch external work and cannot return a value in the current execution (#77)
+- `on_node_yield(node, input, exception)` context hook, called once per yielded node before `WorkflowYield` is raised (#77)
+- `on_node_expand` context hook called when a node's `run()` returns a `Workflow` instead of a `DataMapping` (#74)
+- Constrained Value subclasses: `build_value_cls()` on primitive schema classes now enforces JSON Schema keywords (`minimum`, `maxLength`, `minItems`, etc.) at runtime via Pydantic `Field` constraints (#76)
+- `x-value-type` JSON Schema extension field for stable Value type detection; `title` retained as a backwards-compatible fallback (#76)
+
+### Fixed
+- `$defs` key collisions when multiple constrained variants of the same base Value type appear in a single `DataValue` schema (#76)
+- Bug in `ParallelExecutionAlgorithm` where yielded nodes were missing from the ready-node exclusion filter, which would have caused an infinite re-dispatch loop (#77)
+
 ## [2.0.0rc2] - 2026-02-13
 
 ### Added

@@ -1,6 +1,6 @@
 [project]
 name = "aceteam-workflow-engine"
-version = "2.0.0rc2"
+version = "2.0.0rc3"
 description = "A powerful workflow orchestration engine for composing complex computational tasks from modular, type-safe nodes"
 readme = "README.md"
 license = "MIT"
