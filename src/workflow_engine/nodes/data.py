@@ -36,11 +36,11 @@ V = TypeVar("V", bound=Value)
 
 
 class SequenceParams(Params):
-    length: IntegerValue
+    length: IntegerValue = Field(title="Length", description="The number of elements in the sequence.")
 
 
 class SequenceData(Data, Generic[V]):
-    sequence: SequenceValue[V]
+    sequence: SequenceValue[V] = Field(title="Sequence", description="The sequence of values.")
 
 
 class GatherSequenceNode(Node[Data, SequenceData, SequenceParams]):
@@ -182,11 +182,11 @@ class ExpandSequenceNode(Node[SequenceData, Data, SequenceParams]):
 
 
 class MappingParams(Params):
-    keys: SequenceValue[StringValue]
+    keys: SequenceValue[StringValue] = Field(title="Keys", description="The keys of the mapping.")
 
 
 class MappingData(Data, Generic[V]):
-    mapping: StringMapValue[V]
+    mapping: StringMapValue[V] = Field(title="Mapping", description="The mapping of keys to values.")
 
 
 class GatherMappingNode(Node[Data, MappingData, MappingParams]):
@@ -313,7 +313,7 @@ class NestedData(Data, Generic[D]):
     A data type that contains a nested data object.
     """
 
-    data: DataValue[D]
+    data: DataValue[D] = Field(title="Data", description="The nested data object.")
 
 
 class GatherDataNode(Node[Data, NestedData, Empty]):

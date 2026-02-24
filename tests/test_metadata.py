@@ -22,6 +22,8 @@ def test_constant_string_node_type_info():
             "properties": {
                 "value": {
                     "$ref": "#/$defs/StringValue",
+                    "title": "Value",
+                    "description": "The constant string value.",
                 },
             },
             "required": ["value"],
@@ -30,6 +32,15 @@ def test_constant_string_node_type_info():
         },
         "version": "0.4.0",
     }
+
+
+@pytest.mark.unit
+def test_constant_string_node_output_schema_has_field_title_and_description():
+    """Field titles and descriptions should appear in the output schema."""
+    node = ConstantStringNode.from_value(id="test_node", value="test")
+    value_prop = node.output_schema.model_dump()["properties"]["value"]
+    assert value_prop["title"] == "Value"
+    assert value_prop["description"] == "The constant string value."
 
 
 @pytest.mark.unit
@@ -58,6 +69,8 @@ def test_constant_string_node_output_schema():
         "properties": {
             "value": {
                 "$ref": "#/$defs/StringValue",
+                "title": "Value",
+                "description": "The constant string value.",
             },
         },
         "required": ["value"],
