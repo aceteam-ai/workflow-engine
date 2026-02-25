@@ -4,6 +4,20 @@ All notable changes to this project will be documented in this file.
 
 This project uses [PEP 440](https://peps.python.org/pep-0440/) versioning with release candidates (rcN) for pre-release versions.
 
+## [2.0.0rc4] - 2026-02-25
+
+### Added
+- `on_workflow_yield` context hook called when a workflow raises `WorkflowYield`; receives `partial_output` from nodes that completed before the yield (#79)
+- `node_yields` parameter on `on_workflow_error` hook to expose any `ShouldYield` exceptions collected before the error (#79)
+- `AddNode` is now variadic: accepts any number of inputs (≥2) via a `num_arguments` parameter, with input fields named using an infinite alphabetic sequence (`a`, `b`, …, `z`, `aa`, `ab`, …) (#80)
+- Titles and descriptions on all built-in node input, output, and parameter fields for non-technical display (#78)
+
+### Changed
+- Error state takes precedence over yield state in `ParallelExecutionAlgorithm` CONTINUE mode: `on_workflow_error` is called instead of `on_workflow_yield` when both occur (#79)
+
+### Fixed
+- `ParallelExecutionAlgorithm` CONTINUE mode no longer raises a spurious `UserException` for missing output when errors are present; partial output is computed directly and forwarded to `on_workflow_error` (#79)
+
 ## [2.0.0rc3] - 2026-02-23
 
 ### Added
