@@ -249,7 +249,8 @@ class ParallelExecutionAlgorithm(ExecutionAlgorithm):
                 node_outputs=node_outputs,
             )
 
-        except WorkflowYield:
+        except WorkflowYield as e:
+            await context.on_workflow_yield(workflow=workflow, input=input, exception=e)
             raise
         except Exception as e:
             errors.add(e)

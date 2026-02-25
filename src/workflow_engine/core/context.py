@@ -4,7 +4,7 @@ from typing import TypeVar
 
 from overrides import EnforceOverrides
 
-from .error import ShouldRetry, ShouldYield, WorkflowErrors
+from .error import ShouldRetry, ShouldYield, WorkflowErrors, WorkflowYield
 from .node import Node
 from .values import DataMapping, FileValue
 from .workflow import Workflow
@@ -154,6 +154,25 @@ class Context(ABC, EnforceOverrides):
         The context can modify the workflow by returning a different Workflow.
         """
         return workflow
+
+    async def on_workflow_yield(
+        self,
+        *,
+        workflow: "Workflow",
+        input: DataMapping,
+        exception: WorkflowYield,
+    ) -> None:
+        """
+        A hook that is called when a workflow raises WorkflowYield, signalling
+        that one or more nodes have dispatched work externally and the workflow
+        cannot complete yet.
+
+        workflow: the workflow that yielded
+        input: the input data to the workflow
+        exception: the WorkflowYield exception, containing the per-node
+                   ShouldYield exceptions keyed by node ID
+        """
+        pass
 
     async def on_workflow_start(
         self,

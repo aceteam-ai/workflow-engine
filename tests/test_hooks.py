@@ -514,6 +514,60 @@ class TestOnWorkflowFinish:
         mock.assert_not_called()
 
 
+class TestOnWorkflowYield:
+    @pytest.mark.asyncio
+    async def test_called_when_workflow_yields(self, any_algorithm):
+        workflow = _yielding_workflow()
+        context = InMemoryContext()
+        mock = AsyncMock()
+        context.on_workflow_yield = mock
+
+        with pytest.raises(WorkflowYield):
+            await any_algorithm.execute(context=context, workflow=workflow, input={})
+
+        mock.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_called_with_correct_arguments(self, any_algorithm):
+        workflow = _yielding_workflow()
+        context = InMemoryContext()
+        mock = AsyncMock()
+        context.on_workflow_yield = mock
+
+        with pytest.raises(WorkflowYield):
+            await any_algorithm.execute(context=context, workflow=workflow, input={})
+
+        kwargs = mock.call_args.kwargs
+        assert kwargs["workflow"] is workflow
+        assert isinstance(kwargs["exception"], WorkflowYield)
+        assert "yielding" in kwargs["exception"].node_yields
+
+    @pytest.mark.asyncio
+    async def test_not_called_on_success(self, any_algorithm):
+        workflow = _simple_workflow()
+        context = InMemoryContext()
+        mock = AsyncMock()
+        context.on_workflow_yield = mock
+
+        errors, _ = await any_algorithm.execute(
+            context=context, workflow=workflow, input={}
+        )
+
+        assert not errors.any()
+        mock.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_not_called_on_error(self, any_algorithm):
+        workflow = _error_workflow()
+        context = InMemoryContext()
+        mock = AsyncMock()
+        context.on_workflow_yield = mock
+
+        await any_algorithm.execute(context=context, workflow=workflow, input={})
+
+        mock.assert_not_called()
+
+
 class TestOnWorkflowError:
     @pytest.mark.asyncio
     async def test_called_on_error(self):
