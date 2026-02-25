@@ -7,6 +7,7 @@ from functools import cached_property
 from typing import ClassVar, Literal, Self
 
 from overrides import override
+from pydantic import Field
 
 from workflow_engine.core.io import SchemaParams
 
@@ -34,7 +35,7 @@ from .data import (
 
 
 class ForEachParams(Params):
-    workflow: WorkflowValue
+    workflow: WorkflowValue = Field(title="Workflow", description="The workflow to run for each item.")
 
 
 class ForEachNode(Node[SequenceData, SequenceData | Empty, ForEachParams]):

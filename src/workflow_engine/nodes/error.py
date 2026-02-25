@@ -3,6 +3,8 @@
 from functools import cached_property
 from typing import ClassVar, Literal
 
+from pydantic import Field
+
 from ..core import (
     Context,
     Data,
@@ -16,11 +18,11 @@ from ..core import (
 
 
 class ErrorInput(Data):
-    info: StringValue
+    info: StringValue = Field(title="Info", description="Additional information about the error.")
 
 
 class ErrorParams(Params):
-    error_name: StringValue
+    error_name: StringValue = Field(title="Error Name", description="The name of the error to raise.")
 
 
 class ErrorNode(Node[ErrorInput, Empty, ErrorParams]):

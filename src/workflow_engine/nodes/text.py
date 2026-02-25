@@ -3,6 +3,8 @@ import os
 from functools import cached_property
 from typing import ClassVar, Literal, Self
 
+from pydantic import Field
+
 from ..core import (
     Context,
     Data,
@@ -16,16 +18,16 @@ from ..files import TextFileValue
 
 
 class AppendToFileInput(Data):
-    file: TextFileValue
-    text: StringValue
+    file: TextFileValue = Field(title="File", description="The file to append to.")
+    text: StringValue = Field(title="Text", description="The text to append.")
 
 
 class AppendToFileOutput(Data):
-    file: TextFileValue
+    file: TextFileValue = Field(title="File", description="The resulting file with the text appended.")
 
 
 class AppendToFileParams(Params):
-    suffix: StringValue
+    suffix: StringValue = Field(title="Suffix", description="The suffix to add to the output filename.")
 
 
 class AppendToFileNode(Node[AppendToFileInput, AppendToFileOutput, AppendToFileParams]):

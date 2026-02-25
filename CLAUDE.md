@@ -85,6 +85,17 @@ class MyNode(Node[MyInput, MyOutput, MyParams]):
         pass
 ```
 
+**Field Titles and Descriptions**: Every field in `Data`, `Params`, and output model classes must have a `title` and `description` via `Field()`. These are surfaced to end users, so write them for a non-technical audience:
+
+- `title`: A short, human-readable label (title case, e.g. `"Error Name"`)
+- `description`: A noun phrase starting with "The", followed by full sentences only if more context is needed (e.g. `"The name of the error to raise."`)
+
+```python
+class MyInput(Data):
+    value: IntegerValue = Field(title="Value", description="The input value.")
+    items: SequenceValue[StringValue] = Field(title="Items", description="The list of items to process.")
+```
+
 **Immutability**: All core objects are frozen Pydantic models. Use `model_copy()` for updates.
 
 **Async Execution**: Node `run()` methods and Context hooks are all async.

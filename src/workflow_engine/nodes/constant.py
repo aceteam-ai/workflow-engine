@@ -2,6 +2,8 @@
 from functools import cached_property
 from typing import ClassVar, Literal
 
+from pydantic import Field
+
 from ..core import (
     BooleanValue,
     Context,
@@ -16,7 +18,7 @@ from ..core import (
 
 
 class ConstantBoolean(Params):
-    value: BooleanValue
+    value: BooleanValue = Field(title="Value", description="The constant boolean value.")
 
 
 class ConstantBooleanNode(Node[Empty, ConstantBoolean, ConstantBoolean]):
@@ -43,7 +45,7 @@ class ConstantBooleanNode(Node[Empty, ConstantBoolean, ConstantBoolean]):
 
 
 class ConstantInteger(Params):
-    value: IntegerValue
+    value: IntegerValue = Field(title="Value", description="The constant integer value.")
 
 
 class ConstantIntegerNode(Node[Empty, ConstantInteger, ConstantInteger]):
@@ -70,7 +72,7 @@ class ConstantIntegerNode(Node[Empty, ConstantInteger, ConstantInteger]):
 
 
 class ConstantString(Params):
-    value: StringValue
+    value: StringValue = Field(title="Value", description="The constant string value.")
 
 
 class ConstantStringNode(Node[Empty, ConstantString, ConstantString]):

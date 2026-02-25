@@ -6,6 +6,8 @@ Simple nodes for testing the workflow engine, with limited usefulness otherwise.
 from functools import cached_property
 from typing import ClassVar, Literal
 
+from pydantic import Field
+
 from ..core import (
     Context,
     Data,
@@ -19,12 +21,12 @@ from ..core import (
 
 
 class AddNodeInput(Data):
-    a: FloatValue
-    b: FloatValue
+    a: FloatValue = Field(title="A", description="The first number.")
+    b: FloatValue = Field(title="B", description="The second number.")
 
 
 class SumOutput(Data):
-    sum: FloatValue
+    sum: FloatValue = Field(title="Sum", description="The sum of the two numbers.")
 
 
 class AddNode(Node[AddNodeInput, SumOutput, Empty]):
@@ -50,11 +52,11 @@ class AddNode(Node[AddNodeInput, SumOutput, Empty]):
 
 
 class SumNodeInput(Data):
-    values: SequenceValue[FloatValue]
+    values: SequenceValue[FloatValue] = Field(title="Values", description="The numbers to sum.")
 
 
 class SumNodeOutput(Data):
-    sum: FloatValue
+    sum: FloatValue = Field(title="Sum", description="The sum of all the numbers.")
 
 
 class SumNode(Node[SumNodeInput, SumNodeOutput, Empty]):
@@ -81,11 +83,11 @@ class SumNode(Node[SumNodeInput, SumNodeOutput, Empty]):
 
 
 class IntegerData(Data):
-    value: IntegerValue
+    value: IntegerValue = Field(title="Value", description="The integer value.")
 
 
 class FactorizationData(Data):
-    factors: SequenceValue[IntegerValue]
+    factors: SequenceValue[IntegerValue] = Field(title="Factors", description="The factors of the integer.")
 
 
 class FactorizationNode(Node[IntegerData, FactorizationData, Empty]):

@@ -7,7 +7,7 @@ from functools import cached_property
 from typing import ClassVar, Literal, Self
 
 from overrides import override
-from pydantic import ConfigDict
+from pydantic import ConfigDict, Field
 
 from ..core.values import build_data_type, get_data_fields
 
@@ -26,18 +26,18 @@ from ..utils.mappings import mapping_intersection
 
 
 class IfParams(Params):
-    if_true: WorkflowValue
+    if_true: WorkflowValue = Field(title="If True", description="The workflow to run when the condition is true.")
 
 
 class IfElseParams(Params):
-    if_true: WorkflowValue
-    if_false: WorkflowValue
+    if_true: WorkflowValue = Field(title="If True", description="The workflow to run when the condition is true.")
+    if_false: WorkflowValue = Field(title="If False", description="The workflow to run when the condition is false.")
 
 
 class ConditionalInput(Data):
     model_config: ClassVar[ConfigDict] = ConfigDict(extra="allow")
 
-    condition: BooleanValue
+    condition: BooleanValue = Field(title="Condition", description="The condition to evaluate.")
 
 
 class IfNode(Node[ConditionalInput, Empty, IfParams]):
