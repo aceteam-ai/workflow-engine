@@ -4,9 +4,9 @@ Simple nodes for testing the workflow engine, with limited usefulness otherwise.
 """
 
 from functools import cached_property
-from typing import ClassVar, Literal
+from typing import ClassVar, Literal, Self
 
-from pydantic import Field
+from pydantic import Field, create_model
 
 from ..core import (
     Context,
@@ -16,39 +16,79 @@ from ..core import (
     IntegerValue,
     Node,
     NodeTypeInfo,
+    Params,
     SequenceValue,
 )
 
 
-class AddNodeInput(Data):
-    a: FloatValue = Field(title="A", description="The first number.")
-    b: FloatValue = Field(title="B", description="The second number.")
+def _argument_field_name(index: int) -> str:
+    """
+    Generate a field name for the given zero-based index.
+    Produces "a", "b", ..., "z", "aa", "ab", ..., "az", "ba", ...
+    """
+    letters = []
+    n = index
+    while True:
+        letters.append(chr(ord("a") + n % 26))
+        n = n // 26 - 1
+        if n < 0:
+            break
+    return "".join(reversed(letters))
+
+
+class AddNodeParams(Params):
+    num_arguments: IntegerValue = Field(
+        title="Number of Arguments",
+        description="The number of numbers to add.",
+        default=IntegerValue(2),
+        json_schema_extra={"minimum": 2},
+    )
 
 
 class SumOutput(Data):
-    sum: FloatValue = Field(title="Sum", description="The sum of the two numbers.")
+    sum: FloatValue = Field(title="Sum", description="The sum of the numbers.")
 
 
-class AddNode(Node[AddNodeInput, SumOutput, Empty]):
-    TYPE_INFO: ClassVar[NodeTypeInfo] = NodeTypeInfo(
+class AddNode(Node[Data, SumOutput, AddNodeParams]):
+    TYPE_INFO: ClassVar[NodeTypeInfo] = NodeTypeInfo.from_parameter_type(
         name="Add",
         display_name="Add",
-        description="Adds two numbers.",
-        version="0.4.0",
+        description="Adds two or more numbers.",
+        version="1.0.0",
+        parameter_type=AddNodeParams,
     )
 
     type: Literal["Add"] = "Add"  # pyright: ignore[reportIncompatibleVariableOverride]
+    # we can do this because an empty AddNodeParams is valid
+    params: AddNodeParams = Field(default=AddNodeParams())  # pyright: ignore[reportIncompatibleVariableOverride]
 
     @cached_property
     def input_type(self):
-        return AddNodeInput
+        n = self.params.num_arguments.root
+        field_names = [_argument_field_name(i) for i in range(n)]
+        fields = {
+            name: (
+                FloatValue,
+                Field(title=name.upper(), description=f"The number {name}."),
+            )
+            for name in field_names
+        }
+        return create_model("AddNodeInput", __base__=Data, **fields)  # type: ignore
 
     @cached_property
     def output_type(self):
         return SumOutput
 
-    async def run(self, context: Context, input: AddNodeInput) -> SumOutput:
-        return SumOutput(sum=FloatValue(input.a.root + input.b.root))
+    async def run(self, context: Context, input: Data) -> SumOutput:
+        total = sum(
+            getattr(input, _argument_field_name(i)).root
+            for i in range(self.params.num_arguments.root)
+        )
+        return SumOutput(sum=FloatValue(total))
+
+    @classmethod
+    def with_arity(cls, id: str, arity: int) -> Self:
+        return cls(id=id, params=AddNodeParams(num_arguments=IntegerValue(arity)))
 
 
 class SumNodeInput(Data):
