@@ -4,7 +4,7 @@ from workflow_engine import Edge, IntegerValue, Workflow
 from workflow_engine.contexts import InMemoryContext
 from workflow_engine.core.io import InputNode, OutputNode
 from workflow_engine.execution import TopologicalExecutionAlgorithm
-from workflow_engine.nodes import AddNode, AddNodeParams, ConstantIntegerNode
+from workflow_engine.nodes import AddNode, ConstantIntegerNode
 
 
 @pytest.fixture
@@ -68,7 +68,7 @@ async def test_add_3_arguments():
         ConstantIntegerNode.from_value(id=f"const_{i}", value=(i + 1) * 10)
         for i in range(3)
     ]
-    add = AddNode(id="add", params=AddNodeParams(num_arguments=IntegerValue(3)))
+    add = AddNode.with_arity(id="add", arity=3)
     output_node = OutputNode.from_fields(sum=IntegerValue)
 
     workflow = Workflow(
@@ -105,7 +105,7 @@ async def test_add_30_arguments():
         ConstantIntegerNode.from_value(id=f"const_{i}", value=i + 1)
         for i in range(n)
     ]
-    add = AddNode(id="add", params=AddNodeParams(num_arguments=IntegerValue(n)))
+    add = AddNode.with_arity(id="add", arity=n)
     output_node = OutputNode.from_fields(sum=IntegerValue)
 
     workflow = Workflow(
@@ -129,7 +129,7 @@ async def test_add_30_arguments():
 
 def test_add_1000_arguments_field_names():
     """Spot-check field names for a 1000-argument AddNode without executing it."""
-    add = AddNode(id="add", params=AddNodeParams(num_arguments=IntegerValue(1000)))
+    add = AddNode.with_arity(id="add", arity=1000)
     fields = add.input_type.model_fields
 
     assert len(fields) == 1000

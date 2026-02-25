@@ -1,7 +1,6 @@
 # workflow_engine/nodes/__init__.py
 from .arithmetic import (
     AddNode,
-    AddNodeParams,
     FactorizationNode,
     SumNode,
 )
@@ -35,7 +34,6 @@ from .text import (
 
 __all__ = [
     "AddNode",
-    "AddNodeParams",
     "AppendToFileNode",
     "ConditionalInput",
     "ConstantBooleanNode",
