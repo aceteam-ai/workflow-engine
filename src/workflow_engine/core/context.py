@@ -1,10 +1,11 @@
 # workflow_engine/core/context.py
 from abc import ABC, abstractmethod
+from collections.abc import Mapping
 from typing import TypeVar
 
 from overrides import EnforceOverrides
 
-from .error import ShouldRetry, ShouldYield, WorkflowErrors
+from .error import ShouldRetry, ShouldYield, WorkflowErrors, WorkflowYield
 from .node import Node
 from .values import DataMapping, FileValue
 from .workflow import Workflow
@@ -155,6 +156,28 @@ class Context(ABC, EnforceOverrides):
         """
         return workflow
 
+    async def on_workflow_yield(
+        self,
+        *,
+        workflow: "Workflow",
+        input: DataMapping,
+        exception: WorkflowYield,
+        partial_output: DataMapping,
+    ) -> None:
+        """
+        A hook that is called when a workflow raises WorkflowYield, signalling
+        that one or more nodes have dispatched work externally and the workflow
+        cannot complete yet.
+
+        workflow: the workflow that yielded
+        input: the input data to the workflow
+        exception: the WorkflowYield exception, containing the per-node
+                   ShouldYield exceptions keyed by node ID
+        partial_output: the partial output data from nodes that completed
+                        before the workflow yielded
+        """
+        pass
+
     async def on_workflow_start(
         self,
         *,
@@ -179,6 +202,7 @@ class Context(ABC, EnforceOverrides):
         input: DataMapping,
         errors: WorkflowErrors,
         partial_output: DataMapping,
+        node_yields: Mapping[str, ShouldYield],
     ) -> tuple[WorkflowErrors, DataMapping]:
         """
         A hook that is called when a workflow raises an error.
@@ -187,6 +211,8 @@ class Context(ABC, EnforceOverrides):
         input: the input data to the workflow
         errors: the errors that occurred
         partial_output: the partial output data from the workflow
+        node_yields: the per-node ShouldYield exceptions for any nodes that
+                     yielded before the error occurred
 
         The context can modify the errors or partial output by returning a
         different tuple.

@@ -18,11 +18,15 @@ from ..core import (
 
 
 class ErrorInput(Data):
-    info: StringValue = Field(title="Info", description="Additional information about the error.")
+    info: StringValue = Field(
+        title="Info", description="Additional information about the error."
+    )
 
 
 class ErrorParams(Params):
-    error_name: StringValue = Field(title="Error Name", description="The name of the error to raise.")
+    error_name: StringValue = Field(
+        title="Error Name", description="The name of the error to raise."
+    )
 
 
 class ErrorNode(Node[ErrorInput, Empty, ErrorParams]):

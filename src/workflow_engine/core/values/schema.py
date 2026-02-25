@@ -143,11 +143,15 @@ def _build_constrained_sequence_cls(
     T_item = TypeVar("T_item", bound=Value)  # fresh TypeVar per call
     namespace: dict[str, Any] = {}
     if field_kwargs:
-        namespace["__annotations__"] = {"root": Annotated[Sequence[T_item], Field(**field_kwargs)]}
+        namespace["__annotations__"] = {
+            "root": Annotated[Sequence[T_item], Field(**field_kwargs)]
+        }
     config_updates: dict[str, Any] = {"title": unique_title}
     if schema_extras:
         config_updates["json_schema_extra"] = schema_extras
-    namespace["model_config"] = SequenceValue.model_config | ConfigDict(**config_updates)
+    namespace["model_config"] = SequenceValue.model_config | ConfigDict(
+        **config_updates
+    )
 
     cls = type("SequenceValue", (SequenceValue[T_item],), namespace, register=False)
     return cls[item_type]
@@ -175,11 +179,15 @@ def _build_constrained_map_cls(
     T_item = TypeVar("T_item", bound=Value)
     namespace: dict[str, Any] = {}
     if field_kwargs:
-        namespace["__annotations__"] = {"root": Annotated[Mapping[str, T_item], Field(**field_kwargs)]}
+        namespace["__annotations__"] = {
+            "root": Annotated[Mapping[str, T_item], Field(**field_kwargs)]
+        }
     config_updates: dict[str, Any] = {"title": unique_title}
     if schema_extras:
         config_updates["json_schema_extra"] = schema_extras
-    namespace["model_config"] = StringMapValue.model_config | ConfigDict(**config_updates)
+    namespace["model_config"] = StringMapValue.model_config | ConfigDict(
+        **config_updates
+    )
 
     cls = type("StringMapValue", (StringMapValue[T_item],), namespace, register=False)
     return cls[item_type]
@@ -328,7 +336,9 @@ class IntegerValueSchema(BaseValueSchema):
         self,
         *extra_defs: Mapping[str, ValueSchema],
     ) -> type[IntegerValue]:
-        return _build_constrained_cls(IntegerValue, _NUMERIC_FIELD_MAP, self.model_extra or {})
+        return _build_constrained_cls(
+            IntegerValue, _NUMERIC_FIELD_MAP, self.model_extra or {}
+        )
 
 
 class FloatValueSchema(BaseValueSchema):
@@ -339,7 +349,9 @@ class FloatValueSchema(BaseValueSchema):
         self,
         *extra_defs: Mapping[str, ValueSchema],
     ) -> type[FloatValue]:
-        return _build_constrained_cls(FloatValue, _NUMERIC_FIELD_MAP, self.model_extra or {})
+        return _build_constrained_cls(
+            FloatValue, _NUMERIC_FIELD_MAP, self.model_extra or {}
+        )
 
 
 class StringValueSchema(BaseValueSchema):

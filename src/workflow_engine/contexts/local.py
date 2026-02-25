@@ -1,6 +1,7 @@
 # workflow_engine/contexts/local.py
 import json
 import os
+from collections.abc import Mapping
 from typing import TypeVar
 import uuid
 
@@ -16,6 +17,7 @@ from ..core import (
     Workflow,
     WorkflowErrors,
 )
+from ..core.error import ShouldYield
 from ..core.values import dump_data_mapping, serialize_data_mapping
 
 F = TypeVar("F", bound=FileValue)
@@ -212,6 +214,7 @@ class LocalContext(Context):
         input: DataMapping,
         errors: WorkflowErrors,
         partial_output: DataMapping,
+        node_yields: Mapping[str, ShouldYield],
     ) -> tuple[WorkflowErrors, DataMapping]:
         self._idempotent_write(
             path=self.workflow_error_path,

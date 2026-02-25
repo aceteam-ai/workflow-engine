@@ -154,7 +154,18 @@ class TopologicalExecutionAlgorithm(ExecutionAlgorithm):
                 context=context,
                 node_outputs=node_outputs,
             )
-        except WorkflowYield:
+        except WorkflowYield as e:
+            partial_output = await workflow.get_output(
+                context=context,
+                node_outputs=node_outputs,
+                partial=True,
+            )
+            await context.on_workflow_yield(
+                workflow=workflow,
+                input=input,
+                exception=e,
+                partial_output=partial_output,
+            )
             raise
         except Exception as e:
             errors.add(e)
@@ -168,6 +179,7 @@ class TopologicalExecutionAlgorithm(ExecutionAlgorithm):
                 input=input,
                 errors=errors,
                 partial_output=partial_output,
+                node_yields=node_yields,
             )
             return errors, partial_output
 

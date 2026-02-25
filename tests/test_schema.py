@@ -526,7 +526,12 @@ def test_constrained_sequence_is_castable():
     import asyncio
     from workflow_engine.contexts import InMemoryContext
 
-    json_schema = {"type": "array", "items": {"type": "number"}, "minItems": 2, "maxItems": 4}
+    json_schema = {
+        "type": "array",
+        "items": {"type": "number"},
+        "minItems": 2,
+        "maxItems": 4,
+    }
     U = validate_value_schema(json_schema).to_value_cls()
 
     assert issubclass(U, SequenceValue)
@@ -544,7 +549,9 @@ def test_constrained_sequence_is_castable():
 
     # A constrained instance can be cast to a plain SequenceValue[FloatValue]
     constrained = U.model_validate([1.0, 2.0])
-    result2 = asyncio.run(constrained.cast_to(SequenceValue[FloatValue], context=context))
+    result2 = asyncio.run(
+        constrained.cast_to(SequenceValue[FloatValue], context=context)
+    )
     assert isinstance(result2, SequenceValue)
 
 
@@ -819,7 +826,9 @@ def test_field_schema_mapping_preserves_extras():
     """FieldSchemaMappingValue preserves schema extras (both known and unknown) on property schemas."""
     from workflow_engine.core.values.schema import ValueSchemaValue
 
-    score_schema = FloatValueSchema(**{"type": "number", "minimum": 0.0, "maximum": 1.0, "x-foo": "bar"})
+    score_schema = FloatValueSchema(
+        **{"type": "number", "minimum": 0.0, "maximum": 1.0, "x-foo": "bar"}
+    )
     mapping = FieldSchemaMappingValue({"score": ValueSchemaValue(score_schema)})
     data_schema = mapping.to_data_schema("TestData")
     U = data_schema.to_value_cls()
@@ -833,7 +842,9 @@ def test_field_schema_mapping_preserves_extras():
 
     # Unknown extras survive into the property's schema
     score_field_schema = U.model_json_schema()["$defs"]
-    score_def = next(v for v in score_field_schema.values() if v.get("type") == "number")
+    score_def = next(
+        v for v in score_field_schema.values() if v.get("type") == "number"
+    )
     assert score_def["x-foo"] == "bar"
 
 

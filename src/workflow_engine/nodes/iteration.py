@@ -35,7 +35,9 @@ from .data import (
 
 
 class ForEachParams(Params):
-    workflow: WorkflowValue = Field(title="Workflow", description="The workflow to run for each item.")
+    workflow: WorkflowValue = Field(
+        title="Workflow", description="The workflow to run for each item."
+    )
 
 
 class ForEachNode(Node[SequenceData, SequenceData | Empty, ForEachParams]):

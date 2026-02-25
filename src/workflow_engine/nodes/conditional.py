@@ -26,18 +26,26 @@ from ..utils.mappings import mapping_intersection
 
 
 class IfParams(Params):
-    if_true: WorkflowValue = Field(title="If True", description="The workflow to run when the condition is true.")
+    if_true: WorkflowValue = Field(
+        title="If True", description="The workflow to run when the condition is true."
+    )
 
 
 class IfElseParams(Params):
-    if_true: WorkflowValue = Field(title="If True", description="The workflow to run when the condition is true.")
-    if_false: WorkflowValue = Field(title="If False", description="The workflow to run when the condition is false.")
+    if_true: WorkflowValue = Field(
+        title="If True", description="The workflow to run when the condition is true."
+    )
+    if_false: WorkflowValue = Field(
+        title="If False", description="The workflow to run when the condition is false."
+    )
 
 
 class ConditionalInput(Data):
     model_config: ClassVar[ConfigDict] = ConfigDict(extra="allow")
 
-    condition: BooleanValue = Field(title="Condition", description="The condition to evaluate.")
+    condition: BooleanValue = Field(
+        title="Condition", description="The condition to evaluate."
+    )
 
 
 class IfNode(Node[ConditionalInput, Empty, IfParams]):

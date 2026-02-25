@@ -52,7 +52,9 @@ class AddNode(Node[AddNodeInput, SumOutput, Empty]):
 
 
 class SumNodeInput(Data):
-    values: SequenceValue[FloatValue] = Field(title="Values", description="The numbers to sum.")
+    values: SequenceValue[FloatValue] = Field(
+        title="Values", description="The numbers to sum."
+    )
 
 
 class SumNodeOutput(Data):
@@ -87,7 +89,9 @@ class IntegerData(Data):
 
 
 class FactorizationData(Data):
-    factors: SequenceValue[IntegerValue] = Field(title="Factors", description="The factors of the integer.")
+    factors: SequenceValue[IntegerValue] = Field(
+        title="Factors", description="The factors of the integer."
+    )
 
 
 class FactorizationNode(Node[IntegerData, FactorizationData, Empty]):
