@@ -18,7 +18,9 @@ from ..core import (
 
 
 class ConstantBoolean(Params):
-    value: BooleanValue = Field(title="Value", description="The constant boolean value.")
+    value: BooleanValue = Field(
+        title="Value", description="The constant boolean value."
+    )
 
 
 class ConstantBooleanNode(Node[Empty, ConstantBoolean, ConstantBoolean]):
@@ -45,7 +47,9 @@ class ConstantBooleanNode(Node[Empty, ConstantBoolean, ConstantBoolean]):
 
 
 class ConstantInteger(Params):
-    value: IntegerValue = Field(title="Value", description="The constant integer value.")
+    value: IntegerValue = Field(
+        title="Value", description="The constant integer value."
+    )
 
 
 class ConstantIntegerNode(Node[Empty, ConstantInteger, ConstantInteger]):

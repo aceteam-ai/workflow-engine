@@ -114,6 +114,7 @@ class GenericCaster(Protocol, Generic[SourceType, TargetType]):  # type: ignore
         target_type: type[TargetType],
     ) -> Caster[SourceType, TargetType] | None: ...
 
+
 generic_pattern = re.compile(r"^[a-zA-Z]\w+\[.*\]$")
 
 
@@ -156,7 +157,10 @@ class Value(ImmutableRootModel[T], Generic[T]):
         # Skip generic base classes (e.g. SequenceValue, StringMapValue) whose
         # __pydantic_generic_metadata__["parameters"] still contains unbound
         # TypeVars — only fully-concrete classes belong in the registry.
-        if get_origin(cls) is None and len(cls.__pydantic_generic_metadata__["parameters"]) == 0:
+        if (
+            get_origin(cls) is None
+            and len(cls.__pydantic_generic_metadata__["parameters"]) == 0
+        ):
             ValueRegistry.DEFAULT.register_value_class(cls)
 
     @classmethod

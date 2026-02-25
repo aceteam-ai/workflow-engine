@@ -425,7 +425,9 @@ class TestValueRegistryLoadValue:
         registry = ValueRegistry.builder(lazy=True)
         registry.register_value_class(SampleValueA)
 
-        schema = IntegerValueSchema(**{"type": "integer", "x-value-type": "SampleValueA"})
+        schema = IntegerValueSchema(
+            **{"type": "integer", "x-value-type": "SampleValueA"}
+        )
         loaded_value = registry.load_value(schema)
 
         assert loaded_value is SampleValueA
@@ -438,7 +440,13 @@ class TestValueRegistryLoadValue:
         registry.register_value_class(SampleValueA)
         registry.register_value_class(SampleValueB)
 
-        schema = IntegerValueSchema(**{"type": "integer", "x-value-type": "SampleValueA", "title": "SampleValueB"})
+        schema = IntegerValueSchema(
+            **{
+                "type": "integer",
+                "x-value-type": "SampleValueA",
+                "title": "SampleValueB",
+            }
+        )
         loaded_value = registry.load_value(schema)
 
         assert loaded_value is SampleValueA

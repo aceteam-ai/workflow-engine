@@ -241,7 +241,9 @@ class ParallelExecutionAlgorithm(ExecutionAlgorithm):
                     )
                     running_tasks[task] = node_id
 
-            if node_yields:
+            # Errors take precedence over yields: only raise WorkflowYield if
+            # no errors were collected (CONTINUE mode).
+            if node_yields and not errors.any():
                 raise WorkflowYield(node_yields)
 
             output = await workflow.get_output(
@@ -250,7 +252,17 @@ class ParallelExecutionAlgorithm(ExecutionAlgorithm):
             )
 
         except WorkflowYield as e:
-            await context.on_workflow_yield(workflow=workflow, input=input, exception=e)
+            partial_output = await workflow.get_output(
+                context=context,
+                node_outputs=node_outputs,
+                partial=True,
+            )
+            await context.on_workflow_yield(
+                workflow=workflow,
+                input=input,
+                exception=e,
+                partial_output=partial_output,
+            )
             raise
         except Exception as e:
             errors.add(e)
@@ -264,6 +276,7 @@ class ParallelExecutionAlgorithm(ExecutionAlgorithm):
                 input=input,
                 errors=errors,
                 partial_output=partial_output,
+                node_yields=node_yields,
             )
             return errors, partial_output
 
@@ -279,6 +292,7 @@ class ParallelExecutionAlgorithm(ExecutionAlgorithm):
                 input=input,
                 errors=errors,
                 partial_output=partial_output,
+                node_yields=node_yields,
             )
             return errors, partial_output
 

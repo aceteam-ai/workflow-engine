@@ -23,11 +23,15 @@ class AppendToFileInput(Data):
 
 
 class AppendToFileOutput(Data):
-    file: TextFileValue = Field(title="File", description="The resulting file with the text appended.")
+    file: TextFileValue = Field(
+        title="File", description="The resulting file with the text appended."
+    )
 
 
 class AppendToFileParams(Params):
-    suffix: StringValue = Field(title="Suffix", description="The suffix to add to the output filename.")
+    suffix: StringValue = Field(
+        title="Suffix", description="The suffix to add to the output filename."
+    )
 
 
 class AppendToFileNode(Node[AppendToFileInput, AppendToFileOutput, AppendToFileParams]):

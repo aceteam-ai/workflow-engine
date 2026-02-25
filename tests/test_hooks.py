@@ -23,7 +23,10 @@ from workflow_engine.contexts import InMemoryContext
 from workflow_engine.core import NodeTypeInfo
 from workflow_engine.core.io import InputNode, OutputNode
 from workflow_engine.execution import TopologicalExecutionAlgorithm
-from workflow_engine.execution.parallel import ParallelExecutionAlgorithm
+from workflow_engine.execution.parallel import (
+    ErrorHandlingMode,
+    ParallelExecutionAlgorithm,
+)
 from workflow_engine.nodes import ConstantStringNode, ErrorNode
 
 
@@ -152,6 +155,34 @@ class YieldingNode(Node[Data, ExpandingOutput, Params]):
 
     async def run(self, context: Context, input: Data) -> ExpandingOutput:
         raise ShouldYield("waiting for approval")
+
+
+def _error_and_yield_workflow() -> Workflow:
+    """A workflow where one independent branch errors and another yields."""
+    input_node = InputNode.empty()
+    output_node = OutputNode.from_fields(value=StringValue)
+    constant = ConstantStringNode.from_value(id="constant", value="hello")
+    error = ErrorNode.from_name(id="error", name="TestError")
+    yielding = YieldingNode(id="yielding", params=Params())
+    return Workflow(
+        input_node=input_node,
+        output_node=output_node,
+        inner_nodes=[constant, error, yielding],
+        edges=[
+            Edge.from_nodes(
+                source=constant,
+                source_key="value",
+                target=error,
+                target_key="info",
+            ),
+            Edge.from_nodes(
+                source=yielding,
+                source_key="value",
+                target=output_node,
+                target_key="value",
+            ),
+        ],
+    )
 
 
 def _yielding_workflow() -> Workflow:
@@ -591,7 +622,9 @@ class TestOnWorkflowError:
         workflow = _error_workflow()
         context = InMemoryContext()
 
-        async def on_workflow_error(*, workflow, input, errors, partial_output):
+        async def on_workflow_error(
+            *, workflow, input, errors, partial_output, node_yields
+        ):
             return WorkflowErrors(), partial_output
 
         context.on_workflow_error = on_workflow_error
@@ -617,3 +650,96 @@ class TestOnWorkflowError:
 
         assert not errors.any()
         mock.assert_not_called()
+
+
+class TestWorkflowYieldPartialOutput:
+    @pytest.mark.asyncio
+    async def test_partial_output_passed_to_on_workflow_yield(self, any_algorithm):
+        """on_workflow_yield receives the partial output from completed nodes."""
+        workflow = _yielding_workflow()
+        context = InMemoryContext()
+        received: dict = {}
+
+        async def on_workflow_yield(*, workflow, input, exception, partial_output):
+            received["partial_output"] = partial_output
+
+        context.on_workflow_yield = on_workflow_yield
+
+        with pytest.raises(WorkflowYield):
+            await any_algorithm.execute(context=context, workflow=workflow, input={})
+
+        assert "partial_output" in received
+        assert isinstance(received["partial_output"], dict)
+
+
+class TestWorkflowErrorNodeYields:
+    @pytest.mark.asyncio
+    async def test_node_yields_passed_to_on_workflow_error(self):
+        """on_workflow_error receives node_yields (empty when no nodes yielded)."""
+        workflow = _error_workflow()
+        context = InMemoryContext()
+        received: dict = {}
+
+        async def on_workflow_error(
+            *, workflow, input, errors, partial_output, node_yields
+        ):
+            received["node_yields"] = node_yields
+            return errors, partial_output
+
+        context.on_workflow_error = on_workflow_error
+
+        algorithm = TopologicalExecutionAlgorithm()
+        errors, _ = await algorithm.execute(
+            context=context, workflow=workflow, input={}
+        )
+
+        assert errors.any()
+        assert received["node_yields"] == {}
+
+
+class TestErrorPrecedenceOverYield:
+    @pytest.mark.asyncio
+    async def test_error_takes_precedence_over_yield_in_continue_mode(self):
+        """When both errors and yields occur, on_workflow_error is called, not on_workflow_yield."""
+        workflow = _error_and_yield_workflow()
+        context = InMemoryContext()
+        yield_mock = AsyncMock()
+        error_mock = AsyncMock(side_effect=context.on_workflow_error)
+        context.on_workflow_yield = yield_mock
+        context.on_workflow_error = error_mock
+
+        algorithm = ParallelExecutionAlgorithm(
+            error_handling=ErrorHandlingMode.CONTINUE,
+        )
+        errors, _ = await algorithm.execute(
+            context=context, workflow=workflow, input={}
+        )
+
+        assert errors.any()
+        yield_mock.assert_not_called()
+        error_mock.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_node_yields_included_in_error_hook_when_both_occur(self):
+        """When both errors and yields occur, on_workflow_error receives the node_yields."""
+        workflow = _error_and_yield_workflow()
+        context = InMemoryContext()
+        received: dict = {}
+
+        async def on_workflow_error(
+            *, workflow, input, errors, partial_output, node_yields
+        ):
+            received["node_yields"] = node_yields
+            return errors, partial_output
+
+        context.on_workflow_error = on_workflow_error
+
+        algorithm = ParallelExecutionAlgorithm(
+            error_handling=ErrorHandlingMode.CONTINUE,
+        )
+        errors, _ = await algorithm.execute(
+            context=context, workflow=workflow, input={}
+        )
+
+        assert errors.any()
+        assert "yielding" in received["node_yields"]
