@@ -246,6 +246,24 @@ class ParallelExecutionAlgorithm(ExecutionAlgorithm):
             if node_yields and not errors.any():
                 raise WorkflowYield(node_yields)
 
+            # Short-circuit before attempting full output if errors were
+            # collected in CONTINUE mode, to avoid masking real errors with
+            # spurious "missing output" exceptions from yielded/failed nodes.
+            if errors.any():
+                partial_output = await workflow.get_output(
+                    context=context,
+                    node_outputs=node_outputs,
+                    partial=True,
+                )
+                errors, partial_output = await context.on_workflow_error(
+                    workflow=workflow,
+                    input=input,
+                    errors=errors,
+                    partial_output=partial_output,
+                    node_yields=node_yields,
+                )
+                return errors, partial_output
+
             output = await workflow.get_output(
                 context=context,
                 node_outputs=node_outputs,
@@ -266,22 +284,6 @@ class ParallelExecutionAlgorithm(ExecutionAlgorithm):
             raise
         except Exception as e:
             errors.add(e)
-            partial_output = await workflow.get_output(
-                context=context,
-                node_outputs=node_outputs,
-                partial=True,
-            )
-            errors, partial_output = await context.on_workflow_error(
-                workflow=workflow,
-                input=input,
-                errors=errors,
-                partial_output=partial_output,
-                node_yields=node_yields,
-            )
-            return errors, partial_output
-
-        # Check if we collected any errors in CONTINUE mode
-        if errors.any():
             partial_output = await workflow.get_output(
                 context=context,
                 node_outputs=node_outputs,
