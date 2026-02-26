@@ -22,7 +22,7 @@ from workflow_engine import (
     ValueType,
     WorkflowValue,
 )
-from workflow_engine.core.values.data import DataValue
+from workflow_engine.core.values.data import DataValue, get_data_schema
 from workflow_engine.core.values.value import ValueRegistry, get_origin_and_args
 from workflow_engine.files import (
     JSONFileValue,
@@ -133,7 +133,7 @@ class FooBarData(Data):
 @pytest.mark.unit
 def test_data_type_roundtrip():
     """Data subclass → schema → to_value_cls() returns DataValue with same field structure."""
-    schema = FooBarData.to_value_schema()
+    schema = get_data_schema(FooBarData)
     result = schema.to_value_cls()
     # DataValueSchema.build_data_cls creates a new Data class; get the inner type
     origin, args = get_origin_and_args(result)

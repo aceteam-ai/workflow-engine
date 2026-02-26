@@ -10,7 +10,7 @@ from typing import ClassVar, Generic, Literal, Self, Type, TypeVar
 from overrides import override
 from pydantic import Field
 
-from workflow_engine.core.values import build_data_type
+from workflow_engine.core.values import build_data_type, get_data_dict
 
 from ..core import (
     Context,
@@ -94,7 +94,7 @@ class GatherSequenceNode(Node[Data, SequenceData, SequenceParams]):
 
     @override
     async def run(self, context: Context, input: Data) -> SequenceData:
-        input_dict = input.to_dict()
+        input_dict = get_data_dict(input)
         return self.output_type(
             sequence=SequenceValue[self.element_type](
                 root=[input_dict[key] for key in self.keys]

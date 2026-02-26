@@ -19,6 +19,7 @@ from workflow_engine import (
     SequenceValue,
     Workflow,
 )
+from workflow_engine.core.values import get_data_dict
 from workflow_engine.contexts import InMemoryContext
 from workflow_engine.core.io import InputNode, OutputNode
 from workflow_engine.core.node import NodeTypeInfo
@@ -429,14 +430,14 @@ async def test_parallel_execution_with_node_expansion():
     context = InMemoryContext()
     algorithm = ParallelExecutionAlgorithm()
 
-    input_data = workflow.input_type.model_validate(
+    input_data = get_data_dict(workflow.input_type.model_validate(
         {
             "sequence": [
                 {"a": 1.0, "b": 2.0},
                 {"a": 3.0, "b": 4.0},
             ]
         }
-    ).to_dict()
+    ))
 
     errors, output = await algorithm.execute(
         context=context,

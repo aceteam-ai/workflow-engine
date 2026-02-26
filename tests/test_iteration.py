@@ -17,6 +17,7 @@ from workflow_engine import (
     Workflow,
     DataValue,
 )
+from workflow_engine.core.values import get_data_dict, get_field_annotations, get_only_field
 from workflow_engine.contexts import InMemoryContext
 from workflow_engine.core.io import InputNode, OutputNode
 from workflow_engine.execution import TopologicalExecutionAlgorithm
@@ -25,19 +26,19 @@ from workflow_engine.nodes import AddNode, ForEachNode
 
 def _input_element_type(workflow: Workflow):
     """Mirror ForEachNode's element type logic for input."""
-    n = len(workflow.input_type.field_annotations())
+    n = len(get_field_annotations(workflow.input_type))
     if n == 1:
-        return workflow.input_type.only_field()[1]
+        return get_only_field(workflow.input_type)[1]
     return DataValue[workflow.input_type]
 
 
 def _output_element_type(workflow: Workflow):
     """Mirror ForEachNode's element type logic for output."""
-    n = len(workflow.output_type.field_annotations())
+    n = len(get_field_annotations(workflow.output_type))
     if n == 0:
         return None
     if n == 1:
-        return workflow.output_type.only_field()[1]
+        return get_only_field(workflow.output_type)[1]
     return DataValue[workflow.output_type]
 
 
@@ -235,9 +236,9 @@ async def test_single_in_single_out(single_in_single_out_workflow: Workflow):
     context = InMemoryContext()
     algorithm = TopologicalExecutionAlgorithm()
 
-    input_data = workflow.input_type.model_validate(
+    input_data = get_data_dict(workflow.input_type.model_validate(
         {"sequence": [1.0, 2.0, 3.0]}
-    ).to_dict()
+    ))
 
     errors, output = await algorithm.execute(
         context=context,
@@ -262,7 +263,7 @@ async def test_single_in_multi_out(single_in_multi_out_workflow: Workflow):
     context = InMemoryContext()
     algorithm = TopologicalExecutionAlgorithm()
 
-    input_data = workflow.input_type.model_validate({"sequence": [5.0, 10.0]}).to_dict()
+    input_data = get_data_dict(workflow.input_type.model_validate({"sequence": [5.0, 10.0]}))
 
     errors, output = await algorithm.execute(
         context=context,
@@ -288,7 +289,7 @@ async def test_multi_in_single_out(multi_in_single_out_workflow: Workflow):
     context = InMemoryContext()
     algorithm = TopologicalExecutionAlgorithm()
 
-    input_data = workflow.input_type.model_validate(
+    input_data = get_data_dict(workflow.input_type.model_validate(
         {
             "sequence": [
                 {"a": 1.0, "b": 2.0},
@@ -296,7 +297,7 @@ async def test_multi_in_single_out(multi_in_single_out_workflow: Workflow):
                 {"a": 5.0, "b": 6.0},
             ]
         }
-    ).to_dict()
+    ))
 
     errors, output = await algorithm.execute(
         context=context,
@@ -321,14 +322,14 @@ async def test_multi_in_multi_out(multi_in_multi_out_workflow: Workflow):
     context = InMemoryContext()
     algorithm = TopologicalExecutionAlgorithm()
 
-    input_data = workflow.input_type.model_validate(
+    input_data = get_data_dict(workflow.input_type.model_validate(
         {
             "sequence": [
                 {"a": 1.0, "b": 2.0},
                 {"a": 10.0, "b": 20.0},
             ]
         }
-    ).to_dict()
+    ))
 
     errors, output = await algorithm.execute(
         context=context,
@@ -432,7 +433,7 @@ async def _test_zero_output_workflow(workflow: Workflow, input_data: dict) -> No
 
     context = InMemoryContext()
     algorithm = TopologicalExecutionAlgorithm()
-    input_dict = wf.input_type.model_validate(input_data).to_dict()
+    input_dict = get_data_dict(wf.input_type.model_validate(input_data))
     errors, output = await algorithm.execute(
         context=context,
         workflow=wf,
@@ -473,7 +474,7 @@ async def test_for_each_empty(multi_in_single_out_workflow: Workflow):
     context = InMemoryContext()
     algorithm = TopologicalExecutionAlgorithm()
 
-    input_data = workflow.input_type.model_validate({"sequence": []}).to_dict()
+    input_data = get_data_dict(workflow.input_type.model_validate({"sequence": []}))
 
     errors, output = await algorithm.execute(
         context=context,

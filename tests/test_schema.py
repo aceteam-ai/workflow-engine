@@ -29,7 +29,7 @@ from workflow_engine import (
     ValueSchemaValue,
     WorkflowValue,
 )
-from workflow_engine.core.values import validate_value_schema
+from workflow_engine.core.values import get_data_schema, validate_value_schema
 from workflow_engine.core.values.schema import (
     BooleanValueSchema,
     BaseValueSchema,
@@ -657,7 +657,7 @@ def test_super_recursive_schema_manual():
 @pytest.mark.unit
 def test_empty_schema_roundtrip():
     T = Empty
-    schema = T.to_value_schema()
+    schema = get_data_schema(T)
     U = schema.to_value_cls()
 
     # for Empty, to_value_cls returns a new class not equal to the original
@@ -684,7 +684,7 @@ class FooBarData(Data):
 @pytest.mark.unit
 def test_data_schema_roundtrip():
     T = FooBarData
-    schema = T.to_value_schema()
+    schema = get_data_schema(T)
     U = schema.to_value_cls()
 
     # it can serialize and deserialize instances of the original class
