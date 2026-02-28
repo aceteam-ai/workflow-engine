@@ -34,6 +34,8 @@ from .sequence import SequenceValue
 from .value import Value, ValueRegistry, ValueType
 from workflow_engine.utils.hash import json_digest
 
+_T_item = TypeVar("_T_item", bound=Value)
+
 
 def merge_defs(
     a: Mapping[str, ValueSchema] | None,
@@ -140,11 +142,10 @@ def _build_constrained_sequence_cls(
     digest = json_digest({"item_type": item_type.__name__, **extras})
     unique_title = f"SequenceValue_{digest}"
 
-    T_item = TypeVar("T_item", bound=Value)  # fresh TypeVar per call
     namespace: dict[str, Any] = {}
     if field_kwargs:
         namespace["__annotations__"] = {
-            "root": Annotated[Sequence[T_item], Field(**field_kwargs)]
+            "root": Annotated[Sequence[_T_item], Field(**field_kwargs)]  # type: ignore[valid-type]
         }
     config_updates: dict[str, Any] = {"title": unique_title}
     if schema_extras:
@@ -153,8 +154,8 @@ def _build_constrained_sequence_cls(
         **config_updates
     )
 
-    cls = type("SequenceValue", (SequenceValue[T_item],), namespace, register=False)
-    return cls[item_type]
+    cls = type("SequenceValue", (SequenceValue[_T_item],), namespace, register=False)  # type: ignore[valid-type]
+    return cls[item_type]  # type: ignore[index]
 
 
 def _build_constrained_map_cls(
@@ -176,11 +177,10 @@ def _build_constrained_map_cls(
     digest = json_digest({"item_type": item_type.__name__, **extras})
     unique_title = f"StringMapValue_{digest}"
 
-    T_item = TypeVar("T_item", bound=Value)
     namespace: dict[str, Any] = {}
     if field_kwargs:
         namespace["__annotations__"] = {
-            "root": Annotated[Mapping[str, T_item], Field(**field_kwargs)]
+            "root": Annotated[Mapping[str, _T_item], Field(**field_kwargs)]  # type: ignore[valid-type]
         }
     config_updates: dict[str, Any] = {"title": unique_title}
     if schema_extras:
@@ -189,8 +189,8 @@ def _build_constrained_map_cls(
         **config_updates
     )
 
-    cls = type("StringMapValue", (StringMapValue[T_item],), namespace, register=False)
-    return cls[item_type]
+    cls = type("StringMapValue", (StringMapValue[_T_item],), namespace, register=False)  # type: ignore[valid-type]
+    return cls[item_type]  # type: ignore[index]
 
 
 class BaseValueSchema(ImmutableBaseModel):
@@ -209,11 +209,7 @@ class BaseValueSchema(ImmutableBaseModel):
     description: str | None = None
     default: Any | None = None
     const: Any | None = None
-    value_type: str | None = Field(
-        None,
-        serialization_alias="x-value-type",
-        validation_alias="x-value-type",
-    )
+    value_type: str | None = None
 
     @model_validator(mode="before")
     @classmethod
@@ -230,8 +226,9 @@ class BaseValueSchema(ImmutableBaseModel):
         data = dict(data)
         if "$defs" not in data and "defs" in data:
             data["$defs"] = data.pop("defs")
-        if "x-value-type" not in data and "value_type" in data:
-            data["x-value-type"] = data.pop("value_type")
+        # Accept "x-value-type" (wire name) and map it to the Python field name.
+        if "value_type" not in data and "x-value-type" in data:
+            data["value_type"] = data.pop("x-value-type")
         return data
 
     @model_serializer(mode="wrap")
@@ -251,10 +248,16 @@ class BaseValueSchema(ImmutableBaseModel):
         # Get the serialized data from the handler
         data: dict[str, Any] = handler(self)
 
+        # Rename value_type -> x-value-type for wire format before filtering.
+        if "value_type" in data:
+            data["x-value-type"] = data.pop("value_type")
+
         keys_to_keep: set[str] = {"$ref"}  # always keep $ref if present
 
         if hasattr(self, "__pydantic_fields_set__"):
-            keys_to_keep.update(self.__pydantic_fields_set__)
+            for key in self.__pydantic_fields_set__:
+                # Translate the Python field name to the wire name.
+                keys_to_keep.add("x-value-type" if key == "value_type" else key)
 
         # special handling for $defs, because aliasing breaks
         # __pydantic_fields_set__
@@ -263,9 +266,7 @@ class BaseValueSchema(ImmutableBaseModel):
         ):
             keys_to_keep.add("$defs")
 
-        # x-value-type uses a serialization alias so __pydantic_fields_set__ contains
-        # "value_type" (the field name) but the serialized dict has "x-value-type".
-        # Handle it explicitly, like $defs above.
+        # Keep x-value-type if it has a value, regardless of __pydantic_fields_set__.
         if data.get("x-value-type") is not None:
             keys_to_keep.add("x-value-type")
 
