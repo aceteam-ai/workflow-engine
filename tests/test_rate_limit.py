@@ -10,12 +10,13 @@ from pydantic import ValidationError
 
 from workflow_engine import (
     Edge,
+    InputNode,
+    OutputNode,
     StringValue,
     Workflow,
     WorkflowExecutionResultStatus,
 )
 from workflow_engine.contexts import InMemoryContext
-from workflow_engine import InputNode, OutputNode
 from workflow_engine.execution import (
     RateLimitConfig,
     RateLimiter,

@@ -394,7 +394,9 @@ class Node(ImmutableBaseModel, Generic[Input_contra, Output_co, Params_co]):
                 input_obj = await self._cast_input(input, context)
             except ValidationError as e:
                 raise UserException(f"Input {input} for node {self.id} is invalid: {e}")
-            output = await context.on_node_start(node=self, input=get_data_dict(input_obj))
+            output = await context.on_node_start(
+                node=self, input=get_data_dict(input_obj)
+            )
             if output is not None:
                 return output
             output_obj = await self.run(context, input_obj)

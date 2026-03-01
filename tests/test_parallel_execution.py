@@ -437,14 +437,16 @@ async def test_parallel_execution_with_node_expansion():
     context = InMemoryContext()
     algorithm = ParallelExecutionAlgorithm()
 
-    input_data = get_data_dict(workflow.input_type.model_validate(
-        {
-            "sequence": [
-                {"a": 1.0, "b": 2.0},
-                {"a": 3.0, "b": 4.0},
-            ]
-        }
-    ))
+    input_data = get_data_dict(
+        workflow.input_type.model_validate(
+            {
+                "sequence": [
+                    {"a": 1.0, "b": 2.0},
+                    {"a": 3.0, "b": 4.0},
+                ]
+            }
+        )
+    )
 
     result = await algorithm.execute(
         context=context,
