@@ -13,21 +13,23 @@ from workflow_engine import (
     Edge,
     Empty,
     FloatValue,
+    InputNode,
     IntegerValue,
     Node,
+    NodeTypeInfo,
+    OutputNode,
     Params,
     SequenceValue,
     Workflow,
+    WorkflowExecutionResultStatus,
 )
 from workflow_engine.core.values import get_data_dict
 from workflow_engine.contexts import InMemoryContext
-from workflow_engine.core.io import InputNode, OutputNode
-from workflow_engine.core.node import NodeTypeInfo
-from workflow_engine.execution import TopologicalExecutionAlgorithm
 from workflow_engine.execution.parallel import (
     ErrorHandlingMode,
     ParallelExecutionAlgorithm,
 )
+from workflow_engine.execution.topological import TopologicalExecutionAlgorithm
 from workflow_engine.nodes import (
     AddNode,
     ConstantIntegerNode,
@@ -157,24 +159,24 @@ async def test_parallel_execution_faster_than_sequential(
     # Sequential execution
     sequential_algo = TopologicalExecutionAlgorithm()
     start = asyncio.get_event_loop().time()
-    errors, _ = await sequential_algo.execute(
+    sequential_result = await sequential_algo.execute(
         context=context,
         workflow=parallel_workflow,
         input={},
     )
     sequential_time = asyncio.get_event_loop().time() - start
-    assert not errors.any()
+    assert sequential_result.status is WorkflowExecutionResultStatus.SUCCESS
 
     # Parallel execution
     parallel_algo = ParallelExecutionAlgorithm()
     start = asyncio.get_event_loop().time()
-    errors, _ = await parallel_algo.execute(
+    parallel_result = await parallel_algo.execute(
         context=context,
         workflow=parallel_workflow,
         input={},
     )
     parallel_time = asyncio.get_event_loop().time() - start
-    assert not errors.any()
+    assert parallel_result.status is WorkflowExecutionResultStatus.SUCCESS
 
     # Parallel should be significantly faster (3 x 100ms sequentially vs ~100ms parallel)
     # Using a generous margin to avoid flaky tests
@@ -212,14 +214,14 @@ async def test_parallel_execution_respects_dependencies():
     context = InMemoryContext()
     algorithm = ParallelExecutionAlgorithm()
 
-    errors, output = await algorithm.execute(
+    result = await algorithm.execute(
         context=context,
         workflow=workflow,
         input={},
     )
 
-    assert not errors.any()
-    assert output == {"result": IntegerValue(3)}
+    assert result.status is WorkflowExecutionResultStatus.SUCCESS
+    assert result.output == {"result": IntegerValue(3)}
 
 
 @pytest.mark.asyncio
@@ -266,15 +268,15 @@ async def test_parallel_execution_complex_dependencies():
     context = InMemoryContext()
     algorithm = ParallelExecutionAlgorithm()
 
-    errors, output = await algorithm.execute(
+    result = await algorithm.execute(
         context=context,
         workflow=workflow,
         input={},
     )
 
-    assert not errors.any()
+    assert result.status is WorkflowExecutionResultStatus.SUCCESS
     # a + b = 3, then 3 + d(10) = 13
-    assert output == {"result": IntegerValue(13)}
+    assert result.output == {"result": IntegerValue(13)}
 
 
 @pytest.mark.asyncio
@@ -313,19 +315,19 @@ async def test_parallel_execution_continue_on_error():
     context = InMemoryContext()
     algorithm = ParallelExecutionAlgorithm(error_handling=ErrorHandlingMode.CONTINUE)
 
-    errors, output = await algorithm.execute(
+    result = await algorithm.execute(
         context=context,
         workflow=workflow,
         input={},
     )
 
     # Should have collected errors from both error nodes
-    assert errors.any()
-    assert len(errors.node_errors) == 2
-    assert "error1" in errors.node_errors
-    assert "error2" in errors.node_errors
+    assert result.status is WorkflowExecutionResultStatus.ERROR
+    assert len(result.errors.node_errors) == 2
+    assert "error1" in result.errors.node_errors
+    assert "error2" in result.errors.node_errors
     # ok_node output should still be available in partial output
-    assert output == {"value": StringValue("test")}
+    assert result.output == {"value": StringValue("test")}
 
 
 @pytest.mark.asyncio
@@ -361,13 +363,12 @@ async def test_parallel_execution_fail_fast():
     context = InMemoryContext()
     algorithm = ParallelExecutionAlgorithm(error_handling=ErrorHandlingMode.FAIL_FAST)
 
-    errors, output = await algorithm.execute(
+    result = await algorithm.execute(
         context=context,
         workflow=workflow,
         input={},
     )
-
-    assert errors.any()
+    assert result.status is WorkflowExecutionResultStatus.ERROR
 
 
 @pytest.mark.asyncio
@@ -380,17 +381,23 @@ async def test_parallel_execution_with_node_expansion():
     add_output_node = OutputNode.from_fields(
         c=FloatValue,
     )
-    add = AddNode(id="add")
+    add = AddNode.with_arity(id="add", arity=2)
     add_workflow = Workflow(
         input_node=add_input_node,
         output_node=add_output_node,
         inner_nodes=[add],
         edges=[
             Edge.from_nodes(
-                source=add_input_node, source_key="a", target=add, target_key="a"
+                source=add_input_node,
+                source_key="a",
+                target=add,
+                target_key="a",
             ),
             Edge.from_nodes(
-                source=add_input_node, source_key="b", target=add, target_key="b"
+                source=add_input_node,
+                source_key="b",
+                target=add,
+                target_key="b",
             ),
             Edge.from_nodes(
                 source=add, source_key="sum", target=add_output_node, target_key="c"
@@ -439,19 +446,26 @@ async def test_parallel_execution_with_node_expansion():
         }
     ))
 
-    errors, output = await algorithm.execute(
+    result = await algorithm.execute(
         context=context,
         workflow=workflow,
         input=input_data,
     )
 
-    assert not errors.any(), errors
+    assert result.status is WorkflowExecutionResultStatus.SUCCESS
+
     # Compare values directly (single output: each element is FloatValue)
-    results = output["results"]
+    results = result.output["results"]
     assert isinstance(results, SequenceValue)
     assert len(results) == 2
-    assert results[0].root == 3.0
-    assert results[1].root == 7.0
+
+    result_0 = results[0]
+    assert isinstance(result_0, FloatValue)
+    assert result_0 == 3.0
+
+    result_1 = results[1]
+    assert isinstance(result_1, FloatValue)
+    assert result_1 == 7.0
 
 
 @pytest.mark.asyncio
@@ -491,14 +505,14 @@ async def test_parallel_execution_max_concurrency():
     algorithm = ParallelExecutionAlgorithm(max_concurrency=2)
 
     start = asyncio.get_event_loop().time()
-    errors, _ = await algorithm.execute(
+    result = await algorithm.execute(
         context=context,
         workflow=workflow,
         input={},
     )
     elapsed = asyncio.get_event_loop().time() - start
 
-    assert not errors.any()
+    assert result.status is WorkflowExecutionResultStatus.SUCCESS
     # Should take at least 3 batches worth of time (with some tolerance)
     assert elapsed >= 0.12, f"Expected at least 120ms, got {elapsed * 1000:.0f}ms"
 
@@ -519,14 +533,13 @@ async def test_parallel_execution_empty_workflow():
     context = InMemoryContext()
     algorithm = ParallelExecutionAlgorithm()
 
-    errors, output = await algorithm.execute(
+    result = await algorithm.execute(
         context=context,
         workflow=workflow,
         input={},
     )
-
-    assert not errors.any()
-    assert output == {}
+    assert result.status is WorkflowExecutionResultStatus.SUCCESS
+    assert result.output == {}
 
 
 @pytest.mark.asyncio
@@ -551,14 +564,13 @@ async def test_parallel_execution_single_node():
     context = InMemoryContext()
     algorithm = ParallelExecutionAlgorithm()
 
-    errors, output = await algorithm.execute(
+    result = await algorithm.execute(
         context=context,
         workflow=workflow,
         input={},
     )
-
-    assert not errors.any()
-    assert output == {"result": IntegerValue(42)}
+    assert result.status is WorkflowExecutionResultStatus.SUCCESS
+    assert result.output == {"result": IntegerValue(42)}
 
 
 @pytest.mark.asyncio
@@ -609,7 +621,7 @@ async def test_parallel_execution_matches_sequential_output():
 
     # Sequential execution
     sequential_algo = TopologicalExecutionAlgorithm()
-    seq_errors, seq_output = await sequential_algo.execute(
+    sequential_result = await sequential_algo.execute(
         context=context,
         workflow=workflow,
         input=input_data,
@@ -617,16 +629,19 @@ async def test_parallel_execution_matches_sequential_output():
 
     # Parallel execution
     parallel_algo = ParallelExecutionAlgorithm()
-    par_errors, par_output = await parallel_algo.execute(
+    parallel_result = await parallel_algo.execute(
         context=context,
         workflow=workflow,
         input=input_data,
     )
 
-    assert not seq_errors.any()
-    assert not par_errors.any()
-    assert seq_output == par_output
-    assert par_output == {"sum": 42 + 2025 + (-256)}
+    assert sequential_result.status is WorkflowExecutionResultStatus.SUCCESS
+    assert parallel_result.status is WorkflowExecutionResultStatus.SUCCESS
+    assert (
+        sequential_result.output
+        == parallel_result.output
+        == {"sum": 42 + 2025 + (-256)}
+    )
 
 
 @pytest.mark.asyncio
@@ -675,14 +690,14 @@ async def test_parallel_execution_eager_dispatch():
     algorithm = ParallelExecutionAlgorithm()
 
     start = asyncio.get_event_loop().time()
-    errors, output = await algorithm.execute(
+    result = await algorithm.execute(
         context=context,
         workflow=workflow,
         input={},
     )
     elapsed = asyncio.get_event_loop().time() - start
 
-    assert not errors.any()
+    assert result.status is WorkflowExecutionResultStatus.SUCCESS
     # Eager dispatch: ~200ms (B is bottleneck, C finishes at 100ms)
     # Batch dispatch would be: ~250ms (A+B at 200ms, then C at 250ms)
     # Using generous margin to avoid flaky tests

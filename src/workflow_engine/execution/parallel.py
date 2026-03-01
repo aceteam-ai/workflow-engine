@@ -6,8 +6,10 @@ from typing import NamedTuple
 
 from overrides import override
 
+from workflow_engine.core.execution import WorkflowExecutionResult
+
 from ..core import Context, DataMapping, ExecutionAlgorithm, Workflow, WorkflowErrors
-from ..core.error import NodeException, ShouldRetry, ShouldYield, WorkflowYield
+from ..core.error import NodeException, ShouldRetry, ShouldYield
 from .rate_limit import RateLimitRegistry
 from .retry import RetryTracker
 
@@ -75,7 +77,7 @@ class ParallelExecutionAlgorithm(ExecutionAlgorithm):
         context: Context,
         workflow: Workflow,
         input: DataMapping,
-    ) -> tuple[WorkflowErrors, DataMapping]:
+    ) -> WorkflowExecutionResult:
         # Initialize semaphore if max_concurrency is set
         semaphore: asyncio.Semaphore | None = None
         if self.max_concurrency is not None:
@@ -94,8 +96,8 @@ class ParallelExecutionAlgorithm(ExecutionAlgorithm):
 
         # Track nodes that are waiting for retry (node_id -> input)
         pending_retry: dict[str, DataMapping] = {}
-        # Track nodes that yielded (node_id -> ShouldYield exception)
-        node_yields: dict[str, ShouldYield] = {}
+        # Track nodes that yielded (node_id -> ShouldYield message)
+        node_yields: dict[str, str] = {}
 
         try:
             # Initial dispatch - start all initially ready nodes
@@ -161,7 +163,7 @@ class ParallelExecutionAlgorithm(ExecutionAlgorithm):
                     # Handle yielded nodes
                     if node_result.should_yield is not None:
                         node = workflow.nodes_by_id[node_id]
-                        node_yields[node_id] = node_result.should_yield
+                        node_yields[node_id] = node_result.should_yield.message
                         await context.on_node_yield(
                             node=node,
                             input=node_result.input,
@@ -241,11 +243,6 @@ class ParallelExecutionAlgorithm(ExecutionAlgorithm):
                     )
                     running_tasks[task] = node_id
 
-            # Errors take precedence over yields: only raise WorkflowYield if
-            # no errors were collected (CONTINUE mode).
-            if node_yields and not errors.any():
-                raise WorkflowYield(node_yields)
-
             # Short-circuit before attempting full output if errors were
             # collected in CONTINUE mode, to avoid masking real errors with
             # spurious "missing output" exceptions from yielded/failed nodes.
@@ -255,33 +252,33 @@ class ParallelExecutionAlgorithm(ExecutionAlgorithm):
                     node_outputs=node_outputs,
                     partial=True,
                 )
-                errors, partial_output = await context.on_workflow_error(
+                result = await context.on_workflow_error(
                     workflow=workflow,
                     input=input,
                     errors=errors,
                     partial_output=partial_output,
                     node_yields=node_yields,
                 )
-                return errors, partial_output
+                return result
+
+            if len(node_yields) > 0:
+                partial_output = await workflow.get_output(
+                    context=context,
+                    node_outputs=node_outputs,
+                    partial=True,
+                )
+                result = await context.on_workflow_yield(
+                    workflow=workflow,
+                    input=input,
+                    partial_output=partial_output,
+                    node_yields=node_yields,
+                )
+                return result
 
             output = await workflow.get_output(
                 context=context,
                 node_outputs=node_outputs,
             )
-
-        except WorkflowYield as e:
-            partial_output = await workflow.get_output(
-                context=context,
-                node_outputs=node_outputs,
-                partial=True,
-            )
-            await context.on_workflow_yield(
-                workflow=workflow,
-                input=input,
-                exception=e,
-                partial_output=partial_output,
-            )
-            raise
         except Exception as e:
             errors.add(e)
             partial_output = await workflow.get_output(
@@ -289,22 +286,21 @@ class ParallelExecutionAlgorithm(ExecutionAlgorithm):
                 node_outputs=node_outputs,
                 partial=True,
             )
-            errors, partial_output = await context.on_workflow_error(
+            result = await context.on_workflow_error(
                 workflow=workflow,
                 input=input,
                 errors=errors,
                 partial_output=partial_output,
                 node_yields=node_yields,
             )
-            return errors, partial_output
-
-        output = await context.on_workflow_finish(
-            workflow=workflow,
-            input=input,
-            output=output,
-        )
-
-        return errors, output
+            return result
+        else:
+            result = await context.on_workflow_finish(
+                workflow=workflow,
+                input=input,
+                output=output,
+            )
+            return result
 
     async def _cancel_all(
         self, running_tasks: dict[asyncio.Task[NodeResult], str]

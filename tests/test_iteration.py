@@ -10,16 +10,21 @@ Tests for ForEachNode covering all 4 input/output combinations:
 import pytest
 
 from workflow_engine import (
+    DataValue,
     Edge,
     Empty,
     FloatValue,
     SequenceValue,
     Workflow,
-    DataValue,
+    WorkflowExecutionResultStatus,
 )
-from workflow_engine.core.values import get_data_dict, get_field_annotations, get_only_field
 from workflow_engine.contexts import InMemoryContext
 from workflow_engine.core.io import InputNode, OutputNode
+from workflow_engine.core.values import (
+    get_data_dict,
+    get_field_annotations,
+    get_only_field,
+)
 from workflow_engine.execution import TopologicalExecutionAlgorithm
 from workflow_engine.nodes import AddNode, ForEachNode
 
@@ -236,18 +241,18 @@ async def test_single_in_single_out(single_in_single_out_workflow: Workflow):
     context = InMemoryContext()
     algorithm = TopologicalExecutionAlgorithm()
 
-    input_data = get_data_dict(workflow.input_type.model_validate(
-        {"sequence": [1.0, 2.0, 3.0]}
-    ))
+    input_data = get_data_dict(
+        workflow.input_type.model_validate({"sequence": [1.0, 2.0, 3.0]})
+    )
 
-    errors, output = await algorithm.execute(
+    result = await algorithm.execute(
         context=context,
         workflow=workflow,
         input=input_data,
     )
 
-    assert not errors.any(), errors
-    results = output["results"]
+    assert result.status is WorkflowExecutionResultStatus.SUCCESS
+    results = result.output["results"]
     assert isinstance(results, SequenceValue)
     assert len(results) == 3
     # Single output: each element is FloatValue directly
@@ -263,16 +268,18 @@ async def test_single_in_multi_out(single_in_multi_out_workflow: Workflow):
     context = InMemoryContext()
     algorithm = TopologicalExecutionAlgorithm()
 
-    input_data = get_data_dict(workflow.input_type.model_validate({"sequence": [5.0, 10.0]}))
+    input_data = get_data_dict(
+        workflow.input_type.model_validate({"sequence": [5.0, 10.0]})
+    )
 
-    errors, output = await algorithm.execute(
+    result = await algorithm.execute(
         context=context,
         workflow=workflow,
         input=input_data,
     )
 
-    assert not errors.any(), errors
-    results = output["results"]
+    assert result.status is WorkflowExecutionResultStatus.SUCCESS
+    results = result.output["results"]
     assert isinstance(results, SequenceValue)
     assert len(results) == 2
     # Multi output: each element is DataValue[Data] with first, second fields
@@ -289,24 +296,26 @@ async def test_multi_in_single_out(multi_in_single_out_workflow: Workflow):
     context = InMemoryContext()
     algorithm = TopologicalExecutionAlgorithm()
 
-    input_data = get_data_dict(workflow.input_type.model_validate(
-        {
-            "sequence": [
-                {"a": 1.0, "b": 2.0},
-                {"a": 3.0, "b": 4.0},
-                {"a": 5.0, "b": 6.0},
-            ]
-        }
-    ))
+    input_data = get_data_dict(
+        workflow.input_type.model_validate(
+            {
+                "sequence": [
+                    {"a": 1.0, "b": 2.0},
+                    {"a": 3.0, "b": 4.0},
+                    {"a": 5.0, "b": 6.0},
+                ]
+            }
+        )
+    )
 
-    errors, output = await algorithm.execute(
+    result = await algorithm.execute(
         context=context,
         workflow=workflow,
         input=input_data,
     )
 
-    assert not errors.any(), errors
-    results = output["results"]
+    assert result.status is WorkflowExecutionResultStatus.SUCCESS
+    results = result.output["results"]
     assert isinstance(results, SequenceValue)
     assert len(results) == 3
     # Multi input, single output: each element is FloatValue directly (no GatherData)
@@ -322,23 +331,25 @@ async def test_multi_in_multi_out(multi_in_multi_out_workflow: Workflow):
     context = InMemoryContext()
     algorithm = TopologicalExecutionAlgorithm()
 
-    input_data = get_data_dict(workflow.input_type.model_validate(
-        {
-            "sequence": [
-                {"a": 1.0, "b": 2.0},
-                {"a": 10.0, "b": 20.0},
-            ]
-        }
-    ))
+    input_data = get_data_dict(
+        workflow.input_type.model_validate(
+            {
+                "sequence": [
+                    {"a": 1.0, "b": 2.0},
+                    {"a": 10.0, "b": 20.0},
+                ]
+            }
+        )
+    )
 
-    errors, output = await algorithm.execute(
+    result = await algorithm.execute(
         context=context,
         workflow=workflow,
         input=input_data,
     )
 
-    assert not errors.any(), errors
-    results = output["results"]
+    assert result.status is WorkflowExecutionResultStatus.SUCCESS
+    results = result.output["results"]
     assert isinstance(results, SequenceValue)
     assert len(results) == 2
     assert results[0].root.sum.root == 3.0
@@ -434,14 +445,14 @@ async def _test_zero_output_workflow(workflow: Workflow, input_data: dict) -> No
     context = InMemoryContext()
     algorithm = TopologicalExecutionAlgorithm()
     input_dict = get_data_dict(wf.input_type.model_validate(input_data))
-    errors, output = await algorithm.execute(
+    result = await algorithm.execute(
         context=context,
         workflow=wf,
         input=input_dict,
     )
 
-    assert not errors.any(), errors
-    assert output == {}
+    assert result.status is WorkflowExecutionResultStatus.SUCCESS
+    assert result.output == {}
 
 
 @pytest.mark.asyncio
@@ -476,13 +487,13 @@ async def test_for_each_empty(multi_in_single_out_workflow: Workflow):
 
     input_data = get_data_dict(workflow.input_type.model_validate({"sequence": []}))
 
-    errors, output = await algorithm.execute(
+    result = await algorithm.execute(
         context=context,
         workflow=workflow,
         input=input_data,
     )
 
-    assert not errors.any(), errors
-    results = output["results"]
+    assert result.status is WorkflowExecutionResultStatus.SUCCESS
+    results = result.output.get("results", [])
     assert isinstance(results, SequenceValue)
     assert len(results) == 0

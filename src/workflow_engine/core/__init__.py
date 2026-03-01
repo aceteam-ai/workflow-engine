@@ -8,9 +8,12 @@ from .error import (
     ShouldYield,
     UserException,
     WorkflowErrors,
-    WorkflowYield,
 )
-from .execution import ExecutionAlgorithm
+from .execution import (
+    ExecutionAlgorithm,
+    WorkflowExecutionResult,
+    WorkflowExecutionResultStatus,
+)
 from .io import InputNode, OutputNode
 from .migration import (
     Migration,
@@ -105,6 +108,7 @@ __all__ = [
     "Workflow",
     "WorkflowEngine",
     "WorkflowErrors",
+    "WorkflowExecutionResult",
+    "WorkflowExecutionResultStatus",
     "WorkflowValue",
-    "WorkflowYield",
 ]

@@ -20,12 +20,13 @@ from workflow_engine import (
     Context,
     Data,
     Edge,
+    ExecutionAlgorithm,
     Node,
     Params,
     ShouldYield,
     StringValue,
     Workflow,
-    WorkflowYield,
+    WorkflowExecutionResultStatus,
 )
 from workflow_engine.contexts import InMemoryContext
 from workflow_engine.core import NodeTypeInfo
@@ -33,7 +34,6 @@ from workflow_engine.core.io import InputNode, OutputNode
 from workflow_engine.execution import TopologicalExecutionAlgorithm
 from workflow_engine.execution.parallel import ParallelExecutionAlgorithm
 from workflow_engine.nodes import ConstantStringNode
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -143,7 +143,7 @@ def reset_echo_ran():
 
 
 @pytest.fixture(params=["topological", "parallel"])
-def algorithm(request):
+def algorithm(request) -> ExecutionAlgorithm:
     if request.param == "topological":
         return TopologicalExecutionAlgorithm()
     else:
@@ -258,37 +258,44 @@ def _chain_workflow(*, yield_first: bool) -> Workflow:
 
 class TestYieldContinuesProgress:
     @pytest.mark.asyncio
-    async def test_independent_nodes_run_after_yield(self, algorithm):
+    async def test_independent_nodes_run_after_yield(
+        self, algorithm: ExecutionAlgorithm
+    ):
         """Nodes in independent branches still execute when another branch yields."""
         workflow, _ = _fan_out_workflow(yielding_ids=["y"], echo_ids=["e"])
         context = InMemoryContext()
 
-        with pytest.raises(WorkflowYield):
-            await algorithm.execute(context=context, workflow=workflow, input={})
+        result = await algorithm.execute(context=context, workflow=workflow, input={})
 
+        assert result.status is WorkflowExecutionResultStatus.YIELDED
         assert "e" in EchoNode.ran
         # Yielding node must run exactly once — never re-dispatched
         assert YieldingNode.calls.get("y") == 1
 
     @pytest.mark.asyncio
-    async def test_downstream_nodes_do_not_run_after_yield(self, algorithm):
+    async def test_downstream_nodes_do_not_run_after_yield(
+        self, algorithm: ExecutionAlgorithm
+    ):
         """A node whose only dependency yielded must not execute."""
         workflow = _chain_workflow(yield_first=True)
         context = InMemoryContext()
 
-        with pytest.raises(WorkflowYield):
-            await algorithm.execute(context=context, workflow=workflow, input={})
+        result = await algorithm.execute(context=context, workflow=workflow, input={})
+        assert result.status is WorkflowExecutionResultStatus.YIELDED
 
         assert "node_b" not in EchoNode.ran
 
     @pytest.mark.asyncio
-    async def test_upstream_completion_runs_downstream_before_yield(self, algorithm):
+    async def test_upstream_completion_runs_downstream_before_yield(
+        self,
+        algorithm: ExecutionAlgorithm,
+    ):
         """When an earlier node succeeds, its downstream runs even if a sibling yields."""
         workflow = _chain_workflow(yield_first=False)
         context = InMemoryContext()
 
-        with pytest.raises(WorkflowYield):
-            await algorithm.execute(context=context, workflow=workflow, input={})
+        result = await algorithm.execute(context=context, workflow=workflow, input={})
+        assert result.status is WorkflowExecutionResultStatus.YIELDED
 
         # node_a (echo) ran; node_b (yield) yielded
         assert "node_a" in EchoNode.ran
@@ -296,56 +303,59 @@ class TestYieldContinuesProgress:
 
 class TestMultipleYields:
     @pytest.mark.asyncio
-    async def test_all_yielding_nodes_collected(self, algorithm):
+    async def test_all_yielding_nodes_collected(
+        self,
+        algorithm: ExecutionAlgorithm,
+    ):
         """WorkflowYield contains every node that yielded, not just the first."""
         workflow, _ = _fan_out_workflow(yielding_ids=["y1", "y2", "y3"], echo_ids=[])
         context = InMemoryContext()
 
-        with pytest.raises(WorkflowYield) as exc_info:
-            await algorithm.execute(context=context, workflow=workflow, input={})
+        result = await algorithm.execute(context=context, workflow=workflow, input={})
+        assert result.status is WorkflowExecutionResultStatus.YIELDED
 
-        assert set(exc_info.value.node_yields.keys()) == {"y1", "y2", "y3"}
+        assert set(result.node_yields.keys()) == {"y1", "y2", "y3"}
 
     @pytest.mark.asyncio
-    async def test_yield_messages_preserved(self, algorithm):
+    async def test_yield_messages_preserved(self, algorithm: ExecutionAlgorithm):
         """Each yielded node's message is available in WorkflowYield.node_yields."""
         workflow, _ = _fan_out_workflow(yielding_ids=["y1", "y2"], echo_ids=[])
         context = InMemoryContext()
 
-        with pytest.raises(WorkflowYield) as exc_info:
-            await algorithm.execute(context=context, workflow=workflow, input={})
+        result = await algorithm.execute(context=context, workflow=workflow, input={})
+        assert result.status is WorkflowExecutionResultStatus.YIELDED
 
-        yields = exc_info.value.node_yields
-        assert yields["y1"].message == "waiting: y1"
-        assert yields["y2"].message == "waiting: y2"
+        assert result.node_yields["y1"] == "waiting: y1"
+        assert result.node_yields["y2"] == "waiting: y2"
 
     @pytest.mark.asyncio
-    async def test_mixed_yield_and_success(self, algorithm):
+    async def test_mixed_yield_and_success(self, algorithm: ExecutionAlgorithm):
         """When some nodes yield and others succeed, both outcomes are correct."""
         workflow, _ = _fan_out_workflow(
             yielding_ids=["y1", "y2"], echo_ids=["e1", "e2"]
         )
         context = InMemoryContext()
 
-        with pytest.raises(WorkflowYield) as exc_info:
-            await algorithm.execute(context=context, workflow=workflow, input={})
+        result = await algorithm.execute(context=context, workflow=workflow, input={})
+        assert result.status is WorkflowExecutionResultStatus.YIELDED
 
         # Yielded nodes are captured
-        assert set(exc_info.value.node_yields.keys()) == {"y1", "y2"}
+        assert set(result.node_yields.keys()) == {"y1", "y2"}
         # Successful nodes ran
         assert {"e1", "e2"}.issubset(EchoNode.ran)
 
     @pytest.mark.asyncio
-    async def test_workflow_yield_not_raised_if_no_nodes_yield(self, algorithm):
+    async def test_workflow_yield_not_raised_if_no_nodes_yield(
+        self,
+        algorithm: ExecutionAlgorithm,
+    ):
         """WorkflowYield is not raised when all nodes complete normally."""
         workflow, _ = _fan_out_workflow(yielding_ids=[], echo_ids=["e1", "e2"])
         context = InMemoryContext()
 
-        errors, output = await algorithm.execute(
-            context=context, workflow=workflow, input={}
-        )
+        result = await algorithm.execute(context=context, workflow=workflow, input={})
 
-        assert not errors.any()
+        assert result.status is WorkflowExecutionResultStatus.SUCCESS
         assert {"e1", "e2"}.issubset(EchoNode.ran)
 
 
@@ -374,38 +384,42 @@ class TestResumption:
         )
 
     @pytest.mark.asyncio
-    async def test_first_run_yields(self, algorithm):
+    async def test_first_run_yields(
+        self,
+        algorithm: ExecutionAlgorithm,
+    ):
         """The first execution raises WorkflowYield."""
         workflow = self._resumable_workflow()
         context = InMemoryContext()
 
-        with pytest.raises(WorkflowYield) as exc_info:
-            await algorithm.execute(context=context, workflow=workflow, input={})
+        result = await algorithm.execute(context=context, workflow=workflow, input={})
+        assert result.status is WorkflowExecutionResultStatus.YIELDED
 
-        assert "resumable" in exc_info.value.node_yields
+        assert "resumable" in result.node_yields
         assert ResumableNode.calls["resumable"] == 1
 
     @pytest.mark.asyncio
-    async def test_second_run_succeeds(self, algorithm):
+    async def test_second_run_succeeds(
+        self,
+        algorithm: ExecutionAlgorithm,
+    ):
         """Re-running the same workflow with the same context lets the node succeed."""
         workflow = self._resumable_workflow()
         context = InMemoryContext()
 
         # First run — yields
-        with pytest.raises(WorkflowYield):
-            await algorithm.execute(context=context, workflow=workflow, input={})
+        result = await algorithm.execute(context=context, workflow=workflow, input={})
+        assert result.status is WorkflowExecutionResultStatus.YIELDED
 
         # Second run — node finds its work complete and returns a result
-        errors, output = await algorithm.execute(
-            context=context, workflow=workflow, input={}
-        )
+        result = await algorithm.execute(context=context, workflow=workflow, input={})
 
-        assert not errors.any()
-        assert output == {"result": StringValue("resumed: hello")}
+        assert result.status is WorkflowExecutionResultStatus.SUCCESS
+        assert result.output == {"result": StringValue("resumed: hello")}
         assert ResumableNode.calls["resumable"] == 2
 
     @pytest.mark.asyncio
-    async def test_partial_resumption(self, algorithm):
+    async def test_partial_resumption(self, algorithm: ExecutionAlgorithm):
         """When only some yielded nodes are ready, the rest yield again."""
         input_node = InputNode.empty()
         output_node = OutputNode.from_fields(a=StringValue, b=StringValue)
@@ -435,12 +449,12 @@ class TestResumption:
         context = InMemoryContext()
 
         # First run — both yield
-        with pytest.raises(WorkflowYield) as exc_info:
-            await algorithm.execute(context=context, workflow=workflow, input={})
-        assert set(exc_info.value.node_yields.keys()) == {"r_a", "r_b"}
+        result = await algorithm.execute(context=context, workflow=workflow, input={})
+        assert result.status is WorkflowExecutionResultStatus.YIELDED
+        assert set(result.node_yields.keys()) == {"r_a", "r_b"}
 
         # Second run — r_a succeeds, r_b yields again
-        with pytest.raises(WorkflowYield) as exc_info:
-            await algorithm.execute(context=context, workflow=workflow, input={})
-        assert set(exc_info.value.node_yields.keys()) == {"r_b"}
+        result = await algorithm.execute(context=context, workflow=workflow, input={})
+        assert result.status is WorkflowExecutionResultStatus.YIELDED
+        assert set(result.node_yields.keys()) == {"r_b"}
         assert ResumableNode.calls["r_a"] == 2

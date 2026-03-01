@@ -1,8 +1,15 @@
 import pytest
 
-from workflow_engine import BooleanValue, Edge, IntegerValue, Workflow
+from workflow_engine import (
+    BooleanValue,
+    Edge,
+    InputNode,
+    IntegerValue,
+    OutputNode,
+    Workflow,
+    WorkflowExecutionResultStatus,
+)
 from workflow_engine.contexts import InMemoryContext
-from workflow_engine.core.io import InputNode, OutputNode
 from workflow_engine.execution import TopologicalExecutionAlgorithm
 from workflow_engine.nodes import AddNode, ConstantIntegerNode, IfElseNode
 
@@ -139,7 +146,7 @@ async def test_conditional_workflow(
         ],
     )
 
-    errors, output = await algorithm.execute(
+    result = await algorithm.execute(
         context=context,
         workflow=workflow,
         input={
@@ -147,10 +154,10 @@ async def test_conditional_workflow(
             "condition": BooleanValue(False),
         },
     )
-    assert not errors.any(), errors
-    assert output == {"result": start_value - 1}
+    assert result.status is WorkflowExecutionResultStatus.SUCCESS
+    assert result.output == {"result": start_value - 1}
 
-    errors, output = await algorithm.execute(
+    result = await algorithm.execute(
         context=context,
         workflow=workflow,
         input={
@@ -158,8 +165,8 @@ async def test_conditional_workflow(
             "condition": BooleanValue(True),
         },
     )
-    assert not errors.any(), errors
-    assert output == {"result": start_value + 1}
+    assert result.status is WorkflowExecutionResultStatus.SUCCESS
+    assert result.output == {"result": start_value + 1}
 
 
 @pytest.mark.asyncio
@@ -232,7 +239,7 @@ async def test_conditional_workflow_twice_series(
         ],
     )
 
-    errors, output = await algorithm.execute(
+    result = await algorithm.execute(
         context=context,
         workflow=workflow,
         input={
@@ -241,10 +248,10 @@ async def test_conditional_workflow_twice_series(
             "condition_2": BooleanValue(False),
         },
     )
-    assert not errors.any(), errors
-    assert output == {"result": start_value}
+    assert result.status is WorkflowExecutionResultStatus.SUCCESS
+    assert result.output == {"result": start_value}
 
-    errors, output = await algorithm.execute(
+    result = await algorithm.execute(
         context=context,
         workflow=workflow,
         input={
@@ -253,10 +260,10 @@ async def test_conditional_workflow_twice_series(
             "condition_2": BooleanValue(True),
         },
     )
-    assert not errors.any(), errors
-    assert output == {"result": start_value}
+    assert result.status is WorkflowExecutionResultStatus.SUCCESS
+    assert result.output == {"result": start_value}
 
-    errors, output = await algorithm.execute(
+    result = await algorithm.execute(
         context=context,
         workflow=workflow,
         input={
@@ -265,10 +272,10 @@ async def test_conditional_workflow_twice_series(
             "condition_2": BooleanValue(True),
         },
     )
-    assert not errors.any(), errors
-    assert output == {"result": start_value + 2}
+    assert result.status is WorkflowExecutionResultStatus.SUCCESS
+    assert result.output == {"result": start_value + 2}
 
-    errors, output = await algorithm.execute(
+    result = await algorithm.execute(
         context=context,
         workflow=workflow,
         input={
@@ -277,5 +284,5 @@ async def test_conditional_workflow_twice_series(
             "condition_2": BooleanValue(False),
         },
     )
-    assert not errors.any(), errors
-    assert output == {"result": start_value - 2}
+    assert result.status is WorkflowExecutionResultStatus.SUCCESS
+    assert result.output == {"result": start_value - 2}

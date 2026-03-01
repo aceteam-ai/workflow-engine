@@ -12,9 +12,10 @@ from workflow_engine import (
     Edge,
     StringValue,
     Workflow,
+    WorkflowExecutionResultStatus,
 )
 from workflow_engine.contexts import InMemoryContext
-from workflow_engine.core.io import InputNode, OutputNode
+from workflow_engine import InputNode, OutputNode
 from workflow_engine.execution import (
     RateLimitConfig,
     RateLimiter,
@@ -209,14 +210,14 @@ class TestRateLimitIntegration:
 
         algorithm = TopologicalExecutionAlgorithm(rate_limits=rate_limits)
 
-        errors, output = await algorithm.execute(
+        result = await algorithm.execute(
             context=context,
             workflow=workflow,
             input={},
         )
 
-        assert errors.any() is False
-        assert output == {"result": StringValue("test")}
+        assert result.status is WorkflowExecutionResultStatus.SUCCESS
+        assert result.output == {"result": StringValue("test")}
 
     @pytest.mark.asyncio
     async def test_execution_without_rate_limits(self):
@@ -245,14 +246,14 @@ class TestRateLimitIntegration:
         context = InMemoryContext()
         algorithm = TopologicalExecutionAlgorithm()
 
-        errors, output = await algorithm.execute(
+        result = await algorithm.execute(
             context=context,
             workflow=workflow,
             input={},
         )
 
-        assert errors.any() is False
-        assert output == {"result": StringValue("test")}
+        assert result.status is WorkflowExecutionResultStatus.SUCCESS
+        assert result.output == {"result": StringValue("test")}
 
     @pytest.mark.asyncio
     async def test_rate_limiter_released_on_error(self):
@@ -294,13 +295,13 @@ class TestRateLimitIntegration:
 
         algorithm = TopologicalExecutionAlgorithm(rate_limits=rate_limits)
 
-        errors, _ = await algorithm.execute(
+        result = await algorithm.execute(
             context=context,
             workflow=workflow,
             input={},
         )
 
-        assert errors.any() is True
+        assert result.status is WorkflowExecutionResultStatus.ERROR
 
         # Verify the limiter was released (semaphore should be at max value)
         limiter = rate_limits.get_limiter("Error")

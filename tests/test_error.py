@@ -53,7 +53,7 @@ async def test_workflow_error_handling(workflow: Workflow):
 
     algorithm = TopologicalExecutionAlgorithm()
 
-    errors, output = await algorithm.execute(
+    result = await algorithm.execute(
         context=context,
         workflow=workflow,
         input={},
@@ -61,13 +61,13 @@ async def test_workflow_error_handling(workflow: Workflow):
 
     error_node = workflow.nodes_by_id["error"]
     # Verify the error was captured correctly
-    assert errors == WorkflowErrors(
+    assert result.errors == WorkflowErrors(
         workflow_errors=[],
         node_errors={error_node.id: ["RuntimeError: test"]},
     )
 
     # Verify the output still contains the constant value
-    assert output == {"text": StringValue("test")}
+    assert result.output == {"text": StringValue("test")}
 
     # Verify on_node_error was called with the correct arguments
     mock_on_node_error.assert_called_once()

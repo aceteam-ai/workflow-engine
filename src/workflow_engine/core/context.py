@@ -5,7 +5,8 @@ from typing import TypeVar
 
 from overrides import EnforceOverrides
 
-from .error import ShouldRetry, ShouldYield, WorkflowErrors, WorkflowYield
+from .error import ShouldRetry, ShouldYield, WorkflowErrors
+from .execution import WorkflowExecutionResult
 from .node import Node
 from .values import DataMapping, FileValue
 from .workflow import Workflow
@@ -52,7 +53,7 @@ class Context(ABC, EnforceOverrides):
     async def on_node_start(
         self,
         *,
-        node: "Node",
+        node: Node,
         input: DataMapping,
     ) -> DataMapping | None:
         """
@@ -66,7 +67,7 @@ class Context(ABC, EnforceOverrides):
     async def on_node_error(
         self,
         *,
-        node: "Node",
+        node: Node,
         input: DataMapping,
         exception: Exception,
     ) -> Exception | DataMapping:
@@ -80,7 +81,7 @@ class Context(ABC, EnforceOverrides):
     async def on_node_yield(
         self,
         *,
-        node: "Node",
+        node: Node,
         input: DataMapping,
         exception: ShouldYield,
     ) -> None:
@@ -102,7 +103,7 @@ class Context(ABC, EnforceOverrides):
     async def on_node_retry(
         self,
         *,
-        node: "Node",
+        node: Node,
         input: DataMapping,
         exception: ShouldRetry,
         attempt: int,
@@ -121,7 +122,7 @@ class Context(ABC, EnforceOverrides):
     async def on_node_finish(
         self,
         *,
-        node: "Node",
+        node: Node,
         input: DataMapping,
         output: DataMapping,
     ) -> DataMapping:
@@ -140,10 +141,10 @@ class Context(ABC, EnforceOverrides):
     async def on_node_expand(
         self,
         *,
-        node: "Node",
+        node: Node,
         input: DataMapping,
-        workflow: "Workflow",
-    ) -> "Workflow":
+        workflow: Workflow,
+    ) -> Workflow:
         """
         A hook that is called when a node finishes execution by returning a
         Workflow (i.e., it expands into a subgraph).
@@ -156,34 +157,12 @@ class Context(ABC, EnforceOverrides):
         """
         return workflow
 
-    async def on_workflow_yield(
-        self,
-        *,
-        workflow: "Workflow",
-        input: DataMapping,
-        exception: WorkflowYield,
-        partial_output: DataMapping,
-    ) -> None:
-        """
-        A hook that is called when a workflow raises WorkflowYield, signalling
-        that one or more nodes have dispatched work externally and the workflow
-        cannot complete yet.
-
-        workflow: the workflow that yielded
-        input: the input data to the workflow
-        exception: the WorkflowYield exception, containing the per-node
-                   ShouldYield exceptions keyed by node ID
-        partial_output: the partial output data from nodes that completed
-                        before the workflow yielded
-        """
-        pass
-
     async def on_workflow_start(
         self,
         *,
-        workflow: "Workflow",
+        workflow: Workflow,
         input: DataMapping,
-    ) -> tuple[WorkflowErrors, DataMapping] | None:
+    ) -> WorkflowExecutionResult | None:
         """
         A hook that is called when a workflow starts execution.
 
@@ -198,12 +177,12 @@ class Context(ABC, EnforceOverrides):
     async def on_workflow_error(
         self,
         *,
-        workflow: "Workflow",
+        workflow: Workflow,
         input: DataMapping,
         errors: WorkflowErrors,
         partial_output: DataMapping,
-        node_yields: Mapping[str, ShouldYield],
-    ) -> tuple[WorkflowErrors, DataMapping]:
+        node_yields: Mapping[str, str],
+    ) -> WorkflowExecutionResult:
         """
         A hook that is called when a workflow raises an error.
 
@@ -211,23 +190,27 @@ class Context(ABC, EnforceOverrides):
         input: the input data to the workflow
         errors: the errors that occurred
         partial_output: the partial output data from the workflow
-        node_yields: the per-node ShouldYield exceptions for any nodes that
-                     yielded before the error occurred
+        node_yields: the per-node yield messages for any nodes that yielded
+                     during execution
 
-        The context can modify the errors or partial output by returning a
-        different tuple.
+        The context can modify the execution result by returning a
+        different WorkflowExecutionResult.
         """
-        return errors, partial_output
+        return WorkflowExecutionResult.error(
+            errors=errors,
+            partial_output=partial_output,
+            node_yields=node_yields,
+        )
 
     async def on_workflow_finish(
         self,
         *,
-        workflow: "Workflow",
+        workflow: Workflow,
         input: DataMapping,
         output: DataMapping,
-    ) -> DataMapping:
+    ) -> WorkflowExecutionResult:
         """
-        A hook that is called when a workflow finishes execution.
+        A hook that is called when a workflow finishes execution with no errors.
 
         workflow: the workflow that finished execution
         input: the input data to the workflow
@@ -235,7 +218,35 @@ class Context(ABC, EnforceOverrides):
 
         The context can modify the output by returning a different DataMapping.
         """
-        return output
+        return WorkflowExecutionResult.success(output)
+
+    async def on_workflow_yield(
+        self,
+        *,
+        workflow: Workflow,
+        input: DataMapping,
+        partial_output: DataMapping,
+        node_yields: Mapping[str, str],
+    ) -> WorkflowExecutionResult:
+        """
+        A hook that is called when a workflow yields, signalling that one or
+        more nodes have dispatched work externally and the workflow cannot
+        complete yet.
+
+        workflow: the workflow that yielded
+        input: the input data to the workflow
+        node_yields: the per-node yield messages for any nodes that yielded
+                     during execution
+        partial_output: the partial output data from nodes that completed
+                        before the workflow yielded
+
+        The context can modify the execution result by returning a
+        different WorkflowExecutionResult.
+        """
+        return WorkflowExecutionResult.yielded(
+            partial_output=partial_output,
+            node_yields=node_yields,
+        )
 
 
 __all__ = [

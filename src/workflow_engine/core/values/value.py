@@ -379,7 +379,9 @@ class ValueRegistryBuilder(ABC):
         pass
 
     @abstractmethod
-    def remove_value_class(self, value_cls: ValueType, *, missing_ok: bool = False) -> Self:
+    def remove_value_class(
+        self, value_cls: ValueType, *, missing_ok: bool = False
+    ) -> Self:
         """Remove a value type by class."""
         pass
 
@@ -436,7 +438,9 @@ class EagerValueRegistryBuilder(ValueRegistryBuilder):
         return self
 
     @override
-    def remove_value_class(self, value_cls: ValueType, *, missing_ok: bool = False) -> Self:
+    def remove_value_class(
+        self, value_cls: ValueType, *, missing_ok: bool = False
+    ) -> Self:
         name = value_cls.__name__
         if name not in self._value_classes:
             if not missing_ok:
@@ -490,7 +494,9 @@ class LazyValueRegistry(ValueRegistry, ValueRegistryBuilder):
         return self
 
     @override
-    def remove_value_class(self, value_cls: ValueType, *, missing_ok: bool = False) -> Self:
+    def remove_value_class(
+        self, value_cls: ValueType, *, missing_ok: bool = False
+    ) -> Self:
         if self._frozen:
             raise ValueError("Value registry is frozen, cannot remove value types.")
         self._removals[value_cls] = missing_ok

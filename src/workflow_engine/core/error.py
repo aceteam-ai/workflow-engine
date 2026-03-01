@@ -124,26 +124,6 @@ class ShouldYield(Exception):
         self.message = message
 
 
-class WorkflowYield(Exception):
-    """
-    Raised by the execution algorithm when all remaining nodes have yielded
-    and no further progress can be made in this execution.
-
-    This is not an error; it means the workflow is waiting on external
-    conditions. Re-run the workflow with the same context to resume.
-
-    node_yields maps node IDs to the ShouldYield exception that was raised,
-    whose message describes what each node is waiting for.
-    """
-
-    def __init__(self, node_yields: "dict[str, ShouldYield]"):
-        node_list = ", ".join(
-            f"{node_id!r}: {exc.message!r}" for node_id, exc in node_yields.items()
-        )
-        super().__init__(f"Workflow yielded at {len(node_yields)} node(s): {node_list}")
-        self.node_yields = node_yields
-
-
 class WorkflowErrors(ImmutableBaseModel):
     """
     An error object that accumulates the errors that occurred during the
@@ -192,5 +172,4 @@ __all__ = [
     "ShouldYield",
     "UserException",
     "WorkflowErrors",
-    "WorkflowYield",
 ]
