@@ -25,6 +25,7 @@ from ..core import (
     Workflow,
     WorkflowValue,
 )
+from ..core.values.data import get_field_annotations, get_only_field
 from .data import (
     ExpandDataNode,
     ExpandSequenceNode,
@@ -75,11 +76,11 @@ class ForEachNode(Node[SequenceData, SequenceData | Empty, ForEachParams]):
 
     @cached_property
     def _input_field_count(self) -> int:
-        return len(self.workflow.input_type.field_annotations())
+        return len(get_field_annotations(self.workflow.input_type))
 
     @cached_property
     def _output_field_count(self) -> int:
-        return len(self.workflow.output_type.field_annotations())
+        return len(get_field_annotations(self.workflow.output_type))
 
     def _has_single_input(self) -> bool:
         return self._input_field_count == 1
@@ -93,12 +94,12 @@ class ForEachNode(Node[SequenceData, SequenceData | Empty, ForEachParams]):
     @cached_property
     def _input_item_type(self):
         """Single input field type; only valid when _has_single_input()."""
-        return self.workflow.input_type.only_field()[1]
+        return get_only_field(self.workflow.input_type)[1]
 
     @cached_property
     def _output_item_type(self):
         """Single output field type; only valid when _has_single_output()."""
-        return self.workflow.output_type.only_field()[1]
+        return get_only_field(self.workflow.output_type)[1]
 
     def _input_element_type(self):
         if self._has_single_input():

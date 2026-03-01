@@ -42,7 +42,7 @@ from .values import (
     ValueType,
     get_data_fields,
 )
-from .values.data import Input_contra, Output_co
+from .values.data import Input_contra, Output_co, get_data_dict, get_data_schema
 
 if TYPE_CHECKING:
     from .context import Context
@@ -101,7 +101,7 @@ class NodeTypeInfo(ImmutableBaseModel):
         pattern=SEMANTIC_VERSION_PATTERN,
     )
     parameter_schema: ValueSchema = Field(
-        default_factory=lambda: Empty.to_value_schema(),
+        default_factory=lambda: get_data_schema(Empty),
         description="The schema for the parameters of the node type.",
     )
     max_retries: int | None = Field(
@@ -130,7 +130,7 @@ class NodeTypeInfo(ImmutableBaseModel):
             display_name=display_name,
             description=description,
             version=version,
-            parameter_schema=parameter_type.to_value_schema(),
+            parameter_schema=get_data_schema(parameter_type),
             max_retries=max_retries,
         )
 
@@ -314,11 +314,11 @@ class Node(ImmutableBaseModel, Generic[Input_contra, Output_co, Params_co]):
 
     @cached_property
     def input_schema(self) -> ValueSchema:
-        return self.input_type.to_value_schema()
+        return get_data_schema(self.input_type)
 
     @cached_property
     def output_schema(self) -> ValueSchema:
-        return self.output_type.to_value_schema()
+        return get_data_schema(self.output_type)
 
     # --------------------------------------------------------------------------
     # EXECUTION
@@ -390,13 +390,13 @@ class Node(ImmutableBaseModel, Generic[Input_contra, Output_co, Params_co]):
         """
         try:
             logger.info("Starting node %s", self.id)
-            output = await context.on_node_start(node=self, input=input)
-            if output is not None:
-                return output
             try:
                 input_obj = await self._cast_input(input, context)
             except ValidationError as e:
                 raise UserException(f"Input {input} for node {self.id} is invalid: {e}")
+            output = await context.on_node_start(node=self, input=get_data_dict(input_obj))
+            if output is not None:
+                return output
             output_obj = await self.run(context, input_obj)
 
             from .workflow import Workflow  # lazy to avoid circular import
@@ -414,7 +414,7 @@ class Node(ImmutableBaseModel, Generic[Input_contra, Output_co, Params_co]):
                 output = await context.on_node_finish(
                     node=self,
                     input=input,
-                    output=output_obj.to_dict(),
+                    output=get_data_dict(output_obj),
                 )
             logger.info("Finished node %s", self.id)
             return output

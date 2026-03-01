@@ -5,7 +5,11 @@ from .data import (
     DataValue,
     build_data_type,
     dump_data_mapping,
+    get_data_dict,
     get_data_fields,
+    get_data_schema,
+    get_field_annotations,
+    get_only_field,
     serialize_data_mapping,
 )
 from .extraction import Entity, ExtractionResult, ExtractionResultValue, Relation
@@ -44,7 +48,11 @@ __all__ = [
     "File",
     "FileValue",
     "FloatValue",
+    "get_data_dict",
     "get_data_fields",
+    "get_data_schema",
+    "get_field_annotations",
+    "get_only_field",
     "get_origin_and_args",
     "IntegerValue",
     "JSON",

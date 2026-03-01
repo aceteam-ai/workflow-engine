@@ -32,40 +32,45 @@ class Data(ImmutableBaseModel):
                     f"Field '{field_name}' in {cls.__name__} must be a Value type, got {field_info.annotation}"
                 )
 
-    def to_dict(self) -> Mapping[str, Value]:
-        data: dict[str, Value] = {}
-        for key in self.__class__.model_fields.keys():
-            value = getattr(self, key)
-            assert isinstance(value, Value)
-            data[key] = value
-        return data
 
-    @classmethod
-    def to_value_schema(cls) -> "ValueSchema":
-        from .schema import validate_value_schema  # avoid circular import
+# These are module-level functions rather than methods on Data to avoid
+# namespace collisions with user-defined field names.
 
-        return validate_value_schema(cls.model_json_schema())
 
-    @classmethod
-    def field_annotations(cls) -> Mapping[str, type[Value]]:
-        """Iterate through the name and type annotation of each field."""
-        fields: Mapping[str, type[Value]] = {}
-        for field_name, field_info in cls.model_fields.items():
-            assert field_info.annotation is not None
-            assert issubclass(field_info.annotation, Value)
-            fields[field_name] = field_info.annotation
-        return fields
+def get_data_dict(data: Data) -> Mapping[str, Value]:
+    result: dict[str, Value] = {}
+    for key in data.__class__.model_fields.keys():
+        value = getattr(data, key)
+        assert isinstance(value, Value)
+        result[key] = value
+    return result
 
-    @classmethod
-    def only_field(cls) -> tuple[str, type[Value]]:
-        """
-        Get the name and type annotation of the only field. Will raise an error
-        if there is not exactly one field.
-        """
-        fields = cls.field_annotations()
-        if len(fields) != 1:
-            raise ValueError(f"Expected 1 field, got {len(fields)}")
-        return only(fields.items())
+
+def get_data_schema(cls: type[Data]) -> "ValueSchema":
+    from .schema import validate_value_schema  # avoid circular import
+
+    return validate_value_schema(cls.model_json_schema())
+
+
+def get_field_annotations(cls: type[Data]) -> Mapping[str, type[Value]]:
+    """Return the name and type annotation of each field."""
+    fields: Mapping[str, type[Value]] = {}
+    for field_name, field_info in cls.model_fields.items():
+        assert field_info.annotation is not None
+        assert issubclass(field_info.annotation, Value)
+        fields[field_name] = field_info.annotation
+    return fields
+
+
+def get_only_field(cls: type[Data]) -> tuple[str, type[Value]]:
+    """
+    Get the name and type annotation of the only field. Will raise an error
+    if there is not exactly one field.
+    """
+    fields = get_field_annotations(cls)
+    if len(fields) != 1:
+        raise ValueError(f"Expected 1 field, got {len(fields)}")
+    return only(fields.items())
 
 
 type DataMapping = Mapping[str, Value]
@@ -179,7 +184,7 @@ def cast_data_to_data(
     ) -> target_type:  # pyright: ignore[reportInvalidTypeForm]
         assert isinstance(value.root, source_value_type)
 
-        items = list(value.root.to_dict().items())
+        items = list(get_data_dict(value.root).items())
         keys = [k for k, v in items]
         cast_tasks = [v.cast_to(target_fields[k][0], context=context) for k, v in items]
         casted_values = await asyncio.gather(*cast_tasks)
@@ -219,7 +224,7 @@ def cast_data_to_string_map(
         assert isinstance(value.root, Data)
 
         # Cast all fields in parallel
-        items = list(value.root.to_dict().items())
+        items = list(get_data_dict(value.root).items())
         keys = [k for k, v in items]
         cast_tasks = [v.cast_to(target_value_type, context=context) for k, v in items]
         casted_values = await asyncio.gather(*cast_tasks)
@@ -296,7 +301,11 @@ __all__ = [
     "DataMapping",
     "DataValue",
     "dump_data_mapping",
+    "get_data_dict",
     "get_data_fields",
+    "get_data_schema",
+    "get_field_annotations",
+    "get_only_field",
     "Input_contra",
     "Output_co",
     "serialize_data_mapping",

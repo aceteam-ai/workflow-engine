@@ -18,7 +18,7 @@ from ..core import (
     WorkflowErrors,
 )
 from ..core.error import ShouldYield
-from ..core.values import dump_data_mapping, serialize_data_mapping
+from ..core.values import dump_data_mapping, get_data_dict, serialize_data_mapping
 
 F = TypeVar("F", bound=FileValue)
 
@@ -134,7 +134,7 @@ class LocalContext(Context):
             with open(output_path, "r") as f:
                 output = node.output_type.model_validate_json(f.read())
             assert isinstance(output, Data)
-            return output.to_dict()
+            return get_data_dict(output)
         return None
 
     @override
