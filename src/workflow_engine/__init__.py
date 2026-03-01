@@ -45,8 +45,9 @@ from .core import (
     Workflow,
     WorkflowEngine,
     WorkflowErrors,
+    WorkflowExecutionResult,
+    WorkflowExecutionResultStatus,
     WorkflowValue,
-    WorkflowYield,
     migration_registry,
 )
 
@@ -95,6 +96,7 @@ __all__ = [
     "Workflow",
     "WorkflowEngine",
     "WorkflowErrors",
+    "WorkflowExecutionResult",
+    "WorkflowExecutionResultStatus",
     "WorkflowValue",
-    "WorkflowYield",
 ]

@@ -1,6 +1,13 @@
 import pytest
 
-from workflow_engine import Edge, File, StringValue, Workflow, WorkflowEngine
+from workflow_engine import (
+    Edge,
+    File,
+    StringValue,
+    Workflow,
+    WorkflowEngine,
+    WorkflowExecutionResultStatus,
+)
 from workflow_engine.contexts import InMemoryContext
 from workflow_engine.core.io import InputNode, OutputNode
 from workflow_engine.execution import TopologicalExecutionAlgorithm
@@ -74,7 +81,7 @@ async def test_workflow_execution(workflow: Workflow):
     input_file = await input_file.write_text(context, text=hello_world)
 
     appended_text = StringValue("This text will be appended to the file.")
-    errors, output = await algorithm.execute(
+    result = await algorithm.execute(
         context=context,
         workflow=workflow,
         input={
@@ -84,10 +91,10 @@ async def test_workflow_execution(workflow: Workflow):
     )
 
     # Verify no errors occurred
-    assert not errors.any()
+    assert result.status is WorkflowExecutionResultStatus.SUCCESS
 
     # Verify the output file exists and has the correct content
-    output_file = output["file"]
+    output_file = result.output["file"]
     assert isinstance(output_file, TextFileValue)
     assert output_file.path == "test_append.txt"
     output_text = await output_file.read_text(context)

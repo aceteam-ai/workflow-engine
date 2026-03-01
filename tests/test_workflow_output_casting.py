@@ -9,13 +9,15 @@ import pytest
 from workflow_engine import (
     Edge,
     FloatValue,
+    InputNode,
     IntegerValue,
     JSONValue,
+    OutputNode,
     SequenceValue,
     Workflow,
+    WorkflowExecutionResultStatus,
 )
 from workflow_engine.contexts import InMemoryContext
-from workflow_engine.core.io import InputNode, OutputNode
 from workflow_engine.execution.parallel import ParallelExecutionAlgorithm
 from workflow_engine.execution.topological import TopologicalExecutionAlgorithm
 from workflow_engine.files import JSONLinesFileValue
@@ -49,14 +51,13 @@ async def test_basic_output_casting():
     context = InMemoryContext()
     algorithm = TopologicalExecutionAlgorithm()
 
-    errors, output = await algorithm.execute(
-        context=context, workflow=workflow, input={}
-    )
+    result = await algorithm.execute(context=context, workflow=workflow, input={})
 
-    assert not errors.any()
-    assert "result" in output
-    assert isinstance(output["result"], FloatValue)
-    assert output["result"] == 42.0
+    assert result.status is WorkflowExecutionResultStatus.SUCCESS
+
+    result_value = result.output["result"]
+    assert isinstance(result_value, FloatValue)
+    assert result_value == 42.0
 
 
 @pytest.mark.unit
@@ -95,15 +96,16 @@ async def test_multiple_outputs_casting():
     context = InMemoryContext()
     algorithm = TopologicalExecutionAlgorithm()
 
-    errors, output = await algorithm.execute(
-        context=context, workflow=workflow, input={}
-    )
+    result = await algorithm.execute(context=context, workflow=workflow, input={})
+    assert result.status is WorkflowExecutionResultStatus.SUCCESS
 
-    assert not errors.any()
-    assert isinstance(output["int_result"], FloatValue)
-    assert output["int_result"] == 100.0
-    assert isinstance(output["str_result"], IntegerValue)
-    assert output["str_result"] == 123
+    int_result = result.output["int_result"]
+    assert isinstance(int_result, FloatValue)
+    assert int_result == 100.0
+
+    str_result = result.output["str_result"]
+    assert isinstance(str_result, IntegerValue)
+    assert str_result == 123
 
 
 @pytest.mark.unit
@@ -134,13 +136,11 @@ async def test_parallel_execution_algorithm():
     context = InMemoryContext()
     algorithm = ParallelExecutionAlgorithm()
 
-    errors, output = await algorithm.execute(
-        context=context, workflow=workflow, input={}
-    )
+    result = await algorithm.execute(context=context, workflow=workflow, input={})
 
-    assert not errors.any()
-    assert isinstance(output["result"], FloatValue)
-    assert output["result"] == 42.0
+    assert result.status is WorkflowExecutionResultStatus.SUCCESS
+    assert isinstance(result.output["result"], FloatValue)
+    assert result.output["result"] == 42.0
 
 
 @pytest.mark.unit
@@ -196,13 +196,11 @@ async def test_no_casting_when_types_match():
     context = InMemoryContext()
     algorithm = TopologicalExecutionAlgorithm()
 
-    errors, output = await algorithm.execute(
-        context=context, workflow=workflow, input={}
-    )
+    result = await algorithm.execute(context=context, workflow=workflow, input={})
 
-    assert not errors.any()
-    assert isinstance(output["result"], IntegerValue)
-    assert output["result"] == 42
+    assert result.status is WorkflowExecutionResultStatus.SUCCESS
+    assert isinstance(result.output["result"], IntegerValue)
+    assert result.output["result"] == 42
 
 
 @pytest.mark.unit
@@ -252,13 +250,13 @@ async def test_input_casting():
     context = InMemoryContext()
     algorithm = TopologicalExecutionAlgorithm()
 
-    errors, output = await algorithm.execute(
+    result = await algorithm.execute(
         context=context,
         workflow=workflow,
         input={"a": FloatValue(10.5), "b": FloatValue(20.3)},
     )
 
-    assert not errors.any()
+    assert result.status is WorkflowExecutionResultStatus.SUCCESS
 
 
 @pytest.mark.unit

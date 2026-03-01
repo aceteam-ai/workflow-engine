@@ -1,7 +1,6 @@
 # workflow_engine/core/workflow_engine.py
 from .context import Context
-from .error import WorkflowErrors
-from .execution import ExecutionAlgorithm
+from .execution import ExecutionAlgorithm, WorkflowExecutionResult
 from .node import NodeRegistry
 from .values import DataMapping
 from .values.value import ValueRegistry
@@ -102,7 +101,7 @@ class WorkflowEngine:
         workflow: Workflow,
         input: DataMapping,
         context: Context,
-    ) -> tuple[WorkflowErrors, DataMapping]:
+    ) -> WorkflowExecutionResult:
         """
         Load and execute a workflow with the given context.
 
@@ -112,7 +111,7 @@ class WorkflowEngine:
             context: Execution context (must be fresh for each execution)
 
         Returns:
-            Tuple of (errors, output_data)
+            WorkflowExecutionResult
         """
         # Load workflow to ensure it's typed
         typed_workflow = self.load(workflow)

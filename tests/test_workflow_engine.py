@@ -15,6 +15,7 @@ from workflow_engine import (
     ValueRegistry,
     Workflow,
     WorkflowEngine,
+    WorkflowExecutionResultStatus,
 )
 from workflow_engine.contexts import InMemoryContext
 from workflow_engine.core.io import InputNode, OutputNode
@@ -503,12 +504,11 @@ class TestWorkflowEngineExecution:
         context = InMemoryContext()
         input_data = {"a": IntegerValue(5), "b": IntegerValue(3)}
 
-        errors, output = await engine.execute(workflow, input_data, context)
+        result = await engine.execute(workflow, input_data, context)
 
         # Verify results
-        assert len(errors.workflow_errors) == 0
-        assert len(errors.node_errors) == 0
-        assert output["result"].root == 8
+        assert result.status is WorkflowExecutionResultStatus.SUCCESS
+        assert result.output["result"].root == 8
 
     @pytest.mark.asyncio
     async def test_execute_with_custom_algorithm(self):
@@ -555,12 +555,11 @@ class TestWorkflowEngineExecution:
         context = InMemoryContext()
         input_data = {"a": IntegerValue(10), "b": IntegerValue(20)}
 
-        errors, output = await engine.execute(workflow, input_data, context)
+        result = await engine.execute(workflow, input_data, context)
 
         # Verify results
-        assert len(errors.workflow_errors) == 0
-        assert len(errors.node_errors) == 0
-        assert output["result"].root == 30
+        assert result.status is WorkflowExecutionResultStatus.SUCCESS
+        assert result.output["result"].root == 30
 
     @pytest.mark.asyncio
     async def test_execute_calls_load_internally(self):
@@ -603,12 +602,11 @@ class TestWorkflowEngineExecution:
         context = InMemoryContext()
         input_data = {"a": IntegerValue(7), "b": IntegerValue(4)}
 
-        errors, output = await engine.execute(workflow, input_data, context)
+        result = await engine.execute(workflow, input_data, context)
 
         # Verify it worked
-        assert len(errors.workflow_errors) == 0
-        assert len(errors.node_errors) == 0
-        assert output["result"].root == 11
+        assert result.status is WorkflowExecutionResultStatus.SUCCESS
+        assert result.output["result"].root == 11
 
     @pytest.mark.asyncio
     async def test_execute_with_typed_workflow(self):
@@ -651,12 +649,11 @@ class TestWorkflowEngineExecution:
         context = InMemoryContext()
         input_data = {"a": IntegerValue(15), "b": IntegerValue(25)}
 
-        errors, output = await engine.execute(workflow, input_data, context)
+        result = await engine.execute(workflow, input_data, context)
 
         # Verify results
-        assert len(errors.workflow_errors) == 0
-        assert len(errors.node_errors) == 0
-        assert output["result"].root == 40
+        assert result.status is WorkflowExecutionResultStatus.SUCCESS
+        assert result.output["result"].root == 40
 
     @pytest.mark.asyncio
     async def test_execute_with_multiple_nodes(self):
@@ -711,12 +708,11 @@ class TestWorkflowEngineExecution:
             "c": IntegerValue(4),
         }
 
-        errors, output = await engine.execute(workflow, input_data, context)
+        result = await engine.execute(workflow, input_data, context)
 
         # Verify results
-        assert len(errors.workflow_errors) == 0
-        assert len(errors.node_errors) == 0
-        assert output["result"].root == 9
+        assert result.status is WorkflowExecutionResultStatus.SUCCESS
+        assert result.output["result"].root == 9
 
     @pytest.mark.asyncio
     async def test_execute_with_tenant_specific_engine(self):
@@ -750,8 +746,7 @@ class TestWorkflowEngineExecution:
 
         # Execute workflow
         context = InMemoryContext()
-        errors, output = await engine.execute(workflow, {}, context)
+        result = await engine.execute(workflow, {}, context)
 
         # Should execute successfully (no errors)
-        assert len(errors.workflow_errors) == 0
-        assert len(errors.node_errors) == 0
+        assert result.status is WorkflowExecutionResultStatus.SUCCESS

@@ -394,7 +394,9 @@ class Node(ImmutableBaseModel, Generic[Input_contra, Output_co, Params_co]):
                 input_obj = await self._cast_input(input, context)
             except ValidationError as e:
                 raise UserException(f"Input {input} for node {self.id} is invalid: {e}")
-            output = await context.on_node_start(node=self, input=get_data_dict(input_obj))
+            output = await context.on_node_start(
+                node=self, input=get_data_dict(input_obj)
+            )
             if output is not None:
                 return output
             output_obj = await self.run(context, input_obj)
@@ -619,7 +621,9 @@ class NodeRegistryBuilder(ABC):
         pass
 
     @abstractmethod
-    def remove_node_class(self, node_cls: type[Node], *, missing_ok: bool = False) -> Self:
+    def remove_node_class(
+        self, node_cls: type[Node], *, missing_ok: bool = False
+    ) -> Self:
         pass
 
     @abstractmethod
@@ -676,12 +680,16 @@ class EagerNodeRegistryBuilder(NodeRegistryBuilder):
         return self
 
     @override
-    def remove_node_class(self, node_cls: type[Node], *, missing_ok: bool = False) -> Self:
+    def remove_node_class(
+        self, node_cls: type[Node], *, missing_ok: bool = False
+    ) -> Self:
         name = node_cls._concrete_type_name()
         if name is None:
             if node_cls not in self._base_node_classes:
                 if not missing_ok:
-                    raise ValueError(f'Base node class "{node_cls.__name__}" is not registered')
+                    raise ValueError(
+                        f'Base node class "{node_cls.__name__}" is not registered'
+                    )
             else:
                 self._base_node_classes.remove(node_cls)
         else:
@@ -732,7 +740,9 @@ class LazyNodeRegistry(NodeRegistry, NodeRegistryBuilder):
         return self
 
     @override
-    def remove_node_class(self, node_cls: type[Node], *, missing_ok: bool = False) -> Self:
+    def remove_node_class(
+        self, node_cls: type[Node], *, missing_ok: bool = False
+    ) -> Self:
         if self._frozen:
             raise ValueError("Node registry is frozen, cannot remove node types.")
         self._removals[node_cls] = missing_ok
@@ -777,7 +787,9 @@ class LazyNodeRegistry(NodeRegistry, NodeRegistryBuilder):
             if name is None:
                 if node_cls not in _base_node_classes:
                     if not missing_ok:
-                        raise ValueError(f'Base node class "{node_cls.__name__}" is not registered')
+                        raise ValueError(
+                            f'Base node class "{node_cls.__name__}" is not registered'
+                        )
                 else:
                     _base_node_classes.remove(node_cls)
             else:

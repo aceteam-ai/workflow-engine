@@ -7,8 +7,15 @@ import asyncio
 
 from overrides import override
 
-from ..core import Context, DataMapping, ExecutionAlgorithm, Workflow, WorkflowErrors
-from ..core.error import NodeException, ShouldRetry, ShouldYield, WorkflowYield
+from ..core import (
+    Context,
+    DataMapping,
+    ExecutionAlgorithm,
+    Workflow,
+    WorkflowErrors,
+    WorkflowExecutionResult,
+)
+from ..core.error import NodeException, ShouldRetry, ShouldYield
 from .rate_limit import RateLimitRegistry
 from .retry import RetryTracker
 
@@ -50,7 +57,7 @@ class TopologicalExecutionAlgorithm(ExecutionAlgorithm):
         context: Context,
         workflow: Workflow,
         input: DataMapping,
-    ) -> tuple[WorkflowErrors, DataMapping]:
+    ) -> WorkflowExecutionResult:
         result = await context.on_workflow_start(workflow=workflow, input=input)
         if result is not None:
             return result
@@ -61,8 +68,8 @@ class TopologicalExecutionAlgorithm(ExecutionAlgorithm):
 
         # Track nodes that are waiting for retry (node_id -> input)
         pending_retry: dict[str, DataMapping] = {}
-        # Track nodes that yielded (node_id -> ShouldYield exception)
-        node_yields: dict[str, ShouldYield] = {}
+        # Track nodes that yielded (node_id -> yield message)
+        node_yields: dict[str, str] = {}
 
         try:
             ready_nodes = {workflow.input_node.id: input}
@@ -101,7 +108,7 @@ class TopologicalExecutionAlgorithm(ExecutionAlgorithm):
                         node_outputs[node.id] = node_result
 
                 except ShouldYield as e:
-                    node_yields[node_id] = e
+                    node_yields[node_id] = e.message
                     await context.on_node_yield(
                         node=node,
                         input=node_input,
@@ -147,26 +154,24 @@ class TopologicalExecutionAlgorithm(ExecutionAlgorithm):
                     if node_id not in node_yields
                 }
 
-            if node_yields:
-                raise WorkflowYield(node_yields)
+            if len(node_yields) > 0:
+                partial_output = await workflow.get_output(
+                    context=context,
+                    node_outputs=node_outputs,
+                    partial=True,
+                )
+                result = await context.on_workflow_yield(
+                    workflow=workflow,
+                    input=input,
+                    partial_output=partial_output,
+                    node_yields=node_yields,
+                )
+                return result
 
             output = await workflow.get_output(
                 context=context,
                 node_outputs=node_outputs,
             )
-        except WorkflowYield as e:
-            partial_output = await workflow.get_output(
-                context=context,
-                node_outputs=node_outputs,
-                partial=True,
-            )
-            await context.on_workflow_yield(
-                workflow=workflow,
-                input=input,
-                exception=e,
-                partial_output=partial_output,
-            )
-            raise
         except Exception as e:
             errors.add(e)
             partial_output = await workflow.get_output(
@@ -174,22 +179,21 @@ class TopologicalExecutionAlgorithm(ExecutionAlgorithm):
                 node_outputs=node_outputs,
                 partial=True,
             )
-            errors, partial_output = await context.on_workflow_error(
+            result = await context.on_workflow_error(
                 workflow=workflow,
                 input=input,
                 errors=errors,
                 partial_output=partial_output,
                 node_yields=node_yields,
             )
-            return errors, partial_output
-
-        output = await context.on_workflow_finish(
-            workflow=workflow,
-            input=input,
-            output=output,
-        )
-
-        return errors, output
+            return result
+        else:
+            result = await context.on_workflow_finish(
+                workflow=workflow,
+                input=input,
+                output=output,
+            )
+            return result
 
 
 __all__ = [

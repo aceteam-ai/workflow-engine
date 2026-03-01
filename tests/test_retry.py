@@ -12,17 +12,19 @@ from workflow_engine import (
     Context,
     Data,
     Edge,
+    InputNode,
     Node,
+    NodeTypeInfo,
+    OutputNode,
     Params,
     ShouldRetry,
     StringValue,
     Workflow,
+    WorkflowExecutionResultStatus,
 )
 from workflow_engine.contexts import InMemoryContext
-from workflow_engine.core import NodeTypeInfo
-from workflow_engine.core.io import InputNode, OutputNode
-from workflow_engine.execution import TopologicalExecutionAlgorithm
 from workflow_engine.execution.retry import NodeRetryState, RetryTracker
+from workflow_engine.execution.topological import TopologicalExecutionAlgorithm
 
 
 # Test node that raises ShouldRetry a configurable number of times
@@ -314,14 +316,14 @@ class TestRetryIntegration:
         context = InMemoryContext()
         algorithm = TopologicalExecutionAlgorithm(max_retries=3)
 
-        errors, output = await algorithm.execute(
+        result = await algorithm.execute(
             context=context,
             workflow=workflow,
             input={},
         )
 
-        assert errors.any() is False
-        assert output == {"result": StringValue("Success: input")}
+        assert result.status is WorkflowExecutionResultStatus.SUCCESS
+        assert result.output == {"result": StringValue("Success: input")}
         assert RetryableNode._attempt_counts["retryable"] == 3  # 2 failures + 1 success
 
     @pytest.mark.asyncio
@@ -360,14 +362,14 @@ class TestRetryIntegration:
         context = InMemoryContext()
         algorithm = TopologicalExecutionAlgorithm(max_retries=3)
 
-        errors, output = await algorithm.execute(
+        result = await algorithm.execute(
             context=context,
             workflow=workflow,
             input={},
         )
 
-        assert errors.any() is True
-        assert "retryable" in errors.node_errors
+        assert result.status is WorkflowExecutionResultStatus.ERROR
+        assert "retryable" in result.errors.node_errors
         # Should have tried 3 times (max_retries) + initial attempt
         assert RetryableNode._attempt_counts["retryable"] == 4
 
@@ -466,15 +468,15 @@ class TestRetryIntegration:
         # Algorithm default is 2, but CustomRetryNode.TYPE_INFO.max_retries is 5
         algorithm = TopologicalExecutionAlgorithm(max_retries=2)
 
-        errors, output = await algorithm.execute(
+        result = await algorithm.execute(
             context=context,
             workflow=workflow,
             input={},
         )
 
         # Should succeed because node-specific max_retries (5) > fail_count (4)
-        assert errors.any() is False
-        assert output == {"result": StringValue("Success: input")}
+        assert result.status is WorkflowExecutionResultStatus.SUCCESS
+        assert result.output == {"result": StringValue("Success: input")}
         assert CustomRetryNode._attempt_counts["custom"] == 5  # 4 failures + 1 success
 
     @pytest.mark.asyncio
@@ -521,15 +523,15 @@ class TestRetryIntegration:
             max_retries=3, rate_limits=rate_limits
         )
 
-        errors, output = await algorithm.execute(
+        result = await algorithm.execute(
             context=context,
             workflow=workflow,
             input={},
         )
 
         # Should succeed after 1 retry
-        assert errors.any() is False
-        assert output == {"result": StringValue("Success: input")}
+        assert result.status is WorkflowExecutionResultStatus.SUCCESS
+        assert result.output == {"result": StringValue("Success: input")}
         assert RetryableNode._attempt_counts["retryable"] == 2  # 1 failure + 1 success
 
         # Verify rate limiter was properly released (can acquire again)
@@ -584,14 +586,14 @@ class TestRetryIntegration:
         context = InMemoryContext()
         algorithm = TopologicalExecutionAlgorithm(max_retries=3)
 
-        errors, output = await algorithm.execute(
+        result = await algorithm.execute(
             context=context,
             workflow=workflow,
             input={},
         )
 
-        assert errors.any() is False
-        assert output == {"final_result": StringValue("Node2: Success: start")}
+        assert result.status is WorkflowExecutionResultStatus.SUCCESS
+        assert result.output == {"final_result": StringValue("Node2: Success: start")}
         # Both nodes should have retried once
         assert RetryableNode._attempt_counts["node1"] == 2
         assert RetryableNode2._attempt_counts["node2"] == 2

@@ -1,9 +1,9 @@
 # workflow_engine/contexts/local.py
 import json
 import os
+import uuid
 from collections.abc import Mapping
 from typing import TypeVar
-import uuid
 
 from overrides import override
 
@@ -16,8 +16,8 @@ from ..core import (
     UserException,
     Workflow,
     WorkflowErrors,
+    WorkflowExecutionResult,
 )
-from ..core.error import ShouldYield
 from ..core.values import dump_data_mapping, get_data_dict, serialize_data_mapping
 
 F = TypeVar("F", bound=FileValue)
@@ -171,7 +171,7 @@ class LocalContext(Context):
         *,
         workflow: Workflow,
         input: DataMapping,
-    ) -> tuple[WorkflowErrors, DataMapping] | None:
+    ) -> WorkflowExecutionResult | None:
         """
         Triggered when a workflow is started.
         If the context already knows what the node's output will be, it can
@@ -192,7 +192,7 @@ class LocalContext(Context):
             with open(output_path, "r") as f:
                 output = json.load(f)
             assert isinstance(output, dict)
-            return WorkflowErrors(), output
+            return WorkflowExecutionResult.success(output)
 
         error_path = self.workflow_error_path
         if os.path.exists(error_path):
@@ -200,9 +200,15 @@ class LocalContext(Context):
                 error_and_output = json.load(f)
             assert isinstance(error_and_output, dict)
             errors = WorkflowErrors.model_validate(error_and_output["errors"])
-            output = error_and_output["output"]
-            assert isinstance(output, dict)
-            return errors, output
+            output = error_and_output.get("output", {})
+            node_yields = error_and_output.get("node_yields", {})
+            assert isinstance(output, Mapping)
+            assert isinstance(node_yields, Mapping)
+            return WorkflowExecutionResult.error(
+                errors=errors,
+                partial_output=output,
+                node_yields=node_yields,
+            )
 
         return None
 
@@ -214,18 +220,23 @@ class LocalContext(Context):
         input: DataMapping,
         errors: WorkflowErrors,
         partial_output: DataMapping,
-        node_yields: Mapping[str, ShouldYield],
-    ) -> tuple[WorkflowErrors, DataMapping]:
+        node_yields: Mapping[str, str],
+    ) -> WorkflowExecutionResult:
         self._idempotent_write(
             path=self.workflow_error_path,
             data=json.dumps(
                 {
                     "errors": errors.model_dump(),
                     "output": dump_data_mapping(partial_output),
+                    "node_yields": node_yields,
                 }
             ),
         )
-        return errors, partial_output
+        return WorkflowExecutionResult.error(
+            errors=errors,
+            partial_output=partial_output,
+            node_yields=node_yields,
+        )
 
     @override
     async def on_workflow_finish(
@@ -234,12 +245,12 @@ class LocalContext(Context):
         workflow: Workflow,
         input: DataMapping,
         output: DataMapping,
-    ) -> DataMapping:
+    ) -> WorkflowExecutionResult:
         self._idempotent_write(
             path=self.workflow_output_path,
             data=serialize_data_mapping(output),
         )
-        return output
+        return WorkflowExecutionResult.success(output)
 
 
 __all__ = [
