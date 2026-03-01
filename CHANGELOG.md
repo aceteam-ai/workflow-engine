@@ -4,6 +4,21 @@ All notable changes to this project will be documented in this file.
 
 This project uses [PEP 440](https://peps.python.org/pep-0440/) versioning with release candidates (rcN) for pre-release versions.
 
+## [2.0.0rc5] - 2026-03-01
+
+### Added
+- `remove_node_class` and `remove_value_class` methods on registry builders; in lazy builders, removals are applied after all additions at build time so a removal always wins regardless of call order (#82)
+
+### Changed
+- **BREAKING**: Workflow execution methods now return `WorkflowExecutionResult` instead of `tuple[WorkflowErrors, DataMapping]`. The result object unifies output, errors, and node yields into a single value with a `status` field (`SUCCESS`, `ERROR`, or `YIELDED`) (#84)
+- **BREAKING**: `WorkflowYield` exception removed; yields are now surfaced via `WorkflowExecutionResult` and the `on_workflow_yield` context hook (previously `on_workflow_yield` received a `WorkflowYield` exception, now it receives `partial_output` and `node_yields` directly) (#84)
+- `on_node_start` hook now receives the fully type-cast input instead of the raw pre-cast input (#81)
+
+### Fixed
+- `Data` helper methods (`to_dict`, `to_value_schema`, `field_annotations`, `only_field`) moved to module-level functions (`get_data_dict`, `get_data_schema`, `get_field_annotations`, `get_only_field`) to eliminate the risk of user-defined field names shadowing them (#81)
+- `BaseValueSchema.value_type` alias (`x-value-type`) now handled via explicit serializer/validator instead of Pydantic field aliases, fixing pyright errors (#83)
+- Fixed pyright errors in constrained sequence and map value builders (#83)
+
 ## [2.0.0rc4] - 2026-02-25
 
 ### Added
