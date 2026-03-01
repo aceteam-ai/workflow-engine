@@ -170,10 +170,15 @@ uv run pytest -q
 # Run linting
 echo "Running linting..."
 uv run ruff check .
+uv run ruff format --check .
+
+# Run type checking
+echo "Running type checking..."
+uv run pyright
 
 # Commit version bump
 echo "Committing version bump..."
-git add pyproject.toml src/workflow_engine/__init__.py
+git add pyproject.toml src/workflow_engine/__init__.py uv.lock
 git commit -m "Bump version to $NEW_VERSION"
 
 # Create and push tag

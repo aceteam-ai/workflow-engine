@@ -150,6 +150,26 @@ if registry.has_name("foo"):  # Ctrl+Click jumps to has_name()
 - Protocol implementations (context managers, iterators)
 - Pydantic model internals (`__init_subclass__`, `model_validator`)
 
+## Release Process
+
+To cut a new release:
+
+1. **Update `CHANGELOG.md`** — study the commits since the last release tag (`git log <last-tag>..HEAD`), then add a new section at the top (after the header) with the new version, date, and a human-readable summary of what changed. Group entries under `### Added`, `### Changed`, and/or `### Fixed` as appropriate. Follow the existing format.
+
+2. **Run the release script** — must be on a clean, up-to-date `main` branch. The script bumps the version in `pyproject.toml` and `src/workflow_engine/__init__.py`, then runs the full check suite (tests, ruff check, ruff format, pyright) before committing, tagging, pushing, and creating a GitHub release:
+
+```bash
+./release.sh --rc      # bump release candidate: 2.0.0rc4 -> 2.0.0rc5
+./release.sh           # bump patch: 2.0.0 -> 2.0.1
+./release.sh --minor   # bump minor: 2.0.0 -> 2.1.0
+./release.sh --major   # bump major: 2.0.0 -> 3.0.0
+./release.sh 2.0.0     # explicit version
+```
+
+The script prompts for confirmation before making any changes.
+
+3. **PyPI publish** — triggered automatically by GitHub Actions when the tag is pushed. For a manual deploy (emergency or CI unavailable), use `./deploy.sh`.
+
 ### Execution Flow
 
 1. Load/build a `Workflow` (validates DAG structure, no cycles, types match)
