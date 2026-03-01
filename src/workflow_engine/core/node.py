@@ -619,6 +619,10 @@ class NodeRegistryBuilder(ABC):
         pass
 
     @abstractmethod
+    def remove_node_class(self, node_cls: type[Node], *, missing_ok: bool = False) -> Self:
+        pass
+
+    @abstractmethod
     def build(self) -> NodeRegistry:
         pass
 
@@ -672,6 +676,23 @@ class EagerNodeRegistryBuilder(NodeRegistryBuilder):
         return self
 
     @override
+    def remove_node_class(self, node_cls: type[Node], *, missing_ok: bool = False) -> Self:
+        name = node_cls._concrete_type_name()
+        if name is None:
+            if node_cls not in self._base_node_classes:
+                if not missing_ok:
+                    raise ValueError(f'Base node class "{node_cls.__name__}" is not registered')
+            else:
+                self._base_node_classes.remove(node_cls)
+        else:
+            if name not in self._node_classes:
+                if not missing_ok:
+                    raise ValueError(f'Node type "{name}" is not registered')
+            else:
+                del self._node_classes[name]
+        return self
+
+    @override
     def build(self) -> NodeRegistry:
         return ImmutableNodeRegistry(
             node_classes=self._node_classes,
@@ -694,6 +715,7 @@ class LazyNodeRegistry(NodeRegistry, NodeRegistryBuilder):
 
     def __init__(self):
         self._registrations: list[type[Node]] = []
+        self._removals: dict[type[Node], bool] = {}  # cls -> missing_ok
         self._frozen: bool = False
 
         # initialized after freeze
@@ -707,6 +729,13 @@ class LazyNodeRegistry(NodeRegistry, NodeRegistryBuilder):
         if self._frozen:
             raise ValueError("Node registry is frozen, cannot register new node types.")
         self._registrations.append(node_cls)
+        return self
+
+    @override
+    def remove_node_class(self, node_cls: type[Node], *, missing_ok: bool = False) -> Self:
+        if self._frozen:
+            raise ValueError("Node registry is frozen, cannot remove node types.")
+        self._removals[node_cls] = missing_ok
         return self
 
     @override
@@ -743,7 +772,23 @@ class LazyNodeRegistry(NodeRegistry, NodeRegistryBuilder):
                 else:
                     _node_classes[name] = node_cls
 
+        for node_cls, missing_ok in self._removals.items():
+            name = node_cls._concrete_type_name()
+            if name is None:
+                if node_cls not in _base_node_classes:
+                    if not missing_ok:
+                        raise ValueError(f'Base node class "{node_cls.__name__}" is not registered')
+                else:
+                    _base_node_classes.remove(node_cls)
+            else:
+                if name not in _node_classes:
+                    if not missing_ok:
+                        raise ValueError(f'Node type "{name}" is not registered')
+                else:
+                    del _node_classes[name]
+
         del self._registrations  # just to be extra sure
+        del self._removals
         self._node_classes = _node_classes
         self._base_node_classes = tuple(_base_node_classes)
 

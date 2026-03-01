@@ -379,6 +379,11 @@ class ValueRegistryBuilder(ABC):
         pass
 
     @abstractmethod
+    def remove_value_class(self, value_cls: ValueType, *, missing_ok: bool = False) -> Self:
+        """Remove a value type by class."""
+        pass
+
+    @abstractmethod
     def build(self) -> ValueRegistry:
         """Build and return the registry."""
         pass
@@ -431,6 +436,16 @@ class EagerValueRegistryBuilder(ValueRegistryBuilder):
         return self
 
     @override
+    def remove_value_class(self, value_cls: ValueType, *, missing_ok: bool = False) -> Self:
+        name = value_cls.__name__
+        if name not in self._value_classes:
+            if not missing_ok:
+                raise ValueError(f'Value type "{name}" is not registered')
+        else:
+            del self._value_classes[name]
+        return self
+
+    @override
     def build(self) -> ValueRegistry:
         return ImmutableValueRegistry(value_classes=self._value_classes)
 
@@ -449,6 +464,7 @@ class LazyValueRegistry(ValueRegistry, ValueRegistryBuilder):
 
     def __init__(self):
         self._registrations: list[ValueType] = []
+        self._removals: dict[ValueType, bool] = {}  # cls -> missing_ok
         self._frozen: bool = False
 
         # initialized after freeze
@@ -471,6 +487,13 @@ class LazyValueRegistry(ValueRegistry, ValueRegistryBuilder):
                 f"Value registry is frozen, cannot register new value type '{name}' (class {value_cls.__name__})"
             )
         self._registrations.append(value_cls)
+        return self
+
+    @override
+    def remove_value_class(self, value_cls: ValueType, *, missing_ok: bool = False) -> Self:
+        if self._frozen:
+            raise ValueError("Value registry is frozen, cannot remove value types.")
+        self._removals[value_cls] = missing_ok
         return self
 
     @override
@@ -499,7 +522,16 @@ class LazyValueRegistry(ValueRegistry, ValueRegistryBuilder):
                 _value_classes[name] = value_cls
                 logger.debug("Registering value type %s", name)
 
+        for value_cls, missing_ok in self._removals.items():
+            name = value_cls.__name__
+            if name not in _value_classes:
+                if not missing_ok:
+                    raise ValueError(f'Value type "{name}" is not registered')
+            else:
+                del _value_classes[name]
+
         del self._registrations  # Memory optimization
+        del self._removals
         self._value_classes = _value_classes
 
         return self
