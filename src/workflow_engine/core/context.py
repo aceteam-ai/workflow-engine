@@ -216,9 +216,10 @@ class Context(ABC, EnforceOverrides):
         input: the input data to the workflow
         output: the output data from the workflow
 
-        The context can modify the output by returning a different DataMapping.
+        The context can modify the execution result by returning a different
+        WorkflowExecutionResult.
         """
-        return WorkflowExecutionResult.success(output)
+        return WorkflowExecutionResult.success(output=output)
 
     async def on_workflow_yield(
         self,

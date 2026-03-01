@@ -200,9 +200,10 @@ class LocalContext(Context):
                 error_and_output = json.load(f)
             assert isinstance(error_and_output, dict)
             errors = WorkflowErrors.model_validate(error_and_output["errors"])
-            output = error_and_output["output"]
-            node_yields = error_and_output["node_yields"]
-            assert isinstance(output, dict)
+            output = error_and_output.get("output", {})
+            node_yields = error_and_output.get("node_yields", {})
+            assert isinstance(output, Mapping)
+            assert isinstance(node_yields, Mapping)
             return WorkflowExecutionResult.error(
                 errors=errors,
                 partial_output=output,

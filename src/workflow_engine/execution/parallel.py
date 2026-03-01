@@ -1,20 +1,29 @@
 # workflow_engine/execution/parallel.py
 
 import asyncio
-from enum import Enum
+from collections.abc import Mapping
+from enum import StrEnum
 from typing import NamedTuple
 
 from overrides import override
 
-from workflow_engine.core.execution import WorkflowExecutionResult
-
-from ..core import Context, DataMapping, ExecutionAlgorithm, Workflow, WorkflowErrors
-from ..core.error import NodeException, ShouldRetry, ShouldYield
+from ..core import (
+    Context,
+    DataMapping,
+    ExecutionAlgorithm,
+    Node,
+    NodeException,
+    ShouldRetry,
+    ShouldYield,
+    Workflow,
+    WorkflowErrors,
+    WorkflowExecutionResult,
+)
 from .rate_limit import RateLimitRegistry
 from .retry import RetryTracker
 
 
-class ErrorHandlingMode(Enum):
+class ErrorHandlingMode(StrEnum):
     """Configures how the parallel executor handles node errors."""
 
     FAIL_FAST = "fail_fast"  # Stop on first error
@@ -64,9 +73,9 @@ class ParallelExecutionAlgorithm(ExecutionAlgorithm):
         self.max_retries = max_retries
         self.rate_limits = rate_limits or RateLimitRegistry()
 
-    def _get_node_max_retries(self, node) -> int | None:
+    def _get_node_max_retries(self, node: Node) -> int | None:
         """Get the max retries for a node, checking NodeTypeInfo first."""
-        if hasattr(node, "TYPE_INFO") and node.TYPE_INFO.max_retries is not None:
+        if node.TYPE_INFO.max_retries is not None:
             return node.TYPE_INFO.max_retries
         return None
 
@@ -303,7 +312,8 @@ class ParallelExecutionAlgorithm(ExecutionAlgorithm):
             return result
 
     async def _cancel_all(
-        self, running_tasks: dict[asyncio.Task[NodeResult], str]
+        self,
+        running_tasks: Mapping[asyncio.Task[NodeResult], str],
     ) -> None:
         """Cancel all running tasks and wait for completion."""
         for task in running_tasks:

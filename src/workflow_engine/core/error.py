@@ -107,7 +107,8 @@ class ShouldYield(Exception):
     This exception is never surfaced to the user as an error. It is caught by
     the execution algorithm, which calls the ``on_node_yield`` context hook and
     then continues running other ready nodes. Once no more nodes can run, the
-    algorithm raises ``WorkflowYield``.
+    algorithm returns with the partial output as well as the ShouldYield
+    messages left by the yielded nodes.
 
     To resume a yielded workflow, re-run it with the same context. The node's
     ``run`` method is responsible for checking whether its condition is now met

@@ -1,11 +1,11 @@
 # tests/test_yield.py
 """
-Tests for ShouldYield / WorkflowYield execution behaviour.
+Tests for ShouldYield / workflow yield execution behaviour.
 
 Focus: verifying that execution algorithms make as much forward progress as
-possible before raising WorkflowYield — i.e., nodes independent of a yielding
-node still run, multiple yields are collected, and WorkflowYield is only raised
-once all runnable nodes are exhausted.
+possible before returning a result. That is, nodes independent of a yielding
+node still run, multiple yields are collected, and the result is only returned
+with partial outputs once all runnable nodes are exhausted.
 
 Tests run against both TopologicalExecutionAlgorithm and
 ParallelExecutionAlgorithm via the `algorithm` fixture.
@@ -307,7 +307,7 @@ class TestMultipleYields:
         self,
         algorithm: ExecutionAlgorithm,
     ):
-        """WorkflowYield contains every node that yielded, not just the first."""
+        """node_yields contains every node that yielded, not just the first."""
         workflow, _ = _fan_out_workflow(yielding_ids=["y1", "y2", "y3"], echo_ids=[])
         context = InMemoryContext()
 
@@ -318,7 +318,7 @@ class TestMultipleYields:
 
     @pytest.mark.asyncio
     async def test_yield_messages_preserved(self, algorithm: ExecutionAlgorithm):
-        """Each yielded node's message is available in WorkflowYield.node_yields."""
+        """Each yielded node's message is available in node_yields."""
         workflow, _ = _fan_out_workflow(yielding_ids=["y1", "y2"], echo_ids=[])
         context = InMemoryContext()
 
@@ -349,7 +349,7 @@ class TestMultipleYields:
         self,
         algorithm: ExecutionAlgorithm,
     ):
-        """WorkflowYield is not raised when all nodes complete normally."""
+        """node_yields is empty when all nodes complete normally."""
         workflow, _ = _fan_out_workflow(yielding_ids=[], echo_ids=["e1", "e2"])
         context = InMemoryContext()
 
@@ -388,7 +388,7 @@ class TestResumption:
         self,
         algorithm: ExecutionAlgorithm,
     ):
-        """The first execution raises WorkflowYield."""
+        """The first execution returns with node_yields."""
         workflow = self._resumable_workflow()
         context = InMemoryContext()
 
