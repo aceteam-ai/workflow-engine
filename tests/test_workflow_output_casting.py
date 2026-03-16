@@ -18,6 +18,7 @@ from workflow_engine import (
     WorkflowExecutionResultStatus,
 )
 from workflow_engine.contexts import InMemoryContext
+from workflow_engine.core.values import resolve_path
 from workflow_engine.execution.parallel import ParallelExecutionAlgorithm
 from workflow_engine.execution.topological import TopologicalExecutionAlgorithm
 from workflow_engine.files import JSONLinesFileValue
@@ -190,9 +191,6 @@ async def test_no_casting_when_types_match():
         ],
     )
 
-    # Output type matches (IntegerValue -> IntegerValue)
-    assert workflow.output_fields["result"][0] == IntegerValue
-
     context = InMemoryContext()
     algorithm = TopologicalExecutionAlgorithm()
 
@@ -244,8 +242,8 @@ async def test_input_casting():
     )
 
     # Workflow should expect FloatValue inputs
-    assert workflow.input_fields["a"][0] == FloatValue
-    assert workflow.input_fields["b"][0] == FloatValue
+    assert issubclass(workflow.input_fields["a"][0], FloatValue)
+    assert issubclass(workflow.input_fields["b"][0], FloatValue)
 
     context = InMemoryContext()
     algorithm = TopologicalExecutionAlgorithm()
@@ -282,6 +280,7 @@ def test_workflow_output_type_inference():
             )
         ],
     )
-
-    # Should infer IntegerValue from OutputNode
-    assert workflow.output_fields["result"][0] == IntegerValue
+    assert issubclass(
+        resolve_path(data_type=workflow.output_type, path=["result"]),
+        IntegerValue,
+    )

@@ -77,13 +77,19 @@ async def test_add_3_arguments():
         inner_nodes=[*constants, add],
         edges=[
             Edge.from_nodes(
-                source=constants[i], source_key="value", target=add, target_key=key
+                source=constants[i],
+                source_key="value",
+                target=add,
+                target_key=key,
             )
             for i, key in enumerate(["a", "b", "c"])
         ]
         + [
             Edge.from_nodes(
-                source=add, source_key="sum", target=output_node, target_key="sum"
+                source=add,
+                source_key="sum",
+                target=output_node,
+                target_key="sum",
             ),
         ],
     )
@@ -119,13 +125,19 @@ async def test_add_30_arguments():
         inner_nodes=[*constants, add],
         edges=[
             Edge.from_nodes(
-                source=constants[i], source_key="value", target=add, target_key=name
+                source=constants[i],
+                source_key="value",
+                target=add,
+                target_key=name,
             )
             for i, name in enumerate(expected_names)
         ]
         + [
             Edge.from_nodes(
-                source=add, source_key="sum", target=output_node, target_key="sum"
+                source=add,
+                source_key="sum",
+                target=output_node,
+                target_key="sum",
             ),
         ],
     )

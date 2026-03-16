@@ -19,6 +19,9 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+type DataMapping = Mapping[str, Value]
+
+
 class Data(ImmutableBaseModel):
     model_config: ClassVar[ConfigDict] = ConfigDict(extra="forbid")
 
@@ -73,15 +76,56 @@ def get_only_field(cls: type[Data]) -> tuple[str, type[Value]]:
     return only(fields.items())
 
 
-type DataMapping = Mapping[str, Value]
-
-
 def dump_data_mapping(data: DataMapping) -> Mapping[str, Any]:
     return {k: v.model_dump() for k, v in data.items()}
 
 
 def serialize_data_mapping(data: DataMapping) -> str:
     return json.dumps(dump_data_mapping(data))
+
+
+def get_value_at_path(
+    *,
+    data: DataMapping | Data | Value,
+    path: Sequence[str],
+) -> Value:
+    """
+    Get the Value at a path in Data or nested Values.
+    Traverses into Data, DataValue, and StringMapValue for multi-segment paths.
+
+    Args:
+        data: The Data instance or Value to look up in (e.g. node output, nested DataValue)
+        path: Sequence of keys (e.g. ("foo",) or ("foo", "bar"))
+
+    Returns:
+        The Value at that path
+
+    Raises:
+        KeyError: If the path does not exist
+    """
+    # base case: we've arrived at the value
+    if len(path) == 0:
+        if isinstance(data, Mapping):
+            raise KeyError("Empty path on DataMapping; use a field name.")
+        if isinstance(data, Data):
+            return DataValue[type(data)](data)
+        return data
+
+    head, *tail = path
+    if isinstance(data, Data):
+        container = get_data_dict(data)
+    elif isinstance(data, DataValue):
+        container = get_data_dict(data.root)
+    elif isinstance(data, StringMapValue):
+        container = data.root
+    elif isinstance(data, Mapping):
+        container = data
+    else:
+        raise KeyError(f"Cannot traverse into {type(data).__name__} at path {path}")
+    if head not in container:
+        raise KeyError(head)
+    value = container[head]
+    return get_value_at_path(data=value, path=tail)
 
 
 Input_contra = TypeVar("Input_contra", bound=Data, contravariant=True)
