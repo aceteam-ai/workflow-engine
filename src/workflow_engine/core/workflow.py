@@ -237,7 +237,7 @@ class Workflow(ImmutableBaseModel):
                 if partial:
                     continue
                 raise UserException(
-                    f"Cannot get output from node {edge.source_id} at path {list(edge.source_key_path)!r}.",
+                    f"Cannot get output from node {edge.source_id} at path {edge.source_key_path_string}.",
                 )
 
             expected_type = resolve_path(
@@ -248,7 +248,7 @@ class Workflow(ImmutableBaseModel):
             # Validate that the output can be cast to the expected type
             if not output_field.can_cast_to(expected_type):
                 raise UserException(
-                    f"Output '{edge.target_key}' from node {edge.source_id}.{edge.source_key} "
+                    f"Output '{edge.target_key}' from {edge.source_id}.{edge.source_key_path_string} "
                     f"cannot be cast: {output_field} is not assignable to {expected_type}"
                 )
 

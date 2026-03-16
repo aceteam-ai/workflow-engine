@@ -4,6 +4,8 @@ from collections.abc import Sequence
 from functools import cached_property
 from typing import Self
 
+from pydantic import model_validator
+
 from ..utils.immutable import ImmutableBaseModel
 from .node import Node
 from .values import Value, resolve_path
@@ -20,11 +22,29 @@ class Edge(ImmutableBaseModel):
     target_id: str
     target_key: str
 
+    @model_validator(mode="after")
+    def _validate_keys(self):
+        if isinstance(self.source_key, str):
+            if len(self.source_key) == 0:
+                raise ValueError("Source key cannot be empty")
+        else:
+            if len(self.source_key) == 0:
+                raise ValueError("Source key path needs at least one segment")
+
+        if len(self.target_key) == 0:
+            raise ValueError("Target key cannot be empty")
+
+        return self
+
     @cached_property
     def source_key_path(self) -> Sequence[str]:
         if isinstance(self.source_key, str):
             return (self.source_key,)
         return tuple(self.source_key)
+
+    @cached_property
+    def source_key_path_string(self) -> str:
+        return ".".join(self.source_key)
 
     @classmethod
     def from_nodes(
