@@ -208,7 +208,7 @@ def resolve_path(
     path: Sequence[str],
 ) -> ValueType:
     """
-    Resolve a path through a Data type to the Value type and required-ness at that path.
+    Resolve a path through a Data type to the Value type at that path.
 
     A path like `("foo", "bar")` means: field "foo" of data_type, then field "bar"
     of the inner structure. Nested traversal works for DataValue (named fields) and
@@ -219,7 +219,10 @@ def resolve_path(
         path: Sequence of field names (e.g. ("foo",) or ("foo", "bar"))
 
     Returns:
-        ValueType at the path, or None if the path does not exist
+        The ValueType at the given path.
+
+    Raises:
+        ValueError: If any segment of the path cannot be resolved on the given type.
     """
     # base case: empty path, return the current type (as a ValueType)
     if len(path) == 0:
