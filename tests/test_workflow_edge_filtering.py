@@ -378,5 +378,5 @@ class TestWorkflowEdgeFiltering:
 
         # Should raise ValueError when loading via WorkflowEngine (types nodes and validates)
         engine = WorkflowEngine()
-        with pytest.raises(ValueError, match="does not have.*field"):
+        with pytest.raises(ValueError, match="does not have field"):
             engine.load(workflow)

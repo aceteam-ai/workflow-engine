@@ -2,7 +2,7 @@
 import asyncio
 import json
 import logging
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from typing import TYPE_CHECKING, Any, ClassVar, Generic, TypeVar
 
 from pydantic import ConfigDict, create_model
@@ -106,6 +106,15 @@ def get_data_fields(cls: type[Data]) -> Mapping[str, tuple[ValueType, bool]]:
     return fields
 
 
+def get_data_field(cls: type[Data], name: str) -> ValueType | None:
+    if name not in cls.model_fields:
+        return None
+    field = cls.model_fields[name].annotation
+    assert field is not None
+    assert issubclass(field, Value)
+    return field
+
+
 D = TypeVar("D", bound=Data)
 
 
@@ -147,6 +156,86 @@ class DataValue(Value[D], Generic[D]):
     """
 
     pass
+
+
+def resolve_path(
+    *,
+    data_type: ValueType | type[Data],
+    path: Sequence[str],
+) -> ValueType:
+    """
+    Resolve a path through a Data type to the Value type and required-ness at that path.
+
+    A path like `("foo", "bar")` means: field "foo" of data_type, then field "bar"
+    of the inner structure. Nested traversal works for DataValue (named fields) and
+    StringMapValue (dynamic keys; value type is known, keys are not statically required).
+
+    Args:
+        data_type: The Data or ValueType subclass to resolve the path in
+        path: Sequence of field names (e.g. ("foo",) or ("foo", "bar"))
+
+    Returns:
+        ValueType at the path, or None if the path does not exist
+    """
+    # base case: empty path, return the current type (as a ValueType)
+    if len(path) == 0:
+        if issubclass(data_type, Data):
+            return DataValue[data_type]
+        return data_type
+
+    head, *tail = path
+
+    # Data type: look up head in fields
+    if issubclass(data_type, (Data, DataValue)):
+        # unwrap DataValue to its inner Data type if present
+        if issubclass(data_type, DataValue):
+            origin, (inner_data_type,) = get_origin_and_args(data_type)
+            assert issubclass(origin, DataValue)
+            assert issubclass(inner_data_type, Data)
+            data_type = inner_data_type
+        field_type = get_data_field(data_type, name=head)
+
+    # StringMapValue: all fields have the same type
+    elif issubclass(data_type, StringMapValue):
+        origin, (value_type,) = get_origin_and_args(data_type)
+        assert issubclass(origin, StringMapValue)
+        assert issubclass(value_type, Value)
+        field_type = value_type
+
+    # other ValueType: no fields
+    else:
+        field_type = None
+
+    if field_type is None:
+        # raising an exception is more informative than returning None, because
+        # None can happen at any depth of recursion, whereas the exception
+        # explicitly indicates what level we encountered the problem.
+        raise ValueError(f"{data_type.__name__} does not have field {head}")
+
+    # recursive step
+    return resolve_path(data_type=field_type, path=tail)
+
+
+def has_path(
+    *,
+    data_type: ValueType | type[Data],
+    path: Sequence[str],
+) -> bool:
+    """
+    Check whether a path exists in a Data type.
+
+    Args:
+        data_type: The Data or ValueType subclass to check
+        path: Sequence of field names
+
+    Returns:
+        True if the path exists and resolves to a Value type
+    """
+    try:
+        _ = resolve_path(data_type=data_type, path=path)
+        return True
+    except ValueError:
+        return False
 
 
 V = TypeVar("V", bound=Value)
@@ -306,7 +395,9 @@ __all__ = [
     "get_data_schema",
     "get_field_annotations",
     "get_only_field",
+    "has_path",
     "Input_contra",
     "Output_co",
+    "resolve_path",
     "serialize_data_mapping",
 ]
