@@ -8,7 +8,7 @@ from pydantic import model_validator
 
 from ..utils.immutable import ImmutableBaseModel
 from .node import Node
-from .values import Value, resolve_path
+from .values import resolve_path
 
 
 class Edge(ImmutableBaseModel):
@@ -68,18 +68,27 @@ class Edge(ImmutableBaseModel):
         return edge
 
     def validate_types(self, source: Node, target: Node):
-        source_output_type = resolve_path(
-            data_type=source.output_type,
-            path=self.source_key_path,
-        )
-        assert source_output_type is not None
+        try:
+            source_output_type = resolve_path(
+                data_type=source.output_type,
+                path=self.source_key_path,
+            )
+        except TypeError as e:
+            e.add_note(
+                f"Source node {source.id} does not have a {self.source_key_path_string} field"
+            )
+            raise
 
-        if self.target_key not in target.input_fields:
-            raise ValueError(
+        try:
+            target_input_type = resolve_path(
+                data_type=target.input_type,
+                path=(self.target_key,),
+            )
+        except TypeError as e:
+            e.add_note(
                 f"Target node {target.id} does not have a {self.target_key} field"
             )
-        target_input_type, _ = target.input_fields[self.target_key]
-        assert issubclass(target_input_type, Value)
+            raise
 
         if not source_output_type.can_cast_to(target_input_type):
             raise TypeError(

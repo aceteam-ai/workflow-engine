@@ -222,7 +222,7 @@ def resolve_path(
         The ValueType at the given path.
 
     Raises:
-        ValueError: If any segment of the path cannot be resolved on the given type.
+        TypeError: If any segment of the path cannot be resolved on the given type.
     """
     # base case: empty path, return the current type (as a ValueType)
     if len(path) == 0:
@@ -257,7 +257,7 @@ def resolve_path(
         # raising an exception is more informative than returning None, because
         # None can happen at any depth of recursion, whereas the exception
         # explicitly indicates what level we encountered the problem.
-        raise ValueError(f"{data_type.__name__} does not have field {head}")
+        raise TypeError(f"{data_type.__name__} does not have field {head}")
 
     # recursive step
     return resolve_path(data_type=field_type, path=tail)
@@ -281,7 +281,7 @@ def has_path(
     try:
         _ = resolve_path(data_type=data_type, path=path)
         return True
-    except ValueError:
+    except TypeError:
         return False
 
 
