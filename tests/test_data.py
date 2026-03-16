@@ -206,7 +206,8 @@ def test_has_path_from_json_schema():
 
 
 @pytest.mark.unit
-def test_resolve_path_from_schema_flat():
+@pytest.mark.parametrize("path_factory", (list, tuple))
+def test_resolve_path_from_schema_flat(path_factory):
     """Resolve paths on a type from JSON Schema → ValueSchema → to_value_cls()."""
     json_schema = {
         "title": "FlatData",
@@ -223,14 +224,14 @@ def test_resolve_path_from_schema_flat():
 
     _, (data_type,) = get_origin_and_args(value_cls)
 
-    assert resolve_path(data_type=value_cls, path=["name"]) == StringValue
-    assert resolve_path(data_type=value_cls, path=["count"]) == IntegerValue
-    assert has_path(data_type=data_type, path=["name"]) is True
-    assert has_path(data_type=data_type, path=["count"]) is True
-    assert has_path(data_type=data_type, path=["missing"]) is False
+    assert resolve_path(data_type=value_cls, path=path_factory(["name"])) == StringValue
+    assert resolve_path(data_type=value_cls, path=path_factory(["count"])) == IntegerValue
+    assert has_path(data_type=data_type, path=path_factory(["name"])) is True
+    assert has_path(data_type=data_type, path=path_factory(["count"])) is True
+    assert has_path(data_type=data_type, path=path_factory(["missing"])) is False
 
     with pytest.raises(ValueError, match="does not have field missing"):
-        resolve_path(data_type=value_cls, path=["missing"])
+        resolve_path(data_type=value_cls, path=path_factory(["missing"]))
 
 
 # ---------------------------------------------------------------------------
@@ -239,7 +240,8 @@ def test_resolve_path_from_schema_flat():
 
 
 @pytest.mark.unit
-def test_resolve_path_data_from_json_schema():
+@pytest.mark.parametrize("path_factory", (list, tuple))
+def test_resolve_path_data_from_json_schema(path_factory):
     """resolve_path works on DataValue from JSON Schema with properties."""
     json_schema = {
         "title": "FooBarData",
@@ -257,21 +259,21 @@ def test_resolve_path_data_from_json_schema():
     _, (data_type,) = get_origin_and_args(value_cls)
 
     # Single-level paths
-    assert resolve_path(data_type=data_type, path=("foo",)) == StringValue
-    assert resolve_path(data_type=data_type, path=("bar",)) == IntegerValue
+    assert resolve_path(data_type=data_type, path=path_factory(("foo",))) == StringValue
+    assert resolve_path(data_type=data_type, path=path_factory(("bar",))) == IntegerValue
 
     # Empty path returns DataValue[data_type]
-    result = resolve_path(data_type=data_type, path=())
+    result = resolve_path(data_type=data_type, path=path_factory(()))
     assert issubclass(result, DataValue)
 
     # Invalid path raises
     with pytest.raises(ValueError, match="does not have field qux"):
-        resolve_path(data_type=data_type, path=("qux",))
+        resolve_path(data_type=data_type, path=path_factory(("qux",)))
 
     # has_path
-    assert has_path(data_type=data_type, path=("foo",)) is True
-    assert has_path(data_type=data_type, path=("bar",)) is True
-    assert has_path(data_type=data_type, path=("qux",)) is False
+    assert has_path(data_type=data_type, path=path_factory(("foo",))) is True
+    assert has_path(data_type=data_type, path=path_factory(("bar",))) is True
+    assert has_path(data_type=data_type, path=path_factory(("qux",))) is False
 
 
 @pytest.mark.unit
