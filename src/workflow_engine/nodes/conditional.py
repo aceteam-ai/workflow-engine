@@ -130,8 +130,8 @@ class IfElseNode(Node[ConditionalInput, Data, IfElseParams]):
     @cached_property
     def output_type(self):
         fields = mapping_intersection(
-            self.params.if_true.root.output_fields,
-            self.params.if_false.root.output_fields,
+            get_data_fields(self.params.if_true.root.output_type),
+            get_data_fields(self.params.if_false.root.output_type),
         )
         return build_data_type("IfElseOutput", fields)
 

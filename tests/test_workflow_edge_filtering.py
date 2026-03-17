@@ -376,7 +376,7 @@ class TestWorkflowEdgeFiltering:
         # Deserialization succeeds with untyped nodes (validation deferred)
         workflow = Workflow.model_validate(workflow_data)
 
-        # Should raise ValueError when loading via WorkflowEngine (types nodes and validates)
+        # Should raise TypeError when loading via WorkflowEngine (types nodes and validates)
         engine = WorkflowEngine()
-        with pytest.raises(ValueError, match="does not have.*field"):
+        with pytest.raises(TypeError, match="does not have field"):
             engine.load(workflow)

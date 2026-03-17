@@ -11,7 +11,14 @@ from ..utils.immutable import ImmutableBaseModel
 from .edge import Edge
 from .error import NodeExpansionException, UserException
 from .node import Node
-from .values import Data, DataMapping, Value, ValueType
+from .values import (
+    Data,
+    DataMapping,
+    Value,
+    ValueType,
+    get_value_at_path,
+    resolve_path,
+)
 from .io import InputNode, OutputNode
 from .values.schema import DataValueSchema
 
@@ -66,16 +73,6 @@ class Workflow(ImmutableBaseModel):
         Otherwise, the type is inferred from the target node's input field.
         """
         return self.input_node.input_fields
-
-    @cached_property
-    def output_fields(self) -> Mapping[str, tuple[ValueType, bool]]:
-        """
-        Returns the output fields for this workflow.
-
-        If an OutputNode has an output_schema specified, that schema's type is used.
-        Otherwise, the type is inferred from the source node's output field.
-        """
-        return self.output_node.output_fields
 
     @cached_property
     def input_type(self) -> Type[Data]:
@@ -178,9 +175,10 @@ class Workflow(ImmutableBaseModel):
             for target_key, edge in self.edges_by_target[node.id].items():
                 # if the input is missing, we will let the node figure it out
                 if edge.source_id in node_outputs:
-                    node_input_dict[target_key] = node_outputs[edge.source_id][
-                        edge.source_key
-                    ]
+                    node_input_dict[target_key] = get_value_at_path(
+                        data=node_outputs[edge.source_id],
+                        path=edge.source_key_path,
+                    )
                 else:
                     ready = False
                     break
@@ -230,20 +228,27 @@ class Workflow(ImmutableBaseModel):
                     f"Cannot get output from node {edge.source_id}.",
                 )
             node_output = node_outputs[edge.source_id]
-            if edge.source_key not in node_output:
+            try:
+                output_field = get_value_at_path(
+                    data=node_output,
+                    path=edge.source_key_path,
+                )
+            except KeyError:
                 if partial:
                     continue
                 raise UserException(
-                    f"Cannot get output from node {edge.source_id} at key '{edge.source_key}'.",
+                    f"Cannot get output from node {edge.source_id} at path {edge.source_key_path_string}.",
                 )
 
-            output_field = node_output[edge.source_key]
-            expected_type, _ = self.output_fields[edge.target_key]
+            expected_type = resolve_path(
+                data_type=self.output_node.output_type,
+                path=[edge.target_key],
+            )
 
             # Validate that the output can be cast to the expected type
             if not output_field.can_cast_to(expected_type):
                 raise UserException(
-                    f"Output '{edge.target_key}' from node {edge.source_id}.{edge.source_key} "
+                    f"Output '{edge.target_key}' from {edge.source_id}.{edge.source_key_path_string} "
                     f"cannot be cast: {output_field} is not assignable to {expected_type}"
                 )
 
