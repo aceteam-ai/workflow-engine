@@ -241,6 +241,13 @@ class Node(ImmutableBaseModel, Generic[Input_contra, Output_co, Params_co]):
         """
         return self.TYPE_INFO.display_name
 
+    # Cached properties that do NOT depend on node ID and should be
+    # preserved across with_namespace copies.
+    _ID_INDEPENDENT_CACHED = frozenset({
+        "input_type", "output_type", "input_fields", "output_fields",
+        "input_schema", "output_schema",
+    })
+
     def with_namespace(self, namespace: str) -> Self:
         """
         Create a copy of this node with a namespaced ID.
@@ -254,10 +261,16 @@ class Node(ImmutableBaseModel, Generic[Input_contra, Output_co, Params_co]):
         # Fast path: use model_copy and directly set the new id,
         # skipping full re-validation since only the id changes.
         copy = self.model_copy(update={"id": f"{namespace}/{self.id}"})
-        # Clear cached properties that depend on the id
+        # Clear cached properties that depend on the id, but keep
+        # id-independent ones (input_type, output_type, etc.) to avoid
+        # expensive re-computation (e.g., create_model calls).
         model_field_names = set(self.__class__.model_fields.keys())
+        id_independent = self._ID_INDEPENDENT_CACHED
         copy_dict = copy.__dict__
-        cached_keys = [k for k in copy_dict if k not in model_field_names]
+        cached_keys = [
+            k for k in copy_dict
+            if k not in model_field_names and k not in id_independent
+        ]
         for key in cached_keys:
             del copy_dict[key]
         return copy
