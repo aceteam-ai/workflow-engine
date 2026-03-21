@@ -184,3 +184,39 @@ The script prompts for confirmation before making any changes.
 - `NodeException`: Errors during node execution (includes node ID)
 - `NodeExpansionException`: Errors during dynamic node replacement
 - `WorkflowErrors`: Accumulates errors by node
+
+## Autoresearch
+
+Autonomous optimization loop (Karpathy-style) for improving engine performance.
+
+### How to run
+
+```bash
+# Start the autoresearch agent
+cd autoresearch && cat program.md
+# Then follow the instructions in program.md
+```
+
+### Quick benchmark
+
+```bash
+uv run python autoresearch/evaluate.py
+```
+
+### Metrics
+
+| Priority | Metric | Target |
+|----------|--------|--------|
+| Primary | `total_time_s` | Minimize |
+| Secondary | `peak_memory_mb` | Minimize |
+| Tertiary | `correctness` | Must be 8/8 (100%) |
+
+### File permissions
+
+| File | Who edits |
+|------|-----------|
+| `src/workflow_engine/**` | Agent (optimization target) |
+| `autoresearch/evaluate.py` | Nobody (read-only benchmark harness) |
+| `autoresearch/engine.py` | Nobody (read-only import wrapper) |
+| `autoresearch/program.md` | Human only |
+| `autoresearch/results.tsv` | Agent (append experiment results) |
