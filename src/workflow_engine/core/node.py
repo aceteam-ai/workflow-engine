@@ -355,7 +355,9 @@ class Node(ImmutableBaseModel, Generic[Input_contra, Output_co, Params_co]):
                 cast_tasks.append(value.cast_to(input_type, context=context))
                 cast_keys.append(key)
 
-        if cast_tasks:
+        if len(cast_tasks) == 1:
+            casted_input[cast_keys[0]] = await cast_tasks[0]
+        elif cast_tasks:
             casted_values = await asyncio.gather(*cast_tasks)
             for key, casted_value in zip(cast_keys, casted_values):
                 casted_input[key] = casted_value

@@ -7,3 +7,4 @@ experiment_id	timestamp	description	total_time_s	peak_memory_mb	correctness	kept
 005	2026-03-21T00:05:00	skip cast_to for values already matching target type	0.0454	0.06	8/8	yes
 006	2026-03-21T00:06:00	fast isinstance check in cast_to	0.0455	0.06	8/8	no
 007	2026-03-21T00:07:00	optimize get_data_dict using __dict__ access	0.0443	0.06	8/8	yes
+008	2026-03-21T00:08:00	avoid asyncio.gather for single cast task	0.0423	0.06	8/8	yes
