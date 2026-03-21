@@ -38,12 +38,9 @@ class Data(ImmutableBaseModel):
 
 
 def get_data_dict(data: Data) -> Mapping[str, Value]:
-    result: dict[str, Value] = {}
-    for key in data.__class__.model_fields.keys():
-        value = getattr(data, key)
-        assert isinstance(value, Value)
-        result[key] = value
-    return result
+    # Use __dict__ directly instead of getattr() for each field - faster access
+    data_dict = data.__dict__
+    return {key: data_dict[key] for key in data.__class__.model_fields}
 
 
 def get_data_schema(cls: type[Data]) -> "ValueSchema":
