@@ -1,5 +1,6 @@
 # workflow_engine/core/workflow.py
 import asyncio
+from collections import defaultdict
 from collections.abc import Mapping, Sequence
 from functools import cached_property
 from typing import TYPE_CHECKING, Type
@@ -46,15 +47,14 @@ class Workflow(ImmutableBaseModel):
         A mapping from each node and input key to the (unique) edge that targets
         the node at that key.
         """
-        edges_by_target: dict[str, dict[str, Edge]] = {
-            node.id: {} for node in self.nodes
-        }
+        edges_by_target: defaultdict[str, dict[str, Edge]] = defaultdict(dict)
         for edge in self.edges:
-            if edge.target_key in edges_by_target[edge.target_id]:
+            target_edges = edges_by_target[edge.target_id]
+            if edge.target_key in target_edges:
                 raise ValueError(
                     f"In-edge to {edge.target_id}.{edge.target_key} is already in the graph"
                 )
-            edges_by_target[edge.target_id][edge.target_key] = edge
+            target_edges[edge.target_key] = edge
         return edges_by_target
 
     @cached_property
