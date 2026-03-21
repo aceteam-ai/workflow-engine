@@ -209,7 +209,7 @@ uv run python autoresearch/evaluate.py
 |----------|--------|--------|
 | Primary | `total_time_s` | Minimize |
 | Secondary | `peak_memory_mb` | Minimize |
-| Tertiary | `correctness` | Must be 8/8 (100%) |
+| Tertiary | `correctness` | Must be 16/16 (100%) |
 
 ### File permissions
 

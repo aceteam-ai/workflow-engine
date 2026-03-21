@@ -11,6 +11,7 @@ from workflow_engine import (
     Context,
     Data,
     DataMapping,
+    DataValue,
     Edge,
     Empty,
     FloatValue,
@@ -21,11 +22,14 @@ from workflow_engine import (
     OutputNode,
     Params,
     SequenceValue,
+    ShouldRetry,
+    ShouldYield,
     StringValue,
     Value,
     Workflow,
     WorkflowExecutionResult,
     WorkflowExecutionResultStatus,
+    WorkflowValue,
 )
 
 # Contexts
@@ -44,6 +48,9 @@ from workflow_engine.nodes import (
     SumNode,
 )
 
+# Value helpers
+from workflow_engine.core.values import get_data_dict
+
 __all__ = [
     "AddNode",
     "ConstantIntegerNode",
@@ -51,10 +58,12 @@ __all__ = [
     "Context",
     "Data",
     "DataMapping",
+    "DataValue",
     "Edge",
     "Empty",
     "FloatValue",
     "ForEachNode",
+    "get_data_dict",
     "InMemoryContext",
     "InputNode",
     "IntegerValue",
@@ -64,6 +73,8 @@ __all__ = [
     "Params",
     "ParallelExecutionAlgorithm",
     "SequenceValue",
+    "ShouldRetry",
+    "ShouldYield",
     "StringValue",
     "SumNode",
     "TopologicalExecutionAlgorithm",
@@ -71,4 +82,5 @@ __all__ = [
     "Workflow",
     "WorkflowExecutionResult",
     "WorkflowExecutionResultStatus",
+    "WorkflowValue",
 ]

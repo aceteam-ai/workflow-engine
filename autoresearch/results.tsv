@@ -14,3 +14,4 @@ experiment_id	timestamp	description	total_time_s	peak_memory_mb	correctness	kept
 012	2026-03-21T00:12:00	use asyncio.iscoroutine instead of inspect	0.0404	0.06	8/8	no
 013	2026-03-21T00:13:00	cache lazy Workflow import in Node.__call__	0.0389	0.06	8/8	yes
 014	2026-03-21T00:14:00	optimize AddNode.run with __dict__ access	0.0374	0.06	8/8	yes
+015	2026-03-21T00:15:00	add large_100, foreach_expand, retry_chain, yield_resume benchmarks	0.4151	1.06	16/16	yes

@@ -18,9 +18,9 @@ code and measuring the impact.
 |----------|--------|---------------|--------|
 | Primary | Total execution time (seconds) | `total_time_s: X.XXXX` | Minimize |
 | Secondary | Peak memory (MB) | `peak_memory_mb: X.XX` | Minimize |
-| Tertiary | Correctness | `correctness: X/X` | Must be 8/8 (100%) |
+| Tertiary | Correctness | `correctness: X/X` | Must be 16/16 (100%) |
 
-**Correctness is non-negotiable.** If correctness drops below 8/8, immediately
+**Correctness is non-negotiable.** If correctness drops below 16/16, immediately
 revert the change.
 
 ## Experiment Loop
@@ -84,13 +84,13 @@ experiment_id	timestamp	description	total_time_s	peak_memory_mb	correctness	kept
 - `description`: One-line description of the change
 - `total_time_s`: From benchmark output
 - `peak_memory_mb`: From benchmark output
-- `correctness`: From benchmark output (must be 8/8)
+- `correctness`: From benchmark output (must be 16/16)
 - `kept`: `yes` if improvement, `no` if reverted
 
 ### 5. Decide
 
-- If correctness < 8/8: **revert immediately** (`git checkout -- src/`)
-- If total_time_s improved AND correctness = 8/8: **keep** (commit the change)
+- If correctness < 16/16: **revert immediately** (`git checkout -- src/`)
+- If total_time_s improved AND correctness = 16/16: **keep** (commit the change)
 - If total_time_s same or worse: **revert** unless memory improved significantly
 - Commit kept changes: `git add -A && git commit -m "autoresearch: <description>"`
 
@@ -104,7 +104,7 @@ Go back to step 1. **NEVER STOP.**
 - Do NOT install new packages (only use existing dependencies)
 - Do NOT modify `pyproject.toml`
 - All existing tests must pass (`uv run pytest`)
-- Correctness must remain 8/8 at all times
+- Correctness must remain 16/16 at all times
 - Each experiment should be a single, focused change
 - Keep changes small and reversible
 

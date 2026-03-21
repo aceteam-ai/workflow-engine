@@ -2,13 +2,19 @@
 """
 Autoresearch benchmark harness (READ-ONLY — do not modify).
 
-Builds and executes 4 benchmark workflows programmatically, measuring:
+Builds and executes 8 benchmark workflows programmatically, measuring:
   - Wall-clock execution time (seconds)
   - Peak memory usage (MB)
   - Correctness (output matches expected values)
 
-All workflows use pure arithmetic nodes — no LLM calls, no API keys,
-fully deterministic and reproducible.
+Benchmarks cover:
+  - Simple arithmetic DAGs (linear, branching, nested, fan-out/fan-in)
+  - Large node counts (100-node DAG)
+  - Sub-workflow expansion via ForEachNode
+  - Retry with backoff (ShouldRetry)
+  - Yield/resume (ShouldYield)
+
+All workflows use deterministic nodes — no LLM calls, no API keys.
 
 Usage:
     uv run python autoresearch/evaluate.py
@@ -19,7 +25,10 @@ import sys
 import time
 import tracemalloc
 from dataclasses import dataclass
+from datetime import timedelta
+from functools import cached_property
 from pathlib import Path
+from typing import ClassVar, Literal
 
 # Ensure the package is importable
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
@@ -27,18 +36,32 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 from engine import (
     AddNode,
     ConstantIntegerNode,
+    ConstantStringNode,
+    Context,
+    Data,
+    DataValue,
     Edge,
+    Empty,
     FloatValue,
+    ForEachNode,
     InMemoryContext,
     InputNode,
     IntegerValue,
+    Node,
+    NodeTypeInfo,
     OutputNode,
+    Params,
     ParallelExecutionAlgorithm,
     SequenceValue,
+    ShouldRetry,
+    ShouldYield,
+    StringValue,
     SumNode,
     TopologicalExecutionAlgorithm,
     Workflow,
     WorkflowExecutionResultStatus,
+    WorkflowValue,
+    get_data_dict,
 )
 
 
@@ -290,6 +313,364 @@ def build_parallel_fan() -> tuple[Workflow, dict, dict]:
 
 
 # ---------------------------------------------------------------------------
+# Custom nodes for advanced benchmarks
+# ---------------------------------------------------------------------------
+
+
+class BenchRetryInput(Data):
+    value: StringValue
+
+
+class BenchRetryOutput(Data):
+    result: StringValue
+
+
+class BenchRetryParams(Params):
+    fail_count: int
+
+
+class BenchRetryNode(Node[BenchRetryInput, BenchRetryOutput, BenchRetryParams]):
+    """Fails fail_count times with ShouldRetry, then succeeds."""
+
+    TYPE_INFO: ClassVar[NodeTypeInfo] = NodeTypeInfo.from_parameter_type(
+        name="BenchRetry",
+        display_name="Bench Retry",
+        description="Benchmark retry node.",
+        version="1.0.0",
+        parameter_type=BenchRetryParams,
+    )
+
+    type: Literal["BenchRetry"] = "BenchRetry"  # pyright: ignore[reportIncompatibleVariableOverride]
+    _attempt_counts: ClassVar[dict[str, int]] = {}
+
+    @cached_property
+    def input_type(self):
+        return BenchRetryInput
+
+    @cached_property
+    def output_type(self):
+        return BenchRetryOutput
+
+    async def run(self, context: Context, input: BenchRetryInput) -> BenchRetryOutput:
+        if self.id not in BenchRetryNode._attempt_counts:
+            BenchRetryNode._attempt_counts[self.id] = 0
+        BenchRetryNode._attempt_counts[self.id] += 1
+
+        if BenchRetryNode._attempt_counts[self.id] <= self.params.fail_count:
+            raise ShouldRetry(
+                message=f"Transient failure (attempt {BenchRetryNode._attempt_counts[self.id]})",
+                backoff=timedelta(milliseconds=1),  # Minimal backoff for benchmarks
+            )
+        return BenchRetryOutput(result=StringValue(f"ok:{input.value.root}"))
+
+    @classmethod
+    def from_fail_count(cls, id: str, fail_count: int) -> "BenchRetryNode":
+        return cls(id=id, params=BenchRetryParams(fail_count=fail_count))
+
+    @classmethod
+    def reset(cls):
+        cls._attempt_counts = {}
+
+
+class BenchYieldInput(Data):
+    value: StringValue
+
+
+class BenchYieldOutput(Data):
+    result: StringValue
+
+
+class BenchYieldNode(Node[BenchYieldInput, BenchYieldOutput, Params]):
+    """Yields on first N calls, succeeds after that. Simulates async dispatch."""
+
+    TYPE_INFO: ClassVar[NodeTypeInfo] = NodeTypeInfo.from_parameter_type(
+        name="BenchYield",
+        display_name="Bench Yield",
+        description="Benchmark yield node.",
+        version="1.0.0",
+        parameter_type=Params,
+    )
+
+    type: Literal["BenchYield"] = "BenchYield"  # pyright: ignore[reportIncompatibleVariableOverride]
+    _call_counts: ClassVar[dict[str, int]] = {}
+    yield_count: int = 1  # Number of times to yield before succeeding
+
+    @cached_property
+    def input_type(self):
+        return BenchYieldInput
+
+    @cached_property
+    def output_type(self):
+        return BenchYieldOutput
+
+    async def run(self, context: Context, input: BenchYieldInput) -> BenchYieldOutput:
+        n = BenchYieldNode._call_counts.get(self.id, 0) + 1
+        BenchYieldNode._call_counts[self.id] = n
+        if n <= self.yield_count:
+            raise ShouldYield(f"waiting ({n}/{self.yield_count})")
+        return BenchYieldOutput(result=StringValue(f"resumed:{input.value.root}"))
+
+    @classmethod
+    def reset(cls):
+        cls._call_counts = {}
+
+
+# ---------------------------------------------------------------------------
+# Advanced benchmark workflow builders
+# ---------------------------------------------------------------------------
+
+
+def build_large_100() -> tuple[Workflow, dict, dict]:
+    """100-node DAG: 10 parallel chains of 10 sequential additions.
+
+    Each chain: const(chain_idx * 100) → add(+1) → add(+1) → ... (9 adds)
+    Final: sum all 10 chain outputs via AddNode(arity=10)
+
+    Chain i output = chain_idx * 100 + 9
+    Expected: sum((i * 100 + 9) for i in range(10)) = 4590
+
+    Nodes: 10 seed-constants + 90 add-constants + 90 adds + 1 final + input + output = 193
+    """
+    input_node = InputNode.empty()
+    output_node = OutputNode.from_fields(result=IntegerValue)
+
+    n_chains = 10
+    chain_length = 9  # 9 additions per chain
+    inner_nodes = []
+    edges = []
+    chain_tails = []
+
+    for chain_idx in range(n_chains):
+        seed = ConstantIntegerNode.from_value(
+            id=f"seed_{chain_idx}", value=chain_idx * 100
+        )
+        inner_nodes.append(seed)
+        prev_source = seed
+        prev_key = "value"
+
+        for step in range(chain_length):
+            step_const = ConstantIntegerNode.from_value(
+                id=f"ch{chain_idx}_c{step}", value=1
+            )
+            step_add = AddNode(id=f"ch{chain_idx}_add{step}")
+            inner_nodes.extend([step_const, step_add])
+            edges.append(
+                Edge.from_nodes(
+                    source=prev_source,
+                    source_key=prev_key,
+                    target=step_add,
+                    target_key="a",
+                )
+            )
+            edges.append(
+                Edge.from_nodes(
+                    source=step_const,
+                    source_key="value",
+                    target=step_add,
+                    target_key="b",
+                )
+            )
+            prev_source = step_add
+            prev_key = "sum"
+
+        chain_tails.append((prev_source, prev_key))
+
+    final_add = AddNode.with_arity(id="final_sum", arity=n_chains)
+    inner_nodes.append(final_add)
+
+    field_names = [chr(ord("a") + i) for i in range(n_chains)]
+    for i, (tail_node, tail_key) in enumerate(chain_tails):
+        edges.append(
+            Edge.from_nodes(
+                source=tail_node,
+                source_key=tail_key,
+                target=final_add,
+                target_key=field_names[i],
+            )
+        )
+    edges.append(
+        Edge.from_nodes(
+            source=final_add,
+            source_key="sum",
+            target=output_node,
+            target_key="result",
+        )
+    )
+
+    workflow = Workflow(
+        input_node=input_node,
+        output_node=output_node,
+        inner_nodes=inner_nodes,
+        edges=edges,
+    )
+
+    input_data = {}
+    expected = {"result": sum(i * 100 + chain_length for i in range(n_chains))}
+    return workflow, input_data, expected
+
+
+def build_foreach_expansion() -> tuple[Workflow, dict, dict]:
+    """ForEach sub-workflow expansion: iterate over 6 items, doubling each.
+
+    Inner workflow: input(x) → add(x + x) → output(y)
+    ForEach: [1, 2, 3, 4, 5, 6] → [2, 4, 6, 8, 10, 12]
+
+    This exercises expand_node() / graph surgery at runtime.
+    """
+    # Inner workflow: doubles input
+    inner_input = InputNode.from_fields(x=FloatValue)
+    inner_output = OutputNode.from_fields(y=FloatValue)
+    inner_add = AddNode(id="double")
+
+    inner_workflow = Workflow(
+        input_node=inner_input,
+        output_node=inner_output,
+        inner_nodes=[inner_add],
+        edges=[
+            Edge.from_nodes(
+                source=inner_input, source_key="x", target=inner_add, target_key="a"
+            ),
+            Edge.from_nodes(
+                source=inner_input, source_key="x", target=inner_add, target_key="b"
+            ),
+            Edge.from_nodes(
+                source=inner_add, source_key="sum", target=inner_output, target_key="y"
+            ),
+        ],
+    )
+
+    # Outer workflow with ForEach
+    foreach = ForEachNode.from_workflow(id="foreach", workflow=inner_workflow)
+    outer_input = InputNode.from_fields(sequence=SequenceValue[FloatValue])
+    outer_output = OutputNode.from_fields(results=SequenceValue[FloatValue])
+
+    workflow = Workflow(
+        input_node=outer_input,
+        output_node=outer_output,
+        inner_nodes=[foreach],
+        edges=[
+            Edge.from_nodes(
+                source=outer_input,
+                source_key="sequence",
+                target=foreach,
+                target_key="sequence",
+            ),
+            Edge.from_nodes(
+                source=foreach,
+                source_key="sequence",
+                target=outer_output,
+                target_key="results",
+            ),
+        ],
+    )
+
+    items = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
+    input_data = get_data_dict(
+        workflow.input_type.model_validate({"sequence": items})
+    )
+    expected = {"results": [v * 2 for v in items]}
+    return workflow, input_data, expected
+
+
+def build_retry_chain() -> tuple[Workflow, dict, dict]:
+    """Chain of 3 retryable nodes, each failing once before succeeding.
+
+    const("start") → retry1(fail=1) → retry2(fail=1) → retry3(fail=1) → output
+    Expected: "ok:ok:ok:start"
+
+    Exercises the retry/backoff machinery in the execution loop.
+    """
+    BenchRetryNode.reset()
+
+    input_node = InputNode.empty()
+    output_node = OutputNode.from_fields(result=StringValue)
+
+    constant = ConstantStringNode.from_value(id="const_start", value="start")
+    r1 = BenchRetryNode.from_fail_count(id="bench_retry_1", fail_count=1)
+    r2 = BenchRetryNode.from_fail_count(id="bench_retry_2", fail_count=1)
+    r3 = BenchRetryNode.from_fail_count(id="bench_retry_3", fail_count=1)
+
+    workflow = Workflow(
+        input_node=input_node,
+        output_node=output_node,
+        inner_nodes=[constant, r1, r2, r3],
+        edges=[
+            Edge.from_nodes(
+                source=constant, source_key="value", target=r1, target_key="value"
+            ),
+            Edge.from_nodes(
+                source=r1, source_key="result", target=r2, target_key="value"
+            ),
+            Edge.from_nodes(
+                source=r2, source_key="result", target=r3, target_key="value"
+            ),
+            Edge.from_nodes(
+                source=r3, source_key="result", target=output_node, target_key="result"
+            ),
+        ],
+    )
+
+    input_data = {}
+    expected = {"result": "ok:ok:ok:start"}
+    return workflow, input_data, expected
+
+
+def build_yield_resume() -> tuple[Workflow, dict, dict]:
+    """Workflow with 2 parallel branches: one yields, one succeeds immediately.
+
+    const("hello") → yield_node (yields once, needs re-run to succeed)
+                   → echo_node (succeeds immediately)
+    Output: both branches' results
+
+    Tests yield handling and partial progress. We run it twice:
+    first run yields, second run succeeds. The benchmark checks that
+    re-running after yield produces the correct final output.
+    """
+    BenchYieldNode.reset()
+
+    input_node = InputNode.empty()
+    output_node = OutputNode.from_fields(
+        yielded=StringValue,
+        immediate=StringValue,
+    )
+
+    constant = ConstantStringNode.from_value(id="const_hello", value="hello")
+
+    # Echo node that just passes through (use a constant + add trick: add "hello" + const("") won't work
+    # with string types. Let's use two constant string nodes instead.
+    # Actually, we need something simpler — just wire const directly to output for the "immediate" path,
+    # and have the yield node on the other path.
+    yield_node = BenchYieldNode(id="bench_yield_node", params=Params(), yield_count=1)
+
+    workflow = Workflow(
+        input_node=input_node,
+        output_node=output_node,
+        inner_nodes=[constant, yield_node],
+        edges=[
+            Edge.from_nodes(
+                source=constant, source_key="value", target=yield_node, target_key="value"
+            ),
+            Edge.from_nodes(
+                source=yield_node,
+                source_key="result",
+                target=output_node,
+                target_key="yielded",
+            ),
+            Edge.from_nodes(
+                source=constant,
+                source_key="value",
+                target=output_node,
+                target_key="immediate",
+            ),
+        ],
+    )
+
+    input_data = {}
+    expected = {"yielded": "resumed:hello", "immediate": "hello"}
+    return workflow, input_data, expected
+
+
+# ---------------------------------------------------------------------------
 # Benchmark runner
 # ---------------------------------------------------------------------------
 
@@ -298,6 +679,10 @@ BENCHMARKS = [
     ("branching_10", build_branching_10),
     ("nested_20", build_nested_20),
     ("parallel_fan", build_parallel_fan),
+    ("large_100", build_large_100),
+    ("foreach_expand", build_foreach_expansion),
+    ("retry_chain", build_retry_chain),
+    ("yield_resume", build_yield_resume),
 ]
 
 ALGORITHMS = [
@@ -318,17 +703,35 @@ class BenchmarkResult:
     iterations: int
 
 
+def _unwrap(val):
+    """Recursively unwrap Value objects to plain Python types."""
+    if hasattr(val, "root"):
+        val = val.root
+    if isinstance(val, list):
+        return [_unwrap(v) for v in val]
+    return val
+
+
 def compare_output(actual: dict, expected: dict) -> bool:
     """Compare workflow output to expected values, tolerating Value wrappers."""
     for key, expected_val in expected.items():
         if key not in actual:
             return False
-        actual_val = actual[key]
-        # Unwrap Value objects
-        if hasattr(actual_val, "root"):
-            actual_val = actual_val.root
-        if hasattr(expected_val, "root"):
-            expected_val = expected_val.root
+        actual_val = _unwrap(actual[key])
+        expected_val = _unwrap(expected_val)
+        # List comparison (e.g., SequenceValue results)
+        if isinstance(expected_val, list) and isinstance(actual_val, list):
+            if len(actual_val) != len(expected_val):
+                return False
+            for a, e in zip(actual_val, expected_val):
+                a = _unwrap(a)
+                e = _unwrap(e)
+                if isinstance(a, float) and isinstance(e, (int, float)):
+                    if abs(a - e) > 1e-9:
+                        return False
+                elif a != e:
+                    return False
+            continue
         # Float comparison with tolerance
         if isinstance(actual_val, float) and isinstance(expected_val, (int, float)):
             if abs(actual_val - expected_val) > 1e-9:
@@ -336,6 +739,50 @@ def compare_output(actual: dict, expected: dict) -> bool:
         elif actual_val != expected_val:
             return False
     return True
+
+
+def _reset_bench_nodes():
+    """Reset stateful benchmark nodes between iterations."""
+    BenchRetryNode.reset()
+    BenchYieldNode.reset()
+
+
+async def _run_yield_benchmark(
+    algorithm,
+    context: InMemoryContext,
+    workflow: Workflow,
+    input_data: dict,
+    expected: dict,
+) -> bool:
+    """Run a yield benchmark: first run yields, second run succeeds."""
+    _reset_bench_nodes()
+
+    # First execution — should yield
+    result = await algorithm.execute(context=context, workflow=workflow, input=input_data)
+    if result.status is not WorkflowExecutionResultStatus.YIELDED:
+        return False
+
+    # Second execution — should succeed after resume
+    result = await algorithm.execute(context=context, workflow=workflow, input=input_data)
+    if result.status is not WorkflowExecutionResultStatus.SUCCESS:
+        return False
+    return compare_output(result.output, expected)
+
+
+async def _run_retry_benchmark(
+    algorithm,
+    context: InMemoryContext,
+    workflow: Workflow,
+    input_data: dict,
+    expected: dict,
+) -> bool:
+    """Run a retry benchmark: nodes fail then succeed within retry limit."""
+    _reset_bench_nodes()
+
+    result = await algorithm.execute(context=context, workflow=workflow, input=input_data)
+    if result.status is not WorkflowExecutionResultStatus.SUCCESS:
+        return False
+    return compare_output(result.output, expected)
 
 
 async def run_benchmark(
@@ -350,8 +797,19 @@ async def run_benchmark(
     context = InMemoryContext()
     algorithm = algorithm_cls()
 
+    is_yield = name == "yield_resume"
+    is_retry = name == "retry_chain"
+
     # Warmup run
-    await algorithm.execute(context=context, workflow=workflow, input=input_data)
+    if is_yield:
+        _reset_bench_nodes()
+        await algorithm.execute(context=context, workflow=workflow, input=input_data)
+        await algorithm.execute(context=context, workflow=workflow, input=input_data)
+    elif is_retry:
+        _reset_bench_nodes()
+        await algorithm.execute(context=context, workflow=workflow, input=input_data)
+    else:
+        await algorithm.execute(context=context, workflow=workflow, input=input_data)
 
     # Timed runs
     tracemalloc.start()
@@ -360,13 +818,24 @@ async def run_benchmark(
     start = time.perf_counter()
     correct = True
     for _ in range(N_ITERATIONS):
-        result = await algorithm.execute(
-            context=context, workflow=workflow, input=input_data
-        )
-        if result.status is not WorkflowExecutionResultStatus.SUCCESS:
-            correct = False
-        elif not compare_output(result.output, expected):
-            correct = False
+        if is_yield:
+            if not await _run_yield_benchmark(
+                algorithm, context, workflow, input_data, expected
+            ):
+                correct = False
+        elif is_retry:
+            if not await _run_retry_benchmark(
+                algorithm, context, workflow, input_data, expected
+            ):
+                correct = False
+        else:
+            result = await algorithm.execute(
+                context=context, workflow=workflow, input=input_data
+            )
+            if result.status is not WorkflowExecutionResultStatus.SUCCESS:
+                correct = False
+            elif not compare_output(result.output, expected):
+                correct = False
     elapsed = time.perf_counter() - start
 
     _, peak_bytes = tracemalloc.get_traced_memory()
