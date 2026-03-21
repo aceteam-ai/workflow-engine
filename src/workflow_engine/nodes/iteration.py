@@ -256,7 +256,7 @@ class ForEachNode(Node[SequenceData, SequenceData | Empty, ForEachParams]):
                     )
                 )
 
-        return Workflow(
+        return Workflow._construct_trusted(
             input_node=input_node,
             inner_nodes=inner_nodes,
             output_node=output_node,
