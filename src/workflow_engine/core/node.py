@@ -332,32 +332,30 @@ class Node(ImmutableBaseModel, Generic[Input_contra, Output_co, Params_co]):
             self.input_type.model_config.get("extra", "forbid") == "allow"
         )
 
-        # Validate all inputs first
+        # Single pass: validate castability and collect cast tasks
+        cast_tasks: list[Awaitable[Value]] = []
+        keys: list[str] = []
+        input_fields = self.input_fields
         for key, value in input.items():
-            if key not in self.input_fields and allow_extra_input:
+            if key not in input_fields:
+                if allow_extra_input:
+                    continue
                 continue
-            input_type, _ = self.input_fields[key]
+            input_type, _ = input_fields[key]
             if not value.can_cast_to(input_type):
                 raise UserException(
                     f"Input {value} for node {self.id} is invalid: {value} is not assignable to {input_type}"
                 )
-
-        # Cast all inputs in parallel
-        cast_tasks: list[Awaitable[Value]] = []
-        keys: list[str] = []
-        for key, value in input.items():
-            if key not in self.input_fields and allow_extra_input:
-                continue
-            input_type, _ = self.input_fields[key]  # type: ignore
             cast_tasks.append(value.cast_to(input_type, context=context))
             keys.append(key)
 
-        casted_values = await asyncio.gather(*cast_tasks)
+        if cast_tasks:
+            casted_values = await asyncio.gather(*cast_tasks)
+        else:
+            casted_values = ()
 
         # Build the result dictionary
-        casted_input: dict[str, Value] = {}
-        for key, casted_value in zip(keys, casted_values):
-            casted_input[key] = casted_value
+        casted_input: dict[str, Value] = dict(zip(keys, casted_values))
 
         try:
             return self.input_type.model_validate(casted_input)
