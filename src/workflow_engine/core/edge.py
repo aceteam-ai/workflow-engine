@@ -60,9 +60,11 @@ class Edge(ImmutableBaseModel):
             )
 
     def with_namespace(self, namespace: str) -> Self:
-        return self.model_update(
+        return self.__class__.model_construct(
             source_id=f"{namespace}/{self.source_id}",
+            source_key=self.source_key,
             target_id=f"{namespace}/{self.target_id}",
+            target_key=self.target_key,
         )
 
 

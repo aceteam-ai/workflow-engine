@@ -251,7 +251,16 @@ class Node(ImmutableBaseModel, Generic[Input_contra, Output_co, Params_co]):
         Returns:
             A new Node with ID '{namespace}/{self.id}'
         """
-        return self.model_update(id=f"{namespace}/{self.id}")
+        # Fast path: use model_copy and directly set the new id,
+        # skipping full re-validation since only the id changes.
+        copy = self.model_copy(update={"id": f"{namespace}/{self.id}"})
+        # Clear cached properties that depend on the id
+        model_field_names = set(self.__class__.model_fields.keys())
+        copy_dict = copy.__dict__
+        cached_keys = [k for k in copy_dict if k not in model_field_names]
+        for key in cached_keys:
+            del copy_dict[key]
+        return copy
 
     # --------------------------------------------------------------------------
     # VERSIONING
