@@ -150,9 +150,10 @@ class ForEachNode(Node[SequenceData, SequenceData | Empty, ForEachParams]):
             element_type=expand_element_type,
         )
 
+        _edge = Edge.model_construct  # local alias for speed
         inner_nodes: list[Node] = [expand]
         edges: list[Edge] = [
-            Edge(
+            _edge(
                 source_id=input_node.id,
                 source_key="sequence",
                 target_id=expand.id,
@@ -169,7 +170,7 @@ class ForEachNode(Node[SequenceData, SequenceData | Empty, ForEachParams]):
             )
             inner_nodes.append(gather)
             edges.append(
-                Edge(
+                _edge(
                     source_id=gather.id,
                     source_key="sequence",
                     target_id=output_node.id,
@@ -233,7 +234,7 @@ class ForEachNode(Node[SequenceData, SequenceData | Empty, ForEachParams]):
             if input_adapter is not None:
                 inner_nodes.append(input_adapter)
                 edges.append(
-                    Edge(
+                    _edge(
                         source_id=expand_id,
                         source_key=expand.key(i),
                         target_id=input_adapter.id,
@@ -267,7 +268,7 @@ class ForEachNode(Node[SequenceData, SequenceData | Empty, ForEachParams]):
                     target_key = edge.target_key
 
                 edges.append(
-                    Edge.model_construct(
+                    _edge(
                         source_id=source_id,
                         source_key=source_key,
                         target_id=target_id,
@@ -278,7 +279,7 @@ class ForEachNode(Node[SequenceData, SequenceData | Empty, ForEachParams]):
             if output_adapter is not None:
                 assert gather is not None
                 edges.append(
-                    Edge(
+                    _edge(
                         source_id=output_adapter.id,
                         source_key="data",
                         target_id=gather_id,
