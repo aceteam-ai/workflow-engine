@@ -15,3 +15,19 @@ experiment_id	timestamp	description	total_time_s	peak_memory_mb	correctness	kept
 013	2026-03-21T00:13:00	cache lazy Workflow import in Node.__call__	0.0389	0.06	8/8	yes
 014	2026-03-21T00:14:00	optimize AddNode.run with __dict__ access	0.0374	0.06	8/8	yes
 015	2026-03-21T00:15:00	add large_100, foreach_expand, retry_chain, yield_resume benchmarks	0.4151	1.06	16/16	yes
+016	2026-03-21T01:00:00	skip DAG validation in with_namespace/expand_node/ForEach via _construct_trusted	0.4001	0.41	16/16	yes
+017	2026-03-21T01:01:00	optimize Edge/Node with_namespace to skip re-validation	0.3971	0.41	16/16	yes
+018	2026-03-21T01:02:00	optimize ForEachNode.run loop: skip with_namespace, Edge.model_construct, pre-compute templates	0.3732	0.39	16/16	yes
+019	2026-03-21T01:03:00	use Edge.model_construct for all edge creation in ForEachNode.run	0.3717	0.39	16/16	yes
+020	2026-03-21T01:04:00	preserve id-independent cached properties in Node.with_namespace	0.3217	0.31	16/16	yes
+021	2026-03-21T01:05:00	successor-based incremental get_ready_nodes	0.3217	0.31	failed	no
+022	2026-03-21T01:06:00	use model_construct in _cast_input fast path	0.3231	0.31	16/16	yes
+023	2026-03-21T01:07:00	guard logger.info with isEnabledFor in __call__	0.3327	0.31	16/16	no
+024	2026-03-21T01:08:00	use Edge.model_construct in expand_node	0.3230	0.31	16/16	yes
+025	2026-03-21T01:09:00	incremental ready-node tracking in topological executor via successor map	0.2624	0.32	16/16	yes
+026	2026-03-21T01:10:00	incremental ready-node tracking in parallel executor (regressed parallel)	0.2638	0.32	16/16	no
+027	2026-03-21T01:11:00	use model_construct in AddNode.run return	0.2748	0.32	16/16	no
+028	2026-03-21T01:12:00	fast-path ShouldRetry in Node.__call__ to skip traceback formatting	0.2445	0.32	16/16	yes
+029	2026-03-21T01:13:00	dispatch all initially-ready nodes in parallel executor	0.2423	0.32	16/16	yes
+030	2026-03-21T01:14:00	use defaultdict in edges_by_target	0.2405	0.32	16/16	yes
+031	2026-03-21T01:15:00	cache AddNode input_type by arity (module-level)	0.2450	0.33	16/16	no

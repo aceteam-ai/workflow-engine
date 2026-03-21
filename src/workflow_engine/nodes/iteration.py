@@ -140,6 +140,8 @@ class ForEachNode(Node[SequenceData, SequenceData | Empty, ForEachParams]):
         n = len(input.sequence)
         input_node, output_node = self._build_input_output_nodes(n)
         has_no_output = self._has_no_output()
+        has_single_input = self._has_single_input()
+        has_single_output = self._has_single_output()
 
         expand_element_type = self._input_element_type()
         expand = ExpandSequenceNode.from_length(
@@ -148,12 +150,13 @@ class ForEachNode(Node[SequenceData, SequenceData | Empty, ForEachParams]):
             element_type=expand_element_type,
         )
 
+        _edge = Edge.model_construct  # local alias for speed
         inner_nodes: list[Node] = [expand]
         edges: list[Edge] = [
-            Edge.from_nodes(
-                source=input_node,
+            _edge(
+                source_id=input_node.id,
                 source_key="sequence",
-                target=expand,
+                target_id=expand.id,
                 target_key="sequence",
             ),
         ]
@@ -167,77 +170,105 @@ class ForEachNode(Node[SequenceData, SequenceData | Empty, ForEachParams]):
             )
             inner_nodes.append(gather)
             edges.append(
-                Edge.from_nodes(
-                    source=gather,
+                _edge(
+                    source_id=gather.id,
                     source_key="sequence",
-                    target=output_node,
+                    target_id=output_node.id,
                     target_key="sequence",
                 )
             )
 
+        # Pre-compute adapter templates (created once, namespaced per iteration)
+        needs_input_adapter = not has_single_input
+        needs_output_adapter = not has_single_output and not has_no_output
+        input_adapter_template = (
+            ExpandDataNode.from_data_type(
+                id="input_adapter",
+                data_type=self.workflow.input_type,
+            )
+            if needs_input_adapter
+            else None
+        )
+        output_adapter_template = (
+            GatherDataNode.from_data_type(
+                id="output_adapter",
+                data_type=self.workflow.output_type,
+            )
+            if needs_output_adapter
+            else None
+        )
+
+        # Cache expand/gather IDs
+        expand_id = expand.id
+        gather_id = gather.id if gather is not None else None
+
+        # Cache the base workflow's input/output node IDs (before namespacing)
+        base_input_id = self.workflow.input_node.id
+        base_output_id = self.workflow.output_node.id
+        base_edges = self.workflow.edges
+        base_inner_nodes = self.workflow.inner_nodes
+
         for i in range(n):
             namespace = f"element_{i}"
-            item_workflow = self.workflow.with_namespace(namespace)
+            prefix = f"{namespace}/"
+
+            # Namespace inner nodes directly
+            namespaced_inner = [node.with_namespace(namespace) for node in base_inner_nodes]
+            inner_nodes.extend(namespaced_inner)
+
+            # Namespace the input/output node IDs
+            ns_input_id = f"{prefix}{base_input_id}"
+            ns_output_id = f"{prefix}{base_output_id}"
 
             input_adapter = (
-                ExpandDataNode.from_data_type(
-                    id="input_adapter",
-                    data_type=self.workflow.input_type,
-                ).with_namespace(namespace)
-                if not self._has_single_input()
+                input_adapter_template.with_namespace(namespace)
+                if input_adapter_template is not None
                 else None
             )
             output_adapter = (
-                GatherDataNode.from_data_type(
-                    id="output_adapter",
-                    data_type=self.workflow.output_type,
-                ).with_namespace(namespace)
-                if self._has_single_output() is False and has_no_output is False
+                output_adapter_template.with_namespace(namespace)
+                if output_adapter_template is not None
                 else None
             )
 
             if input_adapter is not None:
                 inner_nodes.append(input_adapter)
-            inner_nodes.extend(item_workflow.inner_nodes)
-            if output_adapter is not None:
-                inner_nodes.append(output_adapter)
-
-            if input_adapter is not None:
                 edges.append(
-                    Edge.from_nodes(
-                        source=expand,
+                    _edge(
+                        source_id=expand_id,
                         source_key=expand.key(i),
-                        target=input_adapter,
+                        target_id=input_adapter.id,
                         target_key="data",
                     )
                 )
+            if output_adapter is not None:
+                inner_nodes.append(output_adapter)
 
-            for edge in item_workflow.edges:
-                if edge.source_id == item_workflow.input_node.id:
-                    source_id = (
-                        input_adapter.id if input_adapter is not None else expand.id
-                    )
-                    source_key = (
-                        edge.source_key if input_adapter is not None else expand.key(i)
-                    )
+            # Rewire edges from the base workflow
+            input_adapter_id = input_adapter.id if input_adapter is not None else None
+            output_adapter_id = output_adapter.id if output_adapter is not None else None
+
+            for edge in base_edges:
+                # Determine source
+                if edge.source_id == base_input_id:
+                    source_id = input_adapter_id if input_adapter_id is not None else expand_id
+                    source_key = edge.source_key if input_adapter_id is not None else expand.key(i)
                 else:
-                    source_id = edge.source_id
+                    source_id = f"{prefix}{edge.source_id}"
                     source_key = edge.source_key
-                if edge.target_id == item_workflow.output_node.id:
+
+                # Determine target
+                if edge.target_id == base_output_id:
                     if has_no_output:
                         continue
-                    assert gather is not None
-                    target_id = (
-                        output_adapter.id if output_adapter is not None else gather.id
-                    )
-                    target_key = (
-                        edge.target_key if output_adapter is not None else gather.key(i)
-                    )
+                    target_id = output_adapter_id if output_adapter_id is not None else gather_id
+                    target_key = edge.target_key if output_adapter_id is not None else gather.key(i)
                 else:
-                    target_id = edge.target_id
+                    target_id = f"{prefix}{edge.target_id}"
                     target_key = edge.target_key
+
                 edges.append(
-                    Edge(
+                    _edge(
                         source_id=source_id,
                         source_key=source_key,
                         target_id=target_id,
@@ -248,15 +279,15 @@ class ForEachNode(Node[SequenceData, SequenceData | Empty, ForEachParams]):
             if output_adapter is not None:
                 assert gather is not None
                 edges.append(
-                    Edge.from_nodes(
-                        source=output_adapter,
+                    _edge(
+                        source_id=output_adapter.id,
                         source_key="data",
-                        target=gather,
+                        target_id=gather_id,
                         target_key=gather.key(i),
                     )
                 )
 
-        return Workflow(
+        return Workflow._construct_trusted(
             input_node=input_node,
             inner_nodes=inner_nodes,
             output_node=output_node,

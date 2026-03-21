@@ -33,7 +33,7 @@ from ..utils.semver import (
     SEMANTIC_VERSION_PATTERN,
     parse_semantic_version,
 )
-from .error import NodeException, ShouldYield, UserException
+from .error import NodeException, ShouldRetry, ShouldYield, UserException
 from .values import (
     Data,
     DataMapping,
@@ -241,6 +241,13 @@ class Node(ImmutableBaseModel, Generic[Input_contra, Output_co, Params_co]):
         """
         return self.TYPE_INFO.display_name
 
+    # Cached properties that do NOT depend on node ID and should be
+    # preserved across with_namespace copies.
+    _ID_INDEPENDENT_CACHED = frozenset({
+        "input_type", "output_type", "input_fields", "output_fields",
+        "input_schema", "output_schema",
+    })
+
     def with_namespace(self, namespace: str) -> Self:
         """
         Create a copy of this node with a namespaced ID.
@@ -251,7 +258,22 @@ class Node(ImmutableBaseModel, Generic[Input_contra, Output_co, Params_co]):
         Returns:
             A new Node with ID '{namespace}/{self.id}'
         """
-        return self.model_update(id=f"{namespace}/{self.id}")
+        # Fast path: use model_copy and directly set the new id,
+        # skipping full re-validation since only the id changes.
+        copy = self.model_copy(update={"id": f"{namespace}/{self.id}"})
+        # Clear cached properties that depend on the id, but keep
+        # id-independent ones (input_type, output_type, etc.) to avoid
+        # expensive re-computation (e.g., create_model calls).
+        model_field_names = set(self.__class__.model_fields.keys())
+        id_independent = self._ID_INDEPENDENT_CACHED
+        copy_dict = copy.__dict__
+        cached_keys = [
+            k for k in copy_dict
+            if k not in model_field_names and k not in id_independent
+        ]
+        for key in cached_keys:
+            del copy_dict[key]
+        return copy
 
     # --------------------------------------------------------------------------
     # VERSIONING
@@ -373,6 +395,10 @@ class Node(ImmutableBaseModel, Generic[Input_contra, Output_co, Params_co]):
                 casted_input[key] = casted_value
 
         try:
+            # Fast path: if all input fields are present and type-checked,
+            # skip full model_validate and use model_construct directly.
+            if not cast_tasks and len(casted_input) == len(input_fields):
+                return self.input_type.model_construct(**casted_input)
             return self.input_type.model_validate(casted_input)
         except ValidationError as e:
             raise UserException(
@@ -433,6 +459,10 @@ class Node(ImmutableBaseModel, Generic[Input_contra, Output_co, Params_co]):
             return output
         except ShouldYield:
             raise
+        except ShouldRetry as e:
+            # ShouldRetry is an expected transient failure handled by the
+            # execution loop — skip expensive traceback formatting.
+            raise NodeException(self.id) from e
         except Exception as e:
             # In subclasses, you don't have to worry about logging the error,
             # since it'll be logged here.

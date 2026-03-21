@@ -50,6 +50,34 @@ class TopologicalExecutionAlgorithm(ExecutionAlgorithm):
             return node.TYPE_INFO.max_retries
         return None
 
+    @staticmethod
+    def _build_successor_map(
+        workflow: Workflow,
+    ) -> dict[str, set[str]]:
+        """Build a mapping from each node to the set of nodes that depend on it."""
+        successors: dict[str, set[str]] = {node.id: set() for node in workflow.nodes}
+        for edge in workflow.edges:
+            successors[edge.source_id].add(edge.target_id)
+        return successors
+
+    @staticmethod
+    def _check_node_ready(
+        node_id: str,
+        edges_by_target: dict[str, dict[str, "Edge"]],
+        node_outputs: dict[str, DataMapping],
+    ) -> DataMapping | None:
+        """Check if a node is ready and return its input, or None if not ready."""
+        node_edges = edges_by_target.get(node_id)
+        if not node_edges:
+            return {}
+        node_input: dict[str, object] = {}
+        for target_key, edge in node_edges.items():
+            source_output = node_outputs.get(edge.source_id)
+            if source_output is None:
+                return None
+            node_input[target_key] = source_output[edge.source_key]
+        return node_input  # type: ignore
+
     @override
     async def execute(
         self,
@@ -71,10 +99,22 @@ class TopologicalExecutionAlgorithm(ExecutionAlgorithm):
         # Track nodes that yielded (node_id -> yield message)
         node_yields: dict[str, str] = {}
 
-        try:
-            ready_nodes = {workflow.input_node.id: input}
+        # Build successor map for incremental ready-node tracking
+        successors = self._build_successor_map(workflow)
+        edges_by_target = workflow.edges_by_target
+        _check_ready = self._check_node_ready
 
-            while len(ready_nodes) > 0 or len(pending_retry) > 0:
+        try:
+            # Seed with ALL initially ready nodes (input node + nodes with no incoming edges)
+            ready_nodes: dict[str, DataMapping] = {}
+            for node in workflow.nodes:
+                nid = node.id
+                if nid == workflow.input_node.id:
+                    ready_nodes[nid] = input
+                elif not edges_by_target.get(nid):
+                    ready_nodes[nid] = {}
+
+            while ready_nodes or pending_retry:
                 # Check if any pending retries are now ready
                 for node_id in list(pending_retry.keys()):
                     state = retry_tracker.get_state(node_id)
@@ -88,7 +128,7 @@ class TopologicalExecutionAlgorithm(ExecutionAlgorithm):
                         await asyncio.sleep(wait_time.total_seconds())
                     continue
 
-                if len(ready_nodes) == 0:
+                if not ready_nodes:
                     break
 
                 node_id, node_input = ready_nodes.popitem()
@@ -99,11 +139,13 @@ class TopologicalExecutionAlgorithm(ExecutionAlgorithm):
                 if limiter is not None:
                     await limiter.acquire()
 
+                expanded = False
                 try:
                     node_result = await node(context, node_input)
 
                     if isinstance(node_result, Workflow):
                         workflow = workflow.expand_node(node_id, node_result)
+                        expanded = True
                     else:
                         node_outputs[node.id] = node_result
 
@@ -145,14 +187,26 @@ class TopologicalExecutionAlgorithm(ExecutionAlgorithm):
                     if limiter is not None:
                         limiter.release()
 
-                ready_nodes = {
-                    node_id: node_input
-                    for node_id, node_input in workflow.get_ready_nodes(
-                        node_outputs=node_outputs,
-                        partial_results=ready_nodes,
-                    ).items()
-                    if node_id not in node_yields
-                }
+                if expanded:
+                    # After expansion, rebuild maps and do a full scan
+                    successors = self._build_successor_map(workflow)
+                    edges_by_target = workflow.edges_by_target
+                    ready_nodes = {
+                        node_id: node_input
+                        for node_id, node_input in workflow.get_ready_nodes(
+                            node_outputs=node_outputs,
+                            partial_results=ready_nodes,
+                        ).items()
+                        if node_id not in node_yields
+                    }
+                else:
+                    # Incremental: only check successors of the just-completed node
+                    for succ_id in successors.get(node_id, ()):
+                        if succ_id in node_outputs or succ_id in ready_nodes or succ_id in node_yields:
+                            continue
+                        succ_input = _check_ready(succ_id, edges_by_target, node_outputs)
+                        if succ_input is not None:
+                            ready_nodes[succ_id] = succ_input
 
             if len(node_yields) > 0:
                 partial_output = await workflow.get_output(

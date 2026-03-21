@@ -1,5 +1,6 @@
 # workflow_engine/core/workflow.py
 import asyncio
+from collections import defaultdict
 from collections.abc import Mapping, Sequence
 from functools import cached_property
 from typing import TYPE_CHECKING, Type
@@ -46,15 +47,14 @@ class Workflow(ImmutableBaseModel):
         A mapping from each node and input key to the (unique) edge that targets
         the node at that key.
         """
-        edges_by_target: dict[str, dict[str, Edge]] = {
-            node.id: {} for node in self.nodes
-        }
+        edges_by_target: defaultdict[str, dict[str, Edge]] = defaultdict(dict)
         for edge in self.edges:
-            if edge.target_key in edges_by_target[edge.target_id]:
+            target_edges = edges_by_target[edge.target_id]
+            if edge.target_key in target_edges:
                 raise ValueError(
                     f"In-edge to {edge.target_id}.{edge.target_key} is already in the graph"
                 )
-            edges_by_target[edge.target_id][edge.target_key] = edge
+            target_edges[edge.target_key] = edge
         return edges_by_target
 
     @cached_property
@@ -141,6 +141,31 @@ class Workflow(ImmutableBaseModel):
                     f"Please ensure no node ID is a prefix of another when followed by '/'."
                 )
         return self
+
+    @classmethod
+    def _construct_trusted(
+        cls,
+        *,
+        input_node: "InputNode",
+        inner_nodes: "Sequence[Node]",
+        output_node: "OutputNode",
+        edges: "Sequence[Edge]",
+    ) -> "Workflow":
+        """
+        Construct a Workflow without running model validators (DAG check,
+        prefix collision check, nx_graph construction).
+
+        Only use this when the inputs are known to form a valid DAG — e.g.,
+        when the workflow is derived from an already-validated workflow via
+        namespace prefixing or structural expansion.
+        """
+        obj = cls.model_construct(
+            input_node=input_node,
+            inner_nodes=inner_nodes,
+            output_node=output_node,
+            edges=edges,
+        )
+        return obj
 
     def get_ready_nodes(
         self,
@@ -301,15 +326,20 @@ class Workflow(ImmutableBaseModel):
             ] + list(subgraph.nodes)
             new_edges: list[Edge] = list(subgraph.edges)
 
+            subgraph_input_id = subgraph.input_node.id
+            subgraph_output_id = subgraph.output_node.id
+            subgraph_input_fields = subgraph.input_node.input_fields
+
+            _edge = Edge.model_construct
             for edge in self.edges:
                 if edge.target_id == node_id:
                     # Only create the edge if the subgraph's input_node has this field
-                    if edge.target_key in subgraph.input_node.input_fields:
+                    if edge.target_key in subgraph_input_fields:
                         new_edges.append(
-                            Edge(
+                            _edge(
                                 source_id=edge.source_id,
                                 source_key=edge.source_key,
-                                target_id=subgraph.input_node.id,
+                                target_id=subgraph_input_id,
                                 target_key=edge.target_key,
                             )
                         )
@@ -317,8 +347,8 @@ class Workflow(ImmutableBaseModel):
                     # (e.g., control fields like 'condition' for IfElseNode)
                 elif edge.source_id == node_id:
                     new_edges.append(
-                        Edge(
-                            source_id=subgraph.output_node.id,
+                        _edge(
+                            source_id=subgraph_output_id,
                             source_key=edge.source_key,
                             target_id=edge.target_id,
                             target_key=edge.target_key,
@@ -327,7 +357,7 @@ class Workflow(ImmutableBaseModel):
                 else:
                     new_edges.append(edge)
 
-            return Workflow(
+            return Workflow._construct_trusted(
                 inner_nodes=new_inner_nodes,
                 input_node=self.input_node,
                 output_node=self.output_node,
@@ -346,8 +376,9 @@ class Workflow(ImmutableBaseModel):
         Returns:
             A new Workflow with all node IDs prefixed with '{namespace}/'
         """
-        # Create namespaced nodes
-        return Workflow(
+        # Create namespaced nodes — skip validation since we're just
+        # prefixing IDs on a known-valid workflow
+        return Workflow._construct_trusted(
             input_node=self.input_node.with_namespace(namespace),
             inner_nodes=[node.with_namespace(namespace) for node in self.inner_nodes],
             output_node=self.output_node.with_namespace(namespace),
