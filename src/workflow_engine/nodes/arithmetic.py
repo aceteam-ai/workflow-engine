@@ -80,10 +80,8 @@ class AddNode(Node[Data, SumOutput, AddNodeParams]):
         return SumOutput
 
     async def run(self, context: Context, input: Data) -> SumOutput:
-        total = sum(
-            getattr(input, _argument_field_name(i)).root
-            for i in range(self.params.num_arguments.root)
-        )
+        # Use model_fields_set or __dict__ for faster iteration
+        total = sum(v.root for v in input.__dict__.values())
         return SumOutput(sum=FloatValue(total))
 
     @classmethod
