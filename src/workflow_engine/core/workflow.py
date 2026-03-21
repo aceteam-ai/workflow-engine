@@ -219,8 +219,9 @@ class Workflow(ImmutableBaseModel):
         Raises:
             UserException: If a required output is missing or cannot be cast
         """
-        # First pass: Validate all outputs exist and can be cast
-        outputs_to_cast: list[tuple[str, Value, ValueType]] = []
+        # Single pass: validate and cast, with fast path for identity casts
+        output: DataMapping = {}
+        cast_tasks: list[tuple[str, asyncio.Task | None]] = []
 
         for edge in self.output_edges:
             if edge.source_id not in node_outputs:
@@ -240,6 +241,11 @@ class Workflow(ImmutableBaseModel):
             output_field = node_output[edge.source_key]
             expected_type, _ = self.output_fields[edge.target_key]
 
+            # Fast path: value already matches expected type
+            if isinstance(output_field, expected_type):
+                output[edge.target_key] = output_field
+                continue
+
             # Validate that the output can be cast to the expected type
             if not output_field.can_cast_to(expected_type):
                 raise UserException(
@@ -247,27 +253,16 @@ class Workflow(ImmutableBaseModel):
                     f"cannot be cast: {output_field} is not assignable to {expected_type}"
                 )
 
-            outputs_to_cast.append((edge.target_key, output_field, expected_type))
+            cast_tasks.append((edge.target_key, output_field.cast_to(expected_type, context=context)))
 
-        # Second pass: Cast all outputs in parallel
-        cast_tasks = [
-            output_field.cast_to(expected_type, context=context)
-            for _, output_field, expected_type in outputs_to_cast
-        ]
-
-        if len(cast_tasks) == 0:
-            return {}
-
-        casted_values = await asyncio.gather(*cast_tasks)
-
-        # Build the result dictionary
-        output: DataMapping = {}
-        for (output_key, _, _), casted_value in zip(
-            outputs_to_cast,
-            casted_values,
-            strict=True,
-        ):
-            output[output_key] = casted_value
+        if cast_tasks:
+            if len(cast_tasks) == 1:
+                key, coro = cast_tasks[0]
+                output[key] = await coro
+            else:
+                casted_values = await asyncio.gather(*(coro for _, coro in cast_tasks))
+                for (key, _), casted_value in zip(cast_tasks, casted_values):
+                    output[key] = casted_value
 
         return output
 
