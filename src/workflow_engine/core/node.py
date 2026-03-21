@@ -33,7 +33,7 @@ from ..utils.semver import (
     SEMANTIC_VERSION_PATTERN,
     parse_semantic_version,
 )
-from .error import NodeException, ShouldYield, UserException
+from .error import NodeException, ShouldRetry, ShouldYield, UserException
 from .values import (
     Data,
     DataMapping,
@@ -459,6 +459,10 @@ class Node(ImmutableBaseModel, Generic[Input_contra, Output_co, Params_co]):
             return output
         except ShouldYield:
             raise
+        except ShouldRetry as e:
+            # ShouldRetry is an expected transient failure handled by the
+            # execution loop — skip expensive traceback formatting.
+            raise NodeException(self.id) from e
         except Exception as e:
             # In subclasses, you don't have to worry about logging the error,
             # since it'll be logged here.
