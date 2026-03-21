@@ -333,8 +333,10 @@ class Node(ImmutableBaseModel, Generic[Input_contra, Output_co, Params_co]):
         )
 
         # Single pass: validate castability and collect cast tasks
+        # Fast path: if all values are already the right type, skip cast_to entirely
         cast_tasks: list[Awaitable[Value]] = []
-        keys: list[str] = []
+        cast_keys: list[str] = []
+        casted_input: dict[str, Value] = {}
         input_fields = self.input_fields
         for key, value in input.items():
             if key not in input_fields:
@@ -342,20 +344,21 @@ class Node(ImmutableBaseModel, Generic[Input_contra, Output_co, Params_co]):
                     continue
                 continue
             input_type, _ = input_fields[key]
-            if not value.can_cast_to(input_type):
-                raise UserException(
-                    f"Input {value} for node {self.id} is invalid: {value} is not assignable to {input_type}"
-                )
-            cast_tasks.append(value.cast_to(input_type, context=context))
-            keys.append(key)
+            # Fast path: value is already the exact type needed
+            if isinstance(value, input_type):
+                casted_input[key] = value
+            else:
+                if not value.can_cast_to(input_type):
+                    raise UserException(
+                        f"Input {value} for node {self.id} is invalid: {value} is not assignable to {input_type}"
+                    )
+                cast_tasks.append(value.cast_to(input_type, context=context))
+                cast_keys.append(key)
 
         if cast_tasks:
             casted_values = await asyncio.gather(*cast_tasks)
-        else:
-            casted_values = ()
-
-        # Build the result dictionary
-        casted_input: dict[str, Value] = dict(zip(keys, casted_values))
+            for key, casted_value in zip(cast_keys, casted_values):
+                casted_input[key] = casted_value
 
         try:
             return self.input_type.model_validate(casted_input)

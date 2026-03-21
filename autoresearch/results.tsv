@@ -2,3 +2,6 @@ experiment_id	timestamp	description	total_time_s	peak_memory_mb	correctness	kept
 000	2026-03-21T00:00:00	baseline (unmodified engine)	0.0553	0.06	8/8	yes
 001	2026-03-21T00:01:00	merge validate+cast loops in _cast_input	0.0521	0.06	8/8	yes
 002	2026-03-21T00:02:00	reuse identity caster in get_caster	0.0524	0.06	8/8	yes
+003	2026-03-21T00:03:00	successor-based get_ready_nodes	0.0559	0.06	8/8	no
+004	2026-03-21T00:04:00	guard logger.info with isEnabledFor	0.0515	0.06	8/8	no
+005	2026-03-21T00:05:00	skip cast_to for values already matching target type	0.0454	0.06	8/8	yes
