@@ -162,37 +162,36 @@ class Workflow(ImmutableBaseModel):
         ready_nodes: dict[str, DataMapping] = (
             {} if partial_results is None else dict(partial_results)
         )
+        edges_by_target = self.edges_by_target
         for node in self.nodes:
+            node_id = node.id
             # remove the node if it is now finished
-            if node.id in node_outputs:
-                if node.id in ready_nodes:
-                    ready_nodes.pop(node.id)
+            if node_id in node_outputs:
+                if node_id in ready_nodes:
+                    del ready_nodes[node_id]
                 continue
             # skip the node if it is already in the ready set
-            if node.id in ready_nodes:
+            if node_id in ready_nodes:
                 continue
 
             # node might be ready, we have to check all its input edges
+            node_edges = edges_by_target[node_id]
+            if not node_edges:
+                # No incoming edges = always ready (e.g., constant nodes)
+                ready_nodes[node_id] = {}
+                continue
+
             ready: bool = True
             node_input_dict: DataMapping = {}
-            for target_key, edge in self.edges_by_target[node.id].items():
-                # if the input is missing, we will let the node figure it out
-                if edge.source_id in node_outputs:
-                    node_input_dict[target_key] = node_outputs[edge.source_id][
-                        edge.source_key
-                    ]
+            for target_key, edge in node_edges.items():
+                source_output = node_outputs.get(edge.source_id)
+                if source_output is not None:
+                    node_input_dict[target_key] = source_output[edge.source_key]
                 else:
                     ready = False
                     break
-            if not ready:
-                continue
-
-            try:
-                ready_nodes[node.id] = node_input_dict
-            except ValidationError as e:
-                raise UserException(
-                    f"Input {node_input_dict} for node {node.id} is invalid: {e}",
-                )
+            if ready:
+                ready_nodes[node_id] = node_input_dict
         return ready_nodes
 
     async def get_output(
