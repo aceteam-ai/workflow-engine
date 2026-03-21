@@ -330,12 +330,13 @@ class Workflow(ImmutableBaseModel):
             subgraph_output_id = subgraph.output_node.id
             subgraph_input_fields = subgraph.input_node.input_fields
 
+            _edge = Edge.model_construct
             for edge in self.edges:
                 if edge.target_id == node_id:
                     # Only create the edge if the subgraph's input_node has this field
                     if edge.target_key in subgraph_input_fields:
                         new_edges.append(
-                            Edge(
+                            _edge(
                                 source_id=edge.source_id,
                                 source_key=edge.source_key,
                                 target_id=subgraph_input_id,
@@ -346,7 +347,7 @@ class Workflow(ImmutableBaseModel):
                     # (e.g., control fields like 'condition' for IfElseNode)
                 elif edge.source_id == node_id:
                     new_edges.append(
-                        Edge(
+                        _edge(
                             source_id=subgraph_output_id,
                             source_key=edge.source_key,
                             target_id=edge.target_id,
