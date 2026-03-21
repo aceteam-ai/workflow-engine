@@ -229,6 +229,8 @@ class Value(ImmutableRootModel[T], Generic[T]):
 
         return wrap
 
+    _identity_caster: ClassVar[Caster] = staticmethod(lambda value, context: value)  # type: ignore
+
     @classmethod
     def get_caster(cls, t: type[V]) -> Caster[Self, V] | None:
         converters = cls._get_casters()
@@ -240,7 +242,7 @@ class Value(ImmutableRootModel[T], Generic[T]):
                 return caster
 
         if issubclass(cls, t):
-            return lambda value, context: value  # type: ignore
+            return cls._identity_caster  # type: ignore
 
         return None
 
