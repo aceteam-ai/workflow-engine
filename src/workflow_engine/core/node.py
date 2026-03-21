@@ -48,6 +48,16 @@ if TYPE_CHECKING:
     from .context import Context
     from .workflow import Workflow
 
+_Workflow_cls = None
+
+
+def _get_workflow_cls():
+    global _Workflow_cls
+    if _Workflow_cls is None:
+        from .workflow import Workflow
+        _Workflow_cls = Workflow
+    return _Workflow_cls
+
 logger = logging.getLogger(__name__)
 
 
@@ -404,9 +414,7 @@ class Node(ImmutableBaseModel, Generic[Input_contra, Output_co, Params_co]):
                 return output
             output_obj = await self.run(context, input_obj)
 
-            from .workflow import Workflow  # lazy to avoid circular import
-
-            if isinstance(output_obj, Workflow):
+            if isinstance(output_obj, _get_workflow_cls()):
                 output = await context.on_node_expand(
                     node=self,
                     input=input,
