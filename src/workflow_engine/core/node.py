@@ -395,6 +395,10 @@ class Node(ImmutableBaseModel, Generic[Input_contra, Output_co, Params_co]):
                 casted_input[key] = casted_value
 
         try:
+            # Fast path: if all input fields are present and type-checked,
+            # skip full model_validate and use model_construct directly.
+            if not cast_tasks and len(casted_input) == len(input_fields):
+                return self.input_type.model_construct(**casted_input)
             return self.input_type.model_validate(casted_input)
         except ValidationError as e:
             raise UserException(
