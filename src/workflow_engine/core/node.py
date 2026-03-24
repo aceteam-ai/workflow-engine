@@ -390,17 +390,19 @@ class Node(ImmutableBaseModel, Generic[Input_contra, Output, Params_co]):
         """
         Executes the node.
         """
+        casted_input: DataMapping | None = None
         try:
             logger.info("Starting node %s", self.id)
             try:
                 input_obj = await self._cast_input(input, context, input_type)
             except ValidationError as e:
                 raise UserException(f"Input {input} for node {self.id} is invalid: {e}")
+            casted_input = get_data_dict(input_obj)
             output = await context.on_node_start(
                 node=self,
                 input_type=input_type,
                 output_type=output_type,
-                input=get_data_dict(input_obj),
+                input=casted_input,
             )
             if output is not None:
                 return output
@@ -425,7 +427,7 @@ class Node(ImmutableBaseModel, Generic[Input_contra, Output, Params_co]):
                     node=self,
                     input_type=input_type,
                     output_type=output_type,
-                    input=input,
+                    input=casted_input,
                     workflow=workflow,
                 )
                 # TODO: once that workflow eventually finishes running, its
@@ -436,7 +438,7 @@ class Node(ImmutableBaseModel, Generic[Input_contra, Output, Params_co]):
                     node=self,
                     input_type=input_type,
                     output_type=output_type,
-                    input=input,
+                    input=casted_input,
                     output=get_data_dict(output_obj),
                 )
             logger.info("Finished node %s", self.id)
@@ -451,7 +453,7 @@ class Node(ImmutableBaseModel, Generic[Input_contra, Output, Params_co]):
                 node=self,
                 input_type=input_type,
                 output_type=output_type,
-                input=input,
+                input=casted_input if casted_input is not None else input,
                 exception=e,
             )
             if isinstance(e, Mapping):
