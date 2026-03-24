@@ -6,7 +6,7 @@ Nodes that iterate over a sequence of items.
 from typing import ClassVar, Literal, Self, Type
 
 from overrides import override
-from pydantic import Field
+from pydantic import Field, PrivateAttr
 
 from workflow_engine.core.io import SchemaParams
 
@@ -72,7 +72,7 @@ class ForEachNode(Node[SequenceData, SequenceData | Empty, ForEachParams]):
 
     type: Literal["ForEach"] = "ForEach"  # pyright: ignore[reportIncompatibleVariableOverride]
 
-    _workflow: ValidatedWorkflow | None = None
+    _workflow: ValidatedWorkflow | None = PrivateAttr(default=None)
 
     async def workflow(self, context: ValidationContext) -> ValidatedWorkflow:
         if self._workflow is None:
