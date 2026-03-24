@@ -56,7 +56,8 @@ class Edge(ImmutableBaseModel):
         target_key: str,
     ) -> Self:
         """
-        Self-validating factory method.
+        Factory method. Does not validate types; type validation happens
+        during workflow validation when node types have been resolved.
         """
         return cls(
             source_id=source.id,

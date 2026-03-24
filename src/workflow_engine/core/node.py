@@ -328,12 +328,14 @@ class Node(ImmutableBaseModel, Generic[Input_contra, Output, Params_co]):
 
         # Validate all inputs first
         for key, value in input.items():
-            if key not in input_fields and allow_extra_input:
-                continue
+            if key not in input_fields:
+                if allow_extra_input:
+                    continue
+                raise UserException(f"Unknown input field '{key}' for node {self.id}")
             input_field_type, _ = input_fields[key]
             if not value.can_cast_to(input_field_type):
                 raise UserException(
-                    f"Input {value} for node {self.id} is invalid: {value} is not assignable to {input_type}"
+                    f"Input {value} for node {self.id} is invalid: {value} is not assignable to {input_field_type}"
                 )
 
         # Cast all inputs in parallel

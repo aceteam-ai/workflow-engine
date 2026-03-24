@@ -42,6 +42,7 @@ class LocalContext(ExecutionContext):
         else:
             run_dir = os.path.join(base_dir, run_id)
         os.makedirs(run_dir, exist_ok=True)
+        super().__init__()
         self.run_id = run_id
         self.run_dir = run_dir
 

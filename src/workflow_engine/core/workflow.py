@@ -28,11 +28,6 @@ if TYPE_CHECKING:
     from .context import ExecutionContext, ValidationContext
 
 
-class ValidatedWorkflowRef:
-    def __init__(self, workflow: ValidatedWorkflow | None = None):
-        self.workflow = workflow
-
-
 class Workflow(ImmutableBaseModel):
     model_config = ConfigDict(frozen=True)
 
@@ -187,11 +182,11 @@ class Workflow(ImmutableBaseModel):
         }
 
         for edge in self.edges:
-            if edge.source_id not in node_input_types:
+            if edge.source_id not in node_output_types:
                 raise ValueError(
                     f"Edge {edge.source_id} -> {edge.target_id} has a source that is not a node"
                 )
-            if edge.target_id not in node_output_types:
+            if edge.target_id not in node_input_types:
                 raise ValueError(
                     f"Edge {edge.source_id} -> {edge.target_id} has a target that is not a node"
                 )
@@ -391,7 +386,7 @@ class ValidatedWorkflow(Workflow):
         ID collisions. Input and output edges are reconnected appropriately.
 
         Perhaps foolishly, we do not re-validate that the new workflow's input
-        and output types are compatible with the
+        and output types are compatible with those of the node being replaced.
 
         Args:
             node_id: ID of the node to replace
