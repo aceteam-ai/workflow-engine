@@ -1,5 +1,6 @@
 import pytest
 
+from workflow_engine import ValidationContext
 from workflow_engine.nodes import ConstantStringNode
 
 
@@ -35,18 +36,24 @@ def test_constant_string_node_type_info():
 
 
 @pytest.mark.unit
-def test_constant_string_node_output_schema_has_field_title_and_description():
+async def test_constant_string_node_output_schema_has_field_title_and_description():
     """Field titles and descriptions should appear in the output schema."""
     node = ConstantStringNode.from_value(id="test_node", value="test")
-    value_prop = node.output_schema.model_dump()["properties"]["value"]
+    context = ValidationContext()
+    output_type = await node.output_type(context)
+    output_schema = output_type.model_json_schema()
+    value_prop = output_schema["properties"]["value"]
     assert value_prop["title"] == "Value"
     assert value_prop["description"] == "The constant string value."
 
 
 @pytest.mark.unit
-def test_constant_string_node_input_schema():
+async def test_constant_string_node_input_schema():
     node = ConstantStringNode.from_value(id="test_node", value="test")
-    assert node.input_schema.model_dump() == {
+    context = ValidationContext()
+    input_type = await node.input_type(context)
+    input_schema = input_type.model_json_schema()
+    assert input_schema == {
         "additionalProperties": False,
         "description": "A Data and Params class that is explicitly not allowed to have any\nparameters.",
         "properties": {},
@@ -56,9 +63,12 @@ def test_constant_string_node_input_schema():
 
 
 @pytest.mark.unit
-def test_constant_string_node_output_schema():
+async def test_constant_string_node_output_schema():
     node = ConstantStringNode.from_value(id="test_node", value="test")
-    assert node.output_schema.model_dump() == {
+    context = ValidationContext()
+    output_type = await node.output_type(context)
+    output_schema = output_type.model_json_schema()
+    assert output_schema == {
         "$defs": {
             "StringValue": {
                 "type": "string",

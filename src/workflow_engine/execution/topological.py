@@ -8,10 +8,10 @@ import asyncio
 from overrides import override
 
 from ..core import (
-    Context,
+    ExecutionContext,
     DataMapping,
     ExecutionAlgorithm,
-    Workflow,
+    ValidatedWorkflow,
     WorkflowErrors,
     WorkflowExecutionResult,
 )
@@ -54,8 +54,8 @@ class TopologicalExecutionAlgorithm(ExecutionAlgorithm):
     async def execute(
         self,
         *,
-        context: Context,
-        workflow: Workflow,
+        context: ExecutionContext,
+        workflow: ValidatedWorkflow,
         input: DataMapping,
     ) -> WorkflowExecutionResult:
         result = await context.on_workflow_start(workflow=workflow, input=input)
@@ -93,6 +93,8 @@ class TopologicalExecutionAlgorithm(ExecutionAlgorithm):
 
                 node_id, node_input = ready_nodes.popitem()
                 node = workflow.nodes_by_id[node_id]
+                input_type = workflow.node_input_types[node_id]
+                output_type = workflow.node_output_types[node_id]
 
                 # Acquire rate limiter if configured for this node type
                 limiter = self.rate_limits.get_limiter(node.type)
@@ -100,9 +102,14 @@ class TopologicalExecutionAlgorithm(ExecutionAlgorithm):
                     await limiter.acquire()
 
                 try:
-                    node_result = await node(context, node_input)
+                    node_result = await node(
+                        context=context,
+                        input_type=input_type,
+                        output_type=output_type,
+                        input=node_input,
+                    )
 
-                    if isinstance(node_result, Workflow):
+                    if isinstance(node_result, ValidatedWorkflow):
                         workflow = workflow.expand_node(node_id, node_result)
                     else:
                         node_outputs[node.id] = node_result
@@ -111,6 +118,8 @@ class TopologicalExecutionAlgorithm(ExecutionAlgorithm):
                     node_yields[node_id] = e.message
                     await context.on_node_yield(
                         node=node,
+                        input_type=input_type,
+                        output_type=output_type,
                         input=node_input,
                         exception=e,
                     )
@@ -130,6 +139,8 @@ class TopologicalExecutionAlgorithm(ExecutionAlgorithm):
                             state = retry_tracker.get_state(node_id)
                             await context.on_node_retry(
                                 node=node,
+                                input_type=input_type,
+                                output_type=output_type,
                                 input=node_input,
                                 exception=should_retry_error,
                                 attempt=state.attempt,

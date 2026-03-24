@@ -3,8 +3,7 @@
 Conditional nodes that run different workflows depending on a condition input.
 """
 
-from functools import cached_property
-from typing import ClassVar, Literal, Self
+from typing import ClassVar, Literal, Self, Type
 
 from overrides import override
 from pydantic import ConfigDict, Field
@@ -13,12 +12,13 @@ from ..core.values import build_data_type, get_data_fields
 
 from ..core import (
     BooleanValue,
-    Context,
+    ExecutionContext,
     Data,
     Empty,
     Node,
     NodeTypeInfo,
     Params,
+    ValidationContext,
     Workflow,
     WorkflowValue,
 )
@@ -69,23 +69,29 @@ class IfNode(Node[ConditionalInput, Empty, IfParams]):
 
     type: Literal["If"] = "If"  # pyright: ignore[reportIncompatibleVariableOverride]
 
-    @cached_property
-    def input_type(self):
+    @override
+    async def input_type(self, context: ValidationContext) -> Type[ConditionalInput]:
+        workflow_if_true = await self.params.if_true.root.validate(context)
         fields = dict(get_data_fields(ConditionalInput))
-        for key, field in self.params.if_true.root.input_fields.items():
+        for key, field in get_data_fields(workflow_if_true.input_type).items():
             assert key not in fields
             fields[key] = field
         return build_data_type("IfInput", fields, base_cls=ConditionalInput)
 
-    @cached_property
-    def output_type(self):
+    @override
+    async def output_type(self, context: ValidationContext) -> Type[Empty]:
         return Empty
 
     @override
-    async def run(self, context: Context, input: ConditionalInput) -> Empty | Workflow:
-        if input.condition:
-            return self.params.if_true.root
-        return Empty()
+    async def run(
+        self,
+        *,
+        context: ExecutionContext,
+        input_type: Type[ConditionalInput],
+        output_type: Type[Empty],
+        input: ConditionalInput,
+    ) -> Empty | Workflow:
+        return self.params.if_true.root if input.condition else Empty()
 
     @classmethod
     def from_workflow(
@@ -119,24 +125,34 @@ class IfElseNode(Node[ConditionalInput, Data, IfElseParams]):
     )
     type: Literal["IfElse"] = "IfElse"  # pyright: ignore[reportIncompatibleVariableOverride]
 
-    @cached_property
-    def input_type(self):
+    @override
+    async def input_type(self, context: ValidationContext) -> Type[ConditionalInput]:
         fields = dict(get_data_fields(ConditionalInput))
-        for key, field in self.params.if_true.root.input_fields.items():
+        workflow_if_true = await self.params.if_true.root.validate(context)
+        for key, field in get_data_fields(workflow_if_true.input_type).items():
             assert key not in fields
             fields[key] = field
         return build_data_type("IfElseInput", fields, base_cls=ConditionalInput)
 
-    @cached_property
-    def output_type(self):
+    @override
+    async def output_type(self, context: ValidationContext) -> Type[Data]:
+        workflow_if_true = await self.params.if_true.root.validate(context)
+        workflow_if_false = await self.params.if_false.root.validate(context)
         fields = mapping_intersection(
-            get_data_fields(self.params.if_true.root.output_type),
-            get_data_fields(self.params.if_false.root.output_type),
+            get_data_fields(workflow_if_true.output_type),
+            get_data_fields(workflow_if_false.output_type),
         )
         return build_data_type("IfElseOutput", fields)
 
     @override
-    async def run(self, context: Context, input: ConditionalInput) -> Workflow:
+    async def run(
+        self,
+        *,
+        context: ExecutionContext,
+        input_type: Type[ConditionalInput],
+        output_type: Type[Data],
+        input: ConditionalInput,
+    ) -> Workflow:
         return (
             self.params.if_true.root if input.condition else self.params.if_false.root
         )

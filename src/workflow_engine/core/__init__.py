@@ -1,5 +1,5 @@
 # workflow_engine/core/__init__.py
-from .context import Context
+from .context import ExecutionContext, ValidationContext
 from .edge import Edge
 from .engine import WorkflowEngine
 from .error import (
@@ -22,8 +22,6 @@ from .migration import (
     MigrationRegistry,
     MigrationRunner,
     MigrationValidationError,
-    clean_edges_after_migration,
-    load_workflow_with_migration,
     migration_registry,
     migration_runner,
 )
@@ -57,13 +55,13 @@ from .values import (
     ValueSchemaValue,
     ValueType,
 )
-from .workflow import Workflow, WorkflowValue
+from .workflow import ValidatedWorkflow, Workflow, WorkflowValue
 
 __all__ = [
     "BooleanValue",
     "Caster",
-    "clean_edges_after_migration",
-    "Context",
+    "ExecutionContext",
+    "ValidationContext",
     "Data",
     "DataMapping",
     "DataValue",
@@ -78,7 +76,6 @@ __all__ = [
     "IntegerValue",
     "JSON",
     "JSONValue",
-    "load_workflow_with_migration",
     "migration_registry",
     "migration_runner",
     "Migration",
@@ -105,6 +102,7 @@ __all__ = [
     "ValueSchema",
     "ValueSchemaValue",
     "ValueType",
+    "ValidatedWorkflow",
     "Workflow",
     "WorkflowEngine",
     "WorkflowErrors",

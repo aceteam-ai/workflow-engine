@@ -8,13 +8,13 @@ from typing import TypeVar
 from overrides import override
 
 from ..core import (
-    Context,
+    ExecutionContext,
     Data,
     DataMapping,
     FileValue,
     Node,
     UserException,
-    Workflow,
+    ValidatedWorkflow,
     WorkflowErrors,
     WorkflowExecutionResult,
 )
@@ -23,7 +23,7 @@ from ..core.values import dump_data_mapping, get_data_dict, serialize_data_mappi
 F = TypeVar("F", bound=FileValue)
 
 
-class LocalContext(Context):
+class LocalContext(ExecutionContext):
     """
     A context that uses the local filesystem to store files.
     """
@@ -42,6 +42,7 @@ class LocalContext(Context):
         else:
             run_dir = os.path.join(base_dir, run_id)
         os.makedirs(run_dir, exist_ok=True)
+        super().__init__()
         self.run_id = run_id
         self.run_dir = run_dir
 
@@ -122,6 +123,8 @@ class LocalContext(Context):
         self,
         *,
         node: Node,
+        input_type: type[Data],
+        output_type: type[Data],
         input: DataMapping,
     ) -> DataMapping | None:
         self._idempotent_write(
@@ -132,8 +135,7 @@ class LocalContext(Context):
         output_path = self.get_node_output_path(node.id)
         if os.path.exists(output_path):
             with open(output_path, "r") as f:
-                output = node.output_type.model_validate_json(f.read())
-            assert isinstance(output, Data)
+                output = output_type.model_validate_json(f.read())
             return get_data_dict(output)
         return None
 
@@ -142,6 +144,8 @@ class LocalContext(Context):
         self,
         *,
         node: Node,
+        input_type: type[Data],
+        output_type: type[Data],
         input: DataMapping,
         exception: Exception,
     ) -> Exception | DataMapping:
@@ -156,6 +160,8 @@ class LocalContext(Context):
         self,
         *,
         node: Node,
+        input_type: type[Data],
+        output_type: type[Data],
         input: DataMapping,
         output: DataMapping,
     ) -> DataMapping:
@@ -169,7 +175,7 @@ class LocalContext(Context):
     async def on_workflow_start(
         self,
         *,
-        workflow: Workflow,
+        workflow: ValidatedWorkflow,
         input: DataMapping,
     ) -> WorkflowExecutionResult | None:
         """
@@ -216,7 +222,7 @@ class LocalContext(Context):
     async def on_workflow_error(
         self,
         *,
-        workflow: Workflow,
+        workflow: ValidatedWorkflow,
         input: DataMapping,
         errors: WorkflowErrors,
         partial_output: DataMapping,
@@ -242,7 +248,7 @@ class LocalContext(Context):
     async def on_workflow_finish(
         self,
         *,
-        workflow: Workflow,
+        workflow: ValidatedWorkflow,
         input: DataMapping,
         output: DataMapping,
     ) -> WorkflowExecutionResult:

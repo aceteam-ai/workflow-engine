@@ -9,7 +9,7 @@ from .sequence import SequenceValue
 from .value import Caster, Value, get_origin_and_args
 
 if TYPE_CHECKING:
-    from ..context import Context
+    from ..context import ExecutionContext
 
 
 type JSON = Mapping[str, JSON] | Sequence[JSON] | None | bool | int | float | str
@@ -20,26 +20,26 @@ class JSONValue(Value[JSON]):
 
 
 @Value.register_cast_to(JSONValue)
-def cast_any_to_json(value: Value, context: "Context") -> JSONValue:
+def cast_any_to_json(value: Value, context: "ExecutionContext") -> JSONValue:
     return JSONValue(value.model_dump())
 
 
 @JSONValue.register_cast_to(NullValue)
-def cast_json_to_null(value: JSONValue, context: "Context") -> NullValue:
+def cast_json_to_null(value: JSONValue, context: "ExecutionContext") -> NullValue:
     if value.root is None:
         return NullValue(None)
     raise ValueError(f"Expected null, got {type(value.root)}")
 
 
 @JSONValue.register_cast_to(BooleanValue)
-def cast_json_to_boolean(value: JSONValue, context: "Context") -> BooleanValue:
+def cast_json_to_boolean(value: JSONValue, context: "ExecutionContext") -> BooleanValue:
     if isinstance(value.root, bool):
         return BooleanValue(value.root)
     raise ValueError(f"Expected bool, got {type(value.root)}")
 
 
 @JSONValue.register_cast_to(IntegerValue)
-def cast_json_to_integer(value: JSONValue, context: "Context") -> IntegerValue:
+def cast_json_to_integer(value: JSONValue, context: "ExecutionContext") -> IntegerValue:
     # Note: bool is a subclass of int in Python, so we must exclude it
     if isinstance(value.root, int) and not isinstance(value.root, bool):
         return IntegerValue(value.root)
@@ -47,7 +47,7 @@ def cast_json_to_integer(value: JSONValue, context: "Context") -> IntegerValue:
 
 
 @JSONValue.register_cast_to(FloatValue)
-def cast_json_to_float(value: JSONValue, context: "Context") -> FloatValue:
+def cast_json_to_float(value: JSONValue, context: "ExecutionContext") -> FloatValue:
     # Accept both int and float, but not bool
     if isinstance(value.root, (int, float)) and not isinstance(value.root, bool):
         return FloatValue(float(value.root))
@@ -64,7 +64,7 @@ def cast_json_to_sequence(
     target_origin, _ = get_origin_and_args(target_type)
     assert issubclass(target_origin, SequenceValue)
 
-    def _cast(value: JSONValue, context: "Context") -> SequenceValue:
+    def _cast(value: JSONValue, context: "ExecutionContext") -> SequenceValue:
         if not isinstance(value.root, Sequence) or isinstance(value.root, str):
             raise ValueError(
                 f"Expected sequence, got {type(value.root)} (strings are not valid sequences for this cast)"
@@ -84,7 +84,7 @@ def cast_json_to_string_map(
     target_origin, _ = get_origin_and_args(target_type)
     assert issubclass(target_origin, StringMapValue)
 
-    def _cast(value: JSONValue, context: "Context") -> StringMapValue:
+    def _cast(value: JSONValue, context: "ExecutionContext") -> StringMapValue:
         if not isinstance(value.root, Mapping):
             raise ValueError(f"Expected mapping, got {type(value.root)}")
         return target_type(value.root)  # type: ignore

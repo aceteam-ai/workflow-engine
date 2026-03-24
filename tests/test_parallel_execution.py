@@ -1,13 +1,13 @@
 # tests/test_parallel_execution.py
 
 import asyncio
-from functools import cached_property
-from typing import ClassVar, Literal
+from typing import ClassVar, Literal, Type
 
+from overrides import override
 import pytest
 
 from workflow_engine import (
-    Context,
+    ExecutionContext,
     Data,
     DataValue,
     Edge,
@@ -20,11 +20,12 @@ from workflow_engine import (
     OutputNode,
     Params,
     SequenceValue,
+    ValidationContext,
     Workflow,
+    WorkflowEngine,
     WorkflowExecutionResultStatus,
 )
-from workflow_engine.core.values import get_data_dict
-from workflow_engine.contexts import InMemoryContext
+from workflow_engine.contexts import InMemoryExecutionContext
 from workflow_engine.execution.parallel import (
     ErrorHandlingMode,
     ParallelExecutionAlgorithm,
@@ -61,15 +62,23 @@ class SlowNode(Node[Empty, SlowNodeOutput, SlowNodeParams]):
 
     type: Literal["SlowNode"] = "SlowNode"  # pyright: ignore[reportIncompatibleVariableOverride]
 
-    @cached_property
-    def input_type(self):
+    @override
+    async def input_type(self, context: ValidationContext) -> Type[Empty]:
         return Empty
 
-    @cached_property
-    def output_type(self):
+    @override
+    async def output_type(self, context: ValidationContext) -> Type[SlowNodeOutput]:
         return SlowNodeOutput
 
-    async def run(self, context: Context, input: Empty) -> SlowNodeOutput:
+    @override
+    async def run(
+        self,
+        *,
+        context: ExecutionContext,
+        input_type: Type[Empty],
+        output_type: Type[SlowNodeOutput],
+        input: Empty,
+    ) -> SlowNodeOutput:
         await asyncio.sleep(self.params.delay_ms.root / 1000)
         return SlowNodeOutput(value=self.params.delay_ms)
 
@@ -98,16 +107,24 @@ class SlowPassthroughNode(
 
     type: Literal["SlowPassthroughNode"] = "SlowPassthroughNode"  # pyright: ignore[reportIncompatibleVariableOverride]
 
-    @cached_property
-    def input_type(self):
+    @override
+    async def input_type(
+        self, context: ValidationContext
+    ) -> Type[SlowPassthroughNodeInput]:
         return SlowPassthroughNodeInput
 
-    @cached_property
-    def output_type(self):
+    @override
+    async def output_type(self, context: ValidationContext) -> Type[SlowNodeOutput]:
         return SlowNodeOutput
 
+    @override
     async def run(
-        self, context: Context, input: SlowPassthroughNodeInput
+        self,
+        *,
+        context: ExecutionContext,
+        input_type: Type[SlowPassthroughNodeInput],
+        output_type: Type[SlowNodeOutput],
+        input: SlowPassthroughNodeInput,
     ) -> SlowNodeOutput:
         await asyncio.sleep(self.params.delay_ms.root / 1000)
         return SlowNodeOutput(value=input.value)
@@ -137,13 +154,22 @@ def parallel_workflow() -> Workflow:
         inner_nodes=[node_a, node_b, node_c],
         edges=[
             Edge.from_nodes(
-                source=node_a, source_key="value", target=output_node, target_key="a"
+                source=node_a,
+                source_key="value",
+                target=output_node,
+                target_key="a",
             ),
             Edge.from_nodes(
-                source=node_b, source_key="value", target=output_node, target_key="b"
+                source=node_b,
+                source_key="value",
+                target=output_node,
+                target_key="b",
             ),
             Edge.from_nodes(
-                source=node_c, source_key="value", target=output_node, target_key="c"
+                source=node_c,
+                source_key="value",
+                target=output_node,
+                target_key="c",
             ),
         ],
     )
@@ -154,12 +180,13 @@ async def test_parallel_execution_faster_than_sequential(
     parallel_workflow: Workflow,
 ):
     """Test that parallel execution is actually parallel (faster than sequential)."""
-    context = InMemoryContext()
+    context = InMemoryExecutionContext()
 
     # Sequential execution
     sequential_algo = TopologicalExecutionAlgorithm()
+    engine = WorkflowEngine(execution_algorithm=sequential_algo)
     start = asyncio.get_event_loop().time()
-    sequential_result = await sequential_algo.execute(
+    sequential_result = await engine.execute(
         context=context,
         workflow=parallel_workflow,
         input={},
@@ -169,8 +196,9 @@ async def test_parallel_execution_faster_than_sequential(
 
     # Parallel execution
     parallel_algo = ParallelExecutionAlgorithm()
+    engine = WorkflowEngine(execution_algorithm=parallel_algo)
     start = asyncio.get_event_loop().time()
-    parallel_result = await parallel_algo.execute(
+    parallel_result = await engine.execute(
         context=context,
         workflow=parallel_workflow,
         input={},
@@ -211,10 +239,10 @@ async def test_parallel_execution_respects_dependencies():
         ],
     )
 
-    context = InMemoryContext()
+    context = InMemoryExecutionContext()
     algorithm = ParallelExecutionAlgorithm()
-
-    result = await algorithm.execute(
+    engine = WorkflowEngine(execution_algorithm=algorithm)
+    result = await engine.execute(
         context=context,
         workflow=workflow,
         input={},
@@ -265,10 +293,11 @@ async def test_parallel_execution_complex_dependencies():
         ],
     )
 
-    context = InMemoryContext()
+    context = InMemoryExecutionContext()
     algorithm = ParallelExecutionAlgorithm()
+    engine = WorkflowEngine(execution_algorithm=algorithm)
 
-    result = await algorithm.execute(
+    result = await engine.execute(
         context=context,
         workflow=workflow,
         input={},
@@ -312,10 +341,10 @@ async def test_parallel_execution_continue_on_error():
         ],
     )
 
-    context = InMemoryContext()
+    context = InMemoryExecutionContext()
     algorithm = ParallelExecutionAlgorithm(error_handling=ErrorHandlingMode.CONTINUE)
-
-    result = await algorithm.execute(
+    engine = WorkflowEngine(execution_algorithm=algorithm)
+    result = await engine.execute(
         context=context,
         workflow=workflow,
         input={},
@@ -360,10 +389,11 @@ async def test_parallel_execution_fail_fast():
         ],
     )
 
-    context = InMemoryContext()
+    context = InMemoryExecutionContext()
     algorithm = ParallelExecutionAlgorithm(error_handling=ErrorHandlingMode.FAIL_FAST)
 
-    result = await algorithm.execute(
+    engine = WorkflowEngine(execution_algorithm=algorithm)
+    result = await engine.execute(
         context=context,
         workflow=workflow,
         input={},
@@ -374,6 +404,8 @@ async def test_parallel_execution_fail_fast():
 @pytest.mark.asyncio
 async def test_parallel_execution_with_node_expansion():
     """Test that node expansion works correctly with parallel execution."""
+    engine = WorkflowEngine(execution_algorithm=ParallelExecutionAlgorithm())
+
     add_input_node = InputNode.from_fields(
         a=FloatValue,
         b=FloatValue,
@@ -404,6 +436,7 @@ async def test_parallel_execution_with_node_expansion():
             ),
         ],
     )
+    add_workflow = await engine.validate(add_workflow)
 
     outer_input_node = InputNode.from_fields(
         sequence=SequenceValue[DataValue[add_workflow.input_type]],
@@ -434,24 +467,17 @@ async def test_parallel_execution_with_node_expansion():
         ],
     )
 
-    context = InMemoryContext()
-    algorithm = ParallelExecutionAlgorithm()
-
-    input_data = get_data_dict(
-        workflow.input_type.model_validate(
-            {
-                "sequence": [
-                    {"a": 1.0, "b": 2.0},
-                    {"a": 3.0, "b": 4.0},
-                ]
-            }
-        )
-    )
-
-    result = await algorithm.execute(
+    context = InMemoryExecutionContext()
+    engine = WorkflowEngine(execution_algorithm=ParallelExecutionAlgorithm())
+    result = await engine.execute(
         context=context,
         workflow=workflow,
-        input=input_data,
+        input={
+            "sequence": [
+                {"a": 1.0, "b": 2.0},
+                {"a": 3.0, "b": 4.0},
+            ]
+        },
     )
 
     assert result.status is WorkflowExecutionResultStatus.SUCCESS
@@ -500,14 +526,15 @@ async def test_parallel_execution_max_concurrency():
         ],
     )
 
-    context = InMemoryContext()
+    context = InMemoryExecutionContext()
 
     # With max_concurrency=2, 5 nodes taking 50ms each should take at least 150ms
     # (3 batches: 2+2+1)
     algorithm = ParallelExecutionAlgorithm(max_concurrency=2)
+    engine = WorkflowEngine(execution_algorithm=algorithm)
 
     start = asyncio.get_event_loop().time()
-    result = await algorithm.execute(
+    result = await engine.execute(
         context=context,
         workflow=workflow,
         input={},
@@ -532,10 +559,11 @@ async def test_parallel_execution_empty_workflow():
         edges=[],
     )
 
-    context = InMemoryContext()
+    context = InMemoryExecutionContext()
     algorithm = ParallelExecutionAlgorithm()
 
-    result = await algorithm.execute(
+    engine = WorkflowEngine(execution_algorithm=algorithm)
+    result = await engine.execute(
         context=context,
         workflow=workflow,
         input={},
@@ -563,10 +591,10 @@ async def test_parallel_execution_single_node():
         ],
     )
 
-    context = InMemoryContext()
+    context = InMemoryExecutionContext()
     algorithm = ParallelExecutionAlgorithm()
-
-    result = await algorithm.execute(
+    engine = WorkflowEngine(execution_algorithm=algorithm)
+    result = await engine.execute(
         context=context,
         workflow=workflow,
         input={},
@@ -618,12 +646,13 @@ async def test_parallel_execution_matches_sequential_output():
         ],
     )
 
-    context = InMemoryContext()
+    context = InMemoryExecutionContext()
     input_data = {"c": IntegerValue(-256)}
 
     # Sequential execution
     sequential_algo = TopologicalExecutionAlgorithm()
-    sequential_result = await sequential_algo.execute(
+    sequential_engine = WorkflowEngine(execution_algorithm=sequential_algo)
+    sequential_result = await sequential_engine.execute(
         context=context,
         workflow=workflow,
         input=input_data,
@@ -631,7 +660,8 @@ async def test_parallel_execution_matches_sequential_output():
 
     # Parallel execution
     parallel_algo = ParallelExecutionAlgorithm()
-    parallel_result = await parallel_algo.execute(
+    parallel_engine = WorkflowEngine(execution_algorithm=parallel_algo)
+    parallel_result = await parallel_engine.execute(
         context=context,
         workflow=workflow,
         input=input_data,
@@ -688,11 +718,12 @@ async def test_parallel_execution_eager_dispatch():
         ],
     )
 
-    context = InMemoryContext()
+    context = InMemoryExecutionContext()
     algorithm = ParallelExecutionAlgorithm()
+    engine = WorkflowEngine(execution_algorithm=algorithm)
 
     start = asyncio.get_event_loop().time()
-    result = await algorithm.execute(
+    result = await engine.execute(
         context=context,
         workflow=workflow,
         input={},

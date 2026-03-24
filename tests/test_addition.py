@@ -1,9 +1,16 @@
 import pytest
 
-from workflow_engine import Edge, IntegerValue, Workflow, WorkflowExecutionResultStatus
-from workflow_engine.contexts import InMemoryContext
+from workflow_engine import (
+    Edge,
+    IntegerValue,
+    ValidationContext,
+    Workflow,
+    WorkflowEngine,
+    WorkflowExecutionResultStatus,
+)
+from workflow_engine.contexts import InMemoryExecutionContext
 from workflow_engine.core.io import InputNode, OutputNode
-from workflow_engine.execution import TopologicalExecutionAlgorithm
+from workflow_engine.core.values import get_data_fields
 from workflow_engine.nodes import AddNode, ConstantIntegerNode
 
 
@@ -94,9 +101,9 @@ async def test_add_3_arguments():
         ],
     )
 
-    context = InMemoryContext()
-    algorithm = TopologicalExecutionAlgorithm()
-    result = await algorithm.execute(
+    context = InMemoryExecutionContext()
+    engine = WorkflowEngine()
+    result = await engine.execute(
         context=context,
         workflow=workflow,
         input={},
@@ -107,7 +114,7 @@ async def test_add_3_arguments():
 
 @pytest.mark.asyncio
 async def test_add_30_arguments():
-    """Test AddNode with 30 arguments (a–z, aa–ad), verifying field name generation."""
+    """Test AddNode with 30 arguments (a-z, aa-ad), verifying field name generation."""
     n = 30
     # Field names: a, b, ..., z (26), aa, ab, ac, ad (4)
     expected_names = [chr(ord("a") + i) for i in range(26)] + ["aa", "ab", "ac", "ad"]
@@ -142,9 +149,9 @@ async def test_add_30_arguments():
         ],
     )
 
-    context = InMemoryContext()
-    algorithm = TopologicalExecutionAlgorithm()
-    result = await algorithm.execute(
+    context = InMemoryExecutionContext()
+    engine = WorkflowEngine()
+    result = await engine.execute(
         context=context,
         workflow=workflow,
         input={},
@@ -153,10 +160,10 @@ async def test_add_30_arguments():
     assert result.output == {"sum": sum(range(1, n + 1))}
 
 
-def test_add_1000_arguments_field_names():
+async def test_add_1000_arguments_field_names():
     """Spot-check field names for a 1000-argument AddNode without executing it."""
     add = AddNode.with_arity(id="add", arity=1000)
-    fields = add.input_type.model_fields
+    fields = get_data_fields(await add.input_type(ValidationContext()))
 
     assert len(fields) == 1000
 
@@ -176,15 +183,15 @@ def test_add_1000_arguments_field_names():
 @pytest.mark.asyncio
 async def test_workflow_execution(workflow: Workflow):
     """Test that the workflow executes correctly and produces the expected result."""
-    context = InMemoryContext()
-    algorithm = TopologicalExecutionAlgorithm()
+    context = InMemoryExecutionContext()
+    engine = WorkflowEngine()
 
     c = -256
 
-    result = await algorithm.execute(
+    result = await engine.execute(
         context=context,
         workflow=workflow,
-        input={"c": IntegerValue(c)},
+        input={"c": c},
     )
     assert result.status is WorkflowExecutionResultStatus.SUCCESS
     assert result.output == {"sum": 42 + 2025 + c}

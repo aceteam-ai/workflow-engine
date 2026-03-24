@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 from .value import Value
 
 if TYPE_CHECKING:
-    from ..context import Context
+    from ..context import ExecutionContext
 
 
 class BooleanValue(Value[bool]):
@@ -39,12 +39,16 @@ class StringValue(Value[str]):
 
 
 @IntegerValue.register_cast_to(FloatValue)
-def cast_integer_to_float(value: IntegerValue, context: "Context") -> FloatValue:
+def cast_integer_to_float(
+    value: IntegerValue, context: "ExecutionContext"
+) -> FloatValue:
     return FloatValue(float(value.root))
 
 
 @FloatValue.register_cast_to(IntegerValue)
-def cast_float_to_integer(value: FloatValue, context: "Context") -> IntegerValue:
+def cast_float_to_integer(
+    value: FloatValue, context: "ExecutionContext"
+) -> IntegerValue:
     """
     Convert a float to an integer only if the float is already an integer.
     Otherwise, raise a ValueError.
@@ -56,22 +60,26 @@ def cast_float_to_integer(value: FloatValue, context: "Context") -> IntegerValue
 
 
 @Value.register_cast_to(StringValue)
-def cast_value_to_string(value: Value, context: "Context") -> StringValue:
+def cast_value_to_string(value: Value, context: "ExecutionContext") -> StringValue:
     return StringValue(str(value.root))
 
 
 @StringValue.register_cast_to(BooleanValue)
-def cast_string_to_boolean(value: StringValue, context: "Context") -> BooleanValue:
+def cast_string_to_boolean(
+    value: StringValue, context: "ExecutionContext"
+) -> BooleanValue:
     return BooleanValue.model_validate_json(value.root)
 
 
 @StringValue.register_cast_to(IntegerValue)
-def cast_string_to_integer(value: StringValue, context: "Context") -> IntegerValue:
+def cast_string_to_integer(
+    value: StringValue, context: "ExecutionContext"
+) -> IntegerValue:
     return IntegerValue.model_validate_json(value.root)
 
 
 @StringValue.register_cast_to(FloatValue)
-def cast_string_to_float(value: StringValue, context: "Context") -> FloatValue:
+def cast_string_to_float(value: StringValue, context: "ExecutionContext") -> FloatValue:
     return FloatValue.model_validate_json(value.root)
 
 

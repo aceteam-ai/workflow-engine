@@ -9,7 +9,7 @@ from workflow_engine.core.values import get_origin_and_args
 
 from ..core import (
     Caster,
-    Context,
+    ExecutionContext,
     File,
     JSONValue,
     SequenceValue,
@@ -26,7 +26,7 @@ V = TypeVar("V", bound=Value)
 class CSVFileValue(TextFileValue):
     mime_type: ClassVar[str] = "text/csv"
 
-    async def read_data(self, context: Context) -> Sequence[Mapping[str, Any]]:
+    async def read_data(self, context: ExecutionContext) -> Sequence[Mapping[str, Any]]:
         text = await self.read_text(context)
         text_io = StringIO(text)
         reader = DictReader(text_io)
@@ -34,7 +34,7 @@ class CSVFileValue(TextFileValue):
 
     async def write_data(
         self,
-        context: Context,
+        context: ExecutionContext,
         data: Sequence[Mapping[str, Any]],
     ) -> Self:
         text_io = StringIO()
@@ -46,7 +46,7 @@ class CSVFileValue(TextFileValue):
 
 
 @JSONValue.register_cast_to(CSVFileValue)
-async def json_to_csv(value: JSONValue, context: Context) -> CSVFileValue:
+async def json_to_csv(value: JSONValue, context: ExecutionContext) -> CSVFileValue:
     data = value.root
     if not isinstance(data, (Mapping, Sequence)):
         raise UserException(
@@ -87,7 +87,7 @@ def mapping_to_csv(
 
     async def cast(
         value: source_type,  # pyright: ignore[reportInvalidTypeForm]
-        context: Context,
+        context: ExecutionContext,
     ) -> target_type:  # pyright: ignore[reportInvalidTypeForm]
         assert isinstance(value, StringMapValue)
         json_obj = await value.cast_to(JSONValue, context=context)
@@ -110,7 +110,7 @@ def sequence_to_csv(
 
     async def cast(
         value: source_type,  # pyright: ignore[reportInvalidTypeForm]
-        context: Context,
+        context: ExecutionContext,
     ) -> target_type:  # pyright: ignore[reportInvalidTypeForm]
         assert isinstance(value, SequenceValue)
         value_as_json_sequence = await value.cast_to(
@@ -136,7 +136,7 @@ def sequence_to_csv(
 
 
 @CSVFileValue.register_cast_to(JSONValue)
-async def csv_file_to_json(value: CSVFileValue, context: Context) -> JSONValue:
+async def csv_file_to_json(value: CSVFileValue, context: ExecutionContext) -> JSONValue:
     rows = await value.read_data(context)
     return JSONValue(rows)
 
@@ -153,7 +153,7 @@ def csv_file_to_sequence(
 
     async def cast(
         value: source_type,  # pyright: ignore[reportInvalidTypeForm]
-        context: Context,
+        context: ExecutionContext,
     ) -> target_type:  # pyright: ignore[reportInvalidTypeForm]
         data = await value.read_data(context)
         return target_type.model_validate(data)

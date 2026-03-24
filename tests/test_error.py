@@ -2,10 +2,15 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from workflow_engine import Edge, StringValue, UserException, Workflow, WorkflowErrors
-from workflow_engine.contexts import InMemoryContext
+from workflow_engine import (
+    Edge,
+    StringValue,
+    UserException,
+    Workflow,
+    WorkflowEngine,
+)
+from workflow_engine.contexts import InMemoryExecutionContext
 from workflow_engine.core.io import InputNode, OutputNode
-from workflow_engine.execution import TopologicalExecutionAlgorithm
 from workflow_engine.nodes import ConstantStringNode, ErrorNode
 
 
@@ -44,16 +49,16 @@ def workflow():
 @pytest.mark.asyncio
 async def test_workflow_error_handling(workflow: Workflow):
     """Test that the workflow properly handles errors and calls context callbacks."""
-    context = InMemoryContext()
+    context = InMemoryExecutionContext()
 
     # Create a mock for on_node_error while preserving the original function
     original_on_node_error = context.on_node_error
     mock_on_node_error = AsyncMock(side_effect=original_on_node_error)
     context.on_node_error = mock_on_node_error
 
-    algorithm = TopologicalExecutionAlgorithm()
+    engine = WorkflowEngine()
 
-    result = await algorithm.execute(
+    result = await engine.execute(
         context=context,
         workflow=workflow,
         input={},
@@ -61,10 +66,8 @@ async def test_workflow_error_handling(workflow: Workflow):
 
     error_node = workflow.nodes_by_id["error"]
     # Verify the error was captured correctly
-    assert result.errors == WorkflowErrors(
-        workflow_errors=[],
-        node_errors={error_node.id: ["RuntimeError: test"]},
-    )
+    assert len(result.errors.workflow_errors) == 0
+    assert result.errors.node_errors == {error_node.id: ["RuntimeError: test"]}
 
     # Verify the output still contains the constant value
     assert result.output == {"text": StringValue("test")}

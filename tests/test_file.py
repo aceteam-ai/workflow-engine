@@ -3,7 +3,7 @@ from hashlib import md5
 import pytest
 
 from workflow_engine import (
-    Context,
+    ExecutionContext,
     File,
     IntegerValue,
     JSONValue,
@@ -11,7 +11,7 @@ from workflow_engine import (
     StringMapValue,
     StringValue,
 )
-from workflow_engine.contexts.in_memory import InMemoryContext
+from workflow_engine.contexts.in_memory import InMemoryExecutionContext
 from workflow_engine.files import (
     CSVFileValue,
     JSONFileValue,
@@ -24,11 +24,11 @@ from workflow_engine.files import (
 @pytest.fixture
 def context():
     """Create a test context for value casting operations."""
-    return InMemoryContext()
+    return InMemoryExecutionContext()
 
 
 @pytest.mark.unit
-async def test_cast_jsonlines_to_sequence(context: Context):
+async def test_cast_jsonlines_to_sequence(context: ExecutionContext):
     """Test that JSONLinesFileValue can be cast to a SequenceValue."""
     jsonl_file = JSONLinesFileValue.from_path("input.jsonl")
     contents = [{"a": 1}, {"b": 2}, {"c": 3}]
@@ -62,7 +62,7 @@ async def test_cast_jsonlines_to_sequence(context: Context):
 
 
 @pytest.mark.unit
-async def test_cast_text_file_to_and_from_string(context: Context):
+async def test_cast_text_file_to_and_from_string(context: ExecutionContext):
     """Test that TextFileValue can be cast to and from StringValue."""
     content = "Hello, world!"
     text_file = TextFileValue(File(path="test.txt"))
@@ -82,7 +82,7 @@ async def test_cast_text_file_to_and_from_string(context: Context):
 
 
 @pytest.mark.unit
-async def test_cast_markdown_file_to_and_from_string(context: Context):
+async def test_cast_markdown_file_to_and_from_string(context: ExecutionContext):
     """Test that MarkdownFileValue can be cast to and from StringValue."""
     content = "# Heading\n\nSome **bold** markdown content."
     md_file = MarkdownFileValue(File(path="doc.md"))
@@ -102,7 +102,7 @@ async def test_cast_markdown_file_to_and_from_string(context: Context):
 
 
 @pytest.mark.unit
-async def test_csv_write_and_read_data(context: Context):
+async def test_csv_write_and_read_data(context: ExecutionContext):
     """Test that CSVFileValue can write and read data via InMemoryContext."""
     csv_file = CSVFileValue(File(path="data.csv"))
     data = [
@@ -120,7 +120,7 @@ async def test_csv_write_and_read_data(context: Context):
 
 
 @pytest.mark.unit
-async def test_csv_cast_json_to_csv(context: Context):
+async def test_csv_cast_json_to_csv(context: ExecutionContext):
     """Test that JSONValue can be cast to CSVFileValue."""
     # Sequence of mappings
     json_val = JSONValue([{"x": 1, "y": 2}, {"x": 3, "y": 4}])
@@ -140,7 +140,7 @@ async def test_csv_cast_json_to_csv(context: Context):
 
 
 @pytest.mark.unit
-async def test_csv_cast_string_map_to_csv(context: Context):
+async def test_csv_cast_string_map_to_csv(context: ExecutionContext):
     """Test that StringMapValue can be cast to CSVFileValue via JSON."""
     str_map = StringMapValue[IntegerValue](
         {"foo": IntegerValue(1), "bar": IntegerValue(2)}
@@ -152,7 +152,7 @@ async def test_csv_cast_string_map_to_csv(context: Context):
 
 
 @pytest.mark.unit
-async def test_csv_cast_sequence_to_csv(context: Context):
+async def test_csv_cast_sequence_to_csv(context: ExecutionContext):
     """Test that SequenceValue of mappings can be cast to CSVFileValue."""
     seq = SequenceValue[StringMapValue[IntegerValue]](
         [
@@ -170,7 +170,7 @@ async def test_csv_cast_sequence_to_csv(context: Context):
 
 
 @pytest.mark.unit
-async def test_csv_cast_csv_to_json(context: Context):
+async def test_csv_cast_csv_to_json(context: ExecutionContext):
     """Test that CSVFileValue can be cast to JSONValue."""
     csv_file = CSVFileValue(File(path="test.csv"))
     data = [{"col1": "val1", "col2": "val2"}]
@@ -183,7 +183,7 @@ async def test_csv_cast_csv_to_json(context: Context):
 
 
 @pytest.mark.unit
-async def test_csv_cast_csv_to_sequence(context: Context):
+async def test_csv_cast_csv_to_sequence(context: ExecutionContext):
     """Test that CSVFileValue can be cast to SequenceValue."""
     csv_file = CSVFileValue(File(path="test.csv"))
     data = [{"name": "X", "id": "1"}, {"name": "Y", "id": "2"}]

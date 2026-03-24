@@ -14,9 +14,10 @@ from workflow_engine import (
     OutputNode,
     StringValue,
     Workflow,
+    WorkflowEngine,
     WorkflowExecutionResultStatus,
 )
-from workflow_engine.contexts import InMemoryContext
+from workflow_engine.contexts import InMemoryExecutionContext
 from workflow_engine.execution import (
     RateLimitConfig,
     RateLimiter,
@@ -205,13 +206,12 @@ class TestRateLimitIntegration:
             ],
         )
 
-        context = InMemoryContext()
+        context = InMemoryExecutionContext()
         rate_limits = RateLimitRegistry()
         rate_limits.configure("ConstantString", RateLimitConfig(max_concurrency=1))
-
         algorithm = TopologicalExecutionAlgorithm(rate_limits=rate_limits)
-
-        result = await algorithm.execute(
+        engine = WorkflowEngine(execution_algorithm=algorithm)
+        result = await engine.execute(
             context=context,
             workflow=workflow,
             input={},
@@ -244,10 +244,10 @@ class TestRateLimitIntegration:
             ],
         )
 
-        context = InMemoryContext()
+        context = InMemoryExecutionContext()
         algorithm = TopologicalExecutionAlgorithm()
-
-        result = await algorithm.execute(
+        engine = WorkflowEngine(execution_algorithm=algorithm)
+        result = await engine.execute(
             context=context,
             workflow=workflow,
             input={},
@@ -289,14 +289,14 @@ class TestRateLimitIntegration:
             ],
         )
 
-        context = InMemoryContext()
+        context = InMemoryExecutionContext()
         rate_limits = RateLimitRegistry()
         config = RateLimitConfig(max_concurrency=1)
         rate_limits.configure("Error", config)
-
         algorithm = TopologicalExecutionAlgorithm(rate_limits=rate_limits)
+        engine = WorkflowEngine(execution_algorithm=algorithm)
 
-        result = await algorithm.execute(
+        result = await engine.execute(
             context=context,
             workflow=workflow,
             input={},

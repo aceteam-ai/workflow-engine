@@ -10,7 +10,7 @@ from ...utils.immutable import ImmutableBaseModel
 from .value import Value
 
 if TYPE_CHECKING:
-    from ..context import Context
+    from ..context import ExecutionContext
 
 logger = getLogger(__name__)
 
@@ -34,13 +34,15 @@ class FileValue(Value[File]):
 
     mime_type: ClassVar[str]
 
-    async def read(self, context: "Context") -> bytes:
+    async def read(self, context: "ExecutionContext") -> bytes:
         return await context.read(file=self)
 
-    async def write(self, context: "Context", content: bytes) -> Self:
+    async def write(self, context: "ExecutionContext", content: bytes) -> Self:
         return await context.write(file=self, content=content)
 
-    async def copy_from_local_file(self, context: "Context", path: str) -> Self:
+    async def copy_from_local_file(
+        self, context: "ExecutionContext", path: str
+    ) -> Self:
         with open(path, "rb") as f:
             data = f.read()
             return await self.write(context, data)

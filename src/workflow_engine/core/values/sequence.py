@@ -8,7 +8,7 @@ from .primitives import IntegerValue
 from .value import Caster, Value, get_origin_and_args
 
 if TYPE_CHECKING:
-    from ..context import Context
+    from ..context import ExecutionContext
 
 T = TypeVar("T", bound=Value)
 
@@ -50,7 +50,7 @@ def cast_sequence_to_sequence(
 
     async def _cast(
         value: source_type,  # pyright: ignore[reportInvalidTypeForm]
-        context: "Context",
+        context: "ExecutionContext",
     ) -> target_type:  # pyright: ignore[reportInvalidTypeForm]
         # Cast all items in parallel
         cast_tasks = [

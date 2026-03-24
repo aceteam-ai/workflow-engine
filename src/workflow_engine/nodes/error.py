@@ -1,12 +1,12 @@
 # workflow_engine/nodes/error.py
 
-from functools import cached_property
-from typing import ClassVar, Literal
+from typing import ClassVar, Literal, Type
 
+from overrides import override
 from pydantic import Field
 
 from ..core import (
-    Context,
+    ExecutionContext,
     Data,
     Empty,
     Node,
@@ -14,6 +14,7 @@ from ..core import (
     Params,
     StringValue,
     UserException,
+    ValidationContext,
 )
 
 
@@ -44,11 +45,23 @@ class ErrorNode(Node[ErrorInput, Empty, ErrorParams]):
 
     type: Literal["Error"] = "Error"  # pyright: ignore[reportIncompatibleVariableOverride]
 
-    @cached_property
-    def input_type(self):
+    @override
+    async def input_type(self, context: ValidationContext) -> Type[ErrorInput]:
         return ErrorInput
 
-    async def run(self, context: Context, input: ErrorInput) -> Empty:
+    @override
+    async def output_type(self, context: ValidationContext) -> Type[Empty]:
+        return Empty
+
+    @override
+    async def run(
+        self,
+        *,
+        context: ExecutionContext,
+        input_type: Type[ErrorInput],
+        output_type: Type[Empty],
+        input: ErrorInput,
+    ) -> Empty:
         raise UserException(f"{self.params.error_name}: {input.info}")
 
     @classmethod

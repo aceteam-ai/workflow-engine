@@ -5,9 +5,9 @@ Tests run against both TopologicalExecutionAlgorithm and
 ParallelExecutionAlgorithm via the `algorithm` fixture.
 """
 
-from functools import cached_property
-from typing import ClassVar, Literal
+from typing import ClassVar, Literal, Type
 
+from overrides import override
 import pytest
 from pydantic import Field
 
@@ -17,13 +17,16 @@ from workflow_engine import (
     Edge,
     Empty,
     ExecutionAlgorithm,
+    ExecutionContext,
     IntegerValue,
     StringMapValue,
     StringValue,
+    ValidationContext,
     Workflow,
+    WorkflowEngine,
     WorkflowExecutionResultStatus,
 )
-from workflow_engine.contexts import InMemoryContext
+from workflow_engine.contexts import InMemoryExecutionContext
 from workflow_engine.core.io import InputNode, OutputNode
 from workflow_engine.core.node import Node, NodeTypeInfo
 from workflow_engine.execution import TopologicalExecutionAlgorithm
@@ -72,15 +75,23 @@ class MultiLevelOutputNode(Node[Empty, Level0Output, Empty]):
     type: Literal["MultiLevelOutput"] = "MultiLevelOutput"  # pyright: ignore[reportIncompatibleVariableOverride]
     params: Empty = Field(default_factory=Empty)
 
-    @cached_property
-    def input_type(self):
+    @override
+    async def input_type(self, context: ValidationContext) -> Type[Empty]:
         return Empty
 
-    @cached_property
-    def output_type(self):
+    @override
+    async def output_type(self, context: ValidationContext) -> Type[Level0Output]:
         return Level0Output
 
-    async def run(self, context, input: Empty) -> Level0Output:
+    @override
+    async def run(
+        self,
+        *,
+        context: ExecutionContext,
+        input_type: Type[Empty],
+        output_type: Type[Level0Output],
+        input: Empty,
+    ) -> Level0Output:
         return Level0Output(
             a=IntegerValue(100),
             b=DataValue[Level1Data](
@@ -153,8 +164,9 @@ async def test_deep_edges(algorithm: ExecutionAlgorithm):
         ],
     )
 
-    context = InMemoryContext()
-    result = await algorithm.execute(
+    context = InMemoryExecutionContext()
+    engine = WorkflowEngine(execution_algorithm=algorithm)
+    result = await engine.execute(
         context=context,
         workflow=workflow,
         input={},
@@ -194,15 +206,23 @@ class MapOutputNode(Node[Empty, MapOutput, Empty]):
     type: Literal["MapOutput"] = "MapOutput"  # pyright: ignore[reportIncompatibleVariableOverride]
     params: Empty = Field(default_factory=Empty)
 
-    @cached_property
-    def input_type(self):
+    @override
+    async def input_type(self, context: ValidationContext) -> Type[Empty]:
         return Empty
 
-    @cached_property
-    def output_type(self):
+    @override
+    async def output_type(self, context: ValidationContext) -> Type[MapOutput]:
         return MapOutput
 
-    async def run(self, context, input: Empty) -> MapOutput:
+    @override
+    async def run(
+        self,
+        *,
+        context: ExecutionContext,
+        input_type: Type[Empty],
+        output_type: Type[MapOutput],
+        input: Empty,
+    ) -> MapOutput:
         return MapOutput(
             map=StringMapValue[IntegerValue](
                 root={"found": IntegerValue(42), "also_found": IntegerValue(99)}
@@ -230,8 +250,9 @@ async def test_string_map_value_happy_path(algorithm: ExecutionAlgorithm):
         ],
     )
 
-    context = InMemoryContext()
-    result = await algorithm.execute(
+    context = InMemoryExecutionContext()
+    engine = WorkflowEngine(execution_algorithm=algorithm)
+    result = await engine.execute(
         context=context,
         workflow=workflow,
         input={},
@@ -261,8 +282,9 @@ async def test_string_map_value_missing_key(algorithm: ExecutionAlgorithm):
         ],
     )
 
-    context = InMemoryContext()
-    result = await algorithm.execute(
+    context = InMemoryExecutionContext()
+    engine = WorkflowEngine(execution_algorithm=algorithm)
+    result = await engine.execute(
         context=context,
         workflow=workflow,
         input={},

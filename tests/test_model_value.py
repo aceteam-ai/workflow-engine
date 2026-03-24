@@ -1,7 +1,7 @@
 import pytest
 from pydantic import BaseModel, ValidationError
 
-from workflow_engine.contexts.in_memory import InMemoryContext
+from workflow_engine.contexts.in_memory import InMemoryExecutionContext
 from workflow_engine.core.values import (
     JSONValue,
     ModelValue,
@@ -17,7 +17,7 @@ from workflow_engine.core.values.extraction import (
 
 @pytest.fixture
 def context():
-    return InMemoryContext()
+    return InMemoryExecutionContext()
 
 
 # --- Simple test models ---

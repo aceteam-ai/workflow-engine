@@ -8,7 +8,7 @@ from pydantic import model_validator
 
 from ..utils.immutable import ImmutableBaseModel
 from .node import Node
-from .values import resolve_path
+from .values import Data, resolve_path
 
 
 class Edge(ImmutableBaseModel):
@@ -56,43 +56,44 @@ class Edge(ImmutableBaseModel):
         target_key: str,
     ) -> Self:
         """
-        Self-validating factory method.
+        Factory method. Does not validate types; type validation happens
+        during workflow validation when node types have been resolved.
         """
-        edge = cls(
+        return cls(
             source_id=source.id,
             source_key=source_key,
             target_id=target.id,
             target_key=target_key,
         )
-        edge.validate_types(source, target)
-        return edge
 
-    def validate_types(self, source: Node, target: Node):
+    def validate_types(
+        self,
+        source_type: type[Data],
+        target_type: type[Data],
+    ):
         try:
             source_output_type = resolve_path(
-                data_type=source.output_type,
+                data_type=source_type,
                 path=self.source_key_path,
             )
         except TypeError as e:
             e.add_note(
-                f"Source node {source.id} does not have a {self.source_key_path_string} field"
+                f"Output type of node {self.source_id} does not have a {self.source_key_path_string} field"
             )
             raise
 
         try:
             target_input_type = resolve_path(
-                data_type=target.input_type,
+                data_type=target_type,
                 path=(self.target_key,),
             )
         except TypeError as e:
-            e.add_note(
-                f"Target node {target.id} does not have a {self.target_key} field"
-            )
+            e.add_note(f"Target type does not have a {self.target_key} field")
             raise
 
         if not source_output_type.can_cast_to(target_input_type):
             raise TypeError(
-                f"Edge from {source.id}.{self.source_key} to {target.id}.{self.target_key} has invalid types: {source_output_type} is not assignable to {target_input_type}"
+                f"Edge from node {self.source_id} with output type {source_output_type} to node {self.target_id} with input type {target_input_type} has invalid types: {source_output_type} is not assignable to {target_input_type}"
             )
 
     def with_namespace(self, namespace: str) -> Self:

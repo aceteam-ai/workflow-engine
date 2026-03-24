@@ -13,7 +13,7 @@ from pydantic import Field
 from workflow_engine.core.values import build_data_type, get_data_dict
 
 from ..core import (
-    Context,
+    ExecutionContext,
     Data,
     DataValue,
     Empty,
@@ -24,6 +24,7 @@ from ..core import (
     SequenceValue,
     StringMapValue,
     StringValue,
+    ValidationContext,
     Value,
     ValueType,
 )
@@ -81,21 +82,28 @@ class GatherSequenceNode(Node[Data, SequenceData, SequenceParams]):
         N = self.params.length.root
         return [self.key(i) for i in range(N)]
 
-    @cached_property
-    def input_type(self):
+    @override
+    async def input_type(self, context: ValidationContext) -> Type[Data]:
         return build_data_type(
             "GatherSequenceInput",
             {key: (self.element_type, True) for key in self.keys},
         )
 
-    @cached_property
-    def output_type(self):
+    @override
+    async def output_type(self, context: ValidationContext) -> Type[SequenceData]:
         return SequenceData[self.element_type]
 
     @override
-    async def run(self, context: Context, input: Data) -> SequenceData:
+    async def run(
+        self,
+        *,
+        context: ExecutionContext,
+        input_type: Type[Data],
+        output_type: Type[SequenceData],
+        input: Data,
+    ) -> SequenceData:
         input_dict = get_data_dict(input)
-        return self.output_type(
+        return output_type(
             sequence=SequenceValue[self.element_type](
                 root=[input_dict[key] for key in self.keys]
             )
@@ -144,12 +152,12 @@ class ExpandSequenceNode(Node[SequenceData, Data, SequenceParams]):
         N = self.params.length.root
         return [self.key(i) for i in range(N)]
 
-    @cached_property
-    def input_type(self):
+    @override
+    async def input_type(self, context: ValidationContext) -> Type[SequenceData]:
         return SequenceData[self.element_type]
 
-    @cached_property
-    def output_type(self):
+    @override
+    async def output_type(self, context: ValidationContext) -> Type[Data]:
         return build_data_type(
             "ExpandSequenceOutput",
             {key: (self.element_type, True) for key in self.keys},
@@ -158,14 +166,17 @@ class ExpandSequenceNode(Node[SequenceData, Data, SequenceParams]):
     @override
     async def run(
         self,
-        context: Context,
+        *,
+        context: ExecutionContext,
+        input_type: Type[SequenceData],
+        output_type: Type[Data],
         input: SequenceData,
     ) -> Data:
         N = self.params.length.root
         assert len(input.sequence) == N, (
             f"Expected sequence of length {N}, but got {len(input.sequence)}"
         )
-        return self.output_type(**{self.key(i): input.sequence[i] for i in range(N)})
+        return output_type(**{self.key(i): input.sequence[i] for i in range(N)})
 
     @classmethod
     def from_length(
@@ -187,13 +198,15 @@ class ExpandSequenceNode(Node[SequenceData, Data, SequenceParams]):
 
 class MappingParams(Params):
     keys: SequenceValue[StringValue] = Field(
-        title="Keys", description="The keys of the mapping."
+        title="Keys",
+        description="The keys of the mapping.",
     )
 
 
 class MappingData(Data, Generic[V]):
     mapping: StringMapValue[V] = Field(
-        title="Mapping", description="The mapping of keys to values."
+        title="Mapping",
+        description="The mapping of keys to values.",
     )
 
 
@@ -223,20 +236,27 @@ class GatherMappingNode(Node[Data, MappingData, MappingParams]):
     # TODO: make this serializable/deserializable
     value_type: ValueType = Value
 
-    @cached_property
-    def input_type(self):
+    @override
+    async def input_type(self, context: ValidationContext) -> Type[Data]:
         return build_data_type(
             "GatherMappingInput",
             {key.root: (self.value_type, True) for key in self.params.keys},
         )
 
-    @cached_property
-    def output_type(self):
+    @override
+    async def output_type(self, context: ValidationContext) -> Type[MappingData]:
         return MappingData[self.value_type]
 
     @override
-    async def run(self, context: Context, input: Data) -> MappingData:
-        return self.output_type(
+    async def run(
+        self,
+        *,
+        context: ExecutionContext,
+        input_type: Type[Data],
+        output_type: Type[MappingData],
+        input: Data,
+    ) -> MappingData:
+        return output_type(
             mapping=StringMapValue[self.value_type](
                 {key.root: getattr(input, key.root) for key in self.params.keys}
             )
@@ -282,22 +302,27 @@ class ExpandMappingNode(Node[MappingData, Data, MappingParams]):
     # TODO: make this serializable/deserializable
     value_type: ValueType = Value
 
-    @cached_property
-    def input_type(self):
+    @override
+    async def input_type(self, context: ValidationContext) -> Type[MappingData]:
         return MappingData[self.value_type]
 
-    @cached_property
-    def output_type(self):
+    @override
+    async def output_type(self, context: ValidationContext) -> Type[Data]:
         return build_data_type(
             "ExpandMappingOutput",
             {key.root: (self.value_type, True) for key in self.params.keys},
         )
 
     @override
-    async def run(self, context: Context, input: MappingData) -> Data:
-        return self.output_type(
-            **{key.root: input.mapping[key] for key in self.params.keys}
-        )
+    async def run(
+        self,
+        *,
+        context: ExecutionContext,
+        input_type: Type[MappingData],
+        output_type: Type[Data],
+        input: MappingData,
+    ) -> Data:
+        return output_type(**{key.root: input.mapping[key] for key in self.params.keys})
 
     @classmethod
     def from_keys(cls, id: str, keys: Sequence[str]) -> Self:
@@ -350,16 +375,23 @@ class GatherDataNode(Node[Data, NestedData, Empty]):
     # TODO: make this serializable/deserializable
     data_type: Type[Data] = Field(default=Data, exclude=True)
 
-    @cached_property
-    def input_type(self):
+    @override
+    async def input_type(self, context: ValidationContext) -> Type[Data]:
         return self.data_type
 
-    @cached_property
-    def output_type(self):
+    @override
+    async def output_type(self, context: ValidationContext) -> Type[NestedData]:
         return NestedData[self.data_type]
 
     @override
-    async def run(self, context: Context, input: Data) -> NestedData:
+    async def run(
+        self,
+        *,
+        context: ExecutionContext,
+        input_type: Type[Data],
+        output_type: Type[NestedData],
+        input: Data,
+    ) -> NestedData:
         return NestedData[self.data_type](data=DataValue[self.data_type](root=input))
 
     @classmethod
@@ -397,16 +429,23 @@ class ExpandDataNode(Node[NestedData, Data, Empty]):
     # TODO: make this serializable/deserializable
     data_type: Type[Data] = Field(default=Data, exclude=True)
 
-    @cached_property
-    def input_type(self):
+    @override
+    async def input_type(self, context: ValidationContext) -> Type[NestedData]:
         return NestedData[self.data_type]
 
-    @cached_property
-    def output_type(self):
+    @override
+    async def output_type(self, context: ValidationContext) -> Type[Data]:
         return self.data_type
 
     @override
-    async def run(self, context: Context, input: NestedData) -> Data:
+    async def run(
+        self,
+        *,
+        context: ExecutionContext,
+        input_type: Type[NestedData],
+        output_type: Type[Data],
+        input: NestedData,
+    ) -> Data:
         return input.data.root
 
     @classmethod

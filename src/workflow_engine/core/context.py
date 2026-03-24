@@ -7,18 +7,44 @@ from overrides import EnforceOverrides
 
 from .error import ShouldRetry, ShouldYield, WorkflowErrors
 from .execution import WorkflowExecutionResult
-from .node import Node
-from .values import DataMapping, FileValue
-from .workflow import Workflow
+from .node import Node, NodeRegistry
+from .values import Data, DataMapping, FileValue, ValueRegistry
+from .workflow import ValidatedWorkflow
 
 F = TypeVar("F", bound=FileValue)
 
 
-class Context(ABC, EnforceOverrides):
+class ValidationContext:
+    """
+    Represents a context in which a node or workflow is validated.
+
+    Validation includes inferring the types of nodes, their input and output
+    types, and validating that edges are connected
+    """
+
+    def __init__(
+        self,
+        *,
+        node_registry: NodeRegistry = NodeRegistry.DEFAULT,
+        value_registry: ValueRegistry = ValueRegistry.DEFAULT,
+    ):
+        self.node_registry = node_registry
+        self.value_registry = value_registry
+
+
+class ExecutionContext(ABC, EnforceOverrides):
     """
     Represents the environment in which a workflow is executed.
     A context's life is limited to the execution of a single workflow.
+
+    An execution context always contains a validation context, allowing it to
+    validate sub-workflows that are emitted by nodes.
     """
+
+    def __init__(self, *, validation_context: ValidationContext | None = None):
+        if validation_context is None:
+            validation_context = ValidationContext()
+        self.validation_context = validation_context
 
     @abstractmethod
     async def read(
@@ -54,6 +80,8 @@ class Context(ABC, EnforceOverrides):
         self,
         *,
         node: Node,
+        input_type: type[Data],
+        output_type: type[Data],
         input: DataMapping,
     ) -> DataMapping | None:
         """
@@ -68,6 +96,8 @@ class Context(ABC, EnforceOverrides):
         self,
         *,
         node: Node,
+        input_type: type[Data],
+        output_type: type[Data],
         input: DataMapping,
         exception: Exception,
     ) -> Exception | DataMapping:
@@ -82,6 +112,8 @@ class Context(ABC, EnforceOverrides):
         self,
         *,
         node: Node,
+        input_type: type[Data],
+        output_type: type[Data],
         input: DataMapping,
         exception: ShouldYield,
     ) -> None:
@@ -104,6 +136,8 @@ class Context(ABC, EnforceOverrides):
         self,
         *,
         node: Node,
+        input_type: type[Data],
+        output_type: type[Data],
         input: DataMapping,
         exception: ShouldRetry,
         attempt: int,
@@ -123,6 +157,8 @@ class Context(ABC, EnforceOverrides):
         self,
         *,
         node: Node,
+        input_type: type[Data],
+        output_type: type[Data],
         input: DataMapping,
         output: DataMapping,
     ) -> DataMapping:
@@ -142,16 +178,18 @@ class Context(ABC, EnforceOverrides):
         self,
         *,
         node: Node,
+        input_type: type[Data],
+        output_type: type[Data],
         input: DataMapping,
-        workflow: Workflow,
-    ) -> Workflow:
+        workflow: ValidatedWorkflow,
+    ) -> ValidatedWorkflow:
         """
         A hook that is called when a node finishes execution by returning a
         Workflow (i.e., it expands into a subgraph).
 
         node: the node that emitted the workflow
         input: the input data to the node
-        workflow: the workflow emitted by the node
+        workflow: the validated workflow emitted by the node
 
         The context can modify the workflow by returning a different Workflow.
         """
@@ -160,7 +198,7 @@ class Context(ABC, EnforceOverrides):
     async def on_workflow_start(
         self,
         *,
-        workflow: Workflow,
+        workflow: ValidatedWorkflow,
         input: DataMapping,
     ) -> WorkflowExecutionResult | None:
         """
@@ -177,7 +215,7 @@ class Context(ABC, EnforceOverrides):
     async def on_workflow_error(
         self,
         *,
-        workflow: Workflow,
+        workflow: ValidatedWorkflow,
         input: DataMapping,
         errors: WorkflowErrors,
         partial_output: DataMapping,
@@ -205,7 +243,7 @@ class Context(ABC, EnforceOverrides):
     async def on_workflow_finish(
         self,
         *,
-        workflow: Workflow,
+        workflow: ValidatedWorkflow,
         input: DataMapping,
         output: DataMapping,
     ) -> WorkflowExecutionResult:
@@ -224,7 +262,7 @@ class Context(ABC, EnforceOverrides):
     async def on_workflow_yield(
         self,
         *,
-        workflow: Workflow,
+        workflow: ValidatedWorkflow,
         input: DataMapping,
         partial_output: DataMapping,
         node_yields: Mapping[str, str],
@@ -251,5 +289,5 @@ class Context(ABC, EnforceOverrides):
 
 
 __all__ = [
-    "Context",
+    "ExecutionContext",
 ]

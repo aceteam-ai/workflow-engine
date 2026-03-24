@@ -8,13 +8,14 @@ from typing import NamedTuple
 from overrides import override
 
 from ..core import (
-    Context,
+    ExecutionContext,
     DataMapping,
     ExecutionAlgorithm,
     Node,
     NodeException,
     ShouldRetry,
     ShouldYield,
+    ValidatedWorkflow,
     Workflow,
     WorkflowErrors,
     WorkflowExecutionResult,
@@ -83,8 +84,8 @@ class ParallelExecutionAlgorithm(ExecutionAlgorithm):
     async def execute(
         self,
         *,
-        context: Context,
-        workflow: Workflow,
+        context: ExecutionContext,
+        workflow: ValidatedWorkflow,
         input: DataMapping,
     ) -> WorkflowExecutionResult:
         # Initialize semaphore if max_concurrency is set
@@ -169,12 +170,17 @@ class ParallelExecutionAlgorithm(ExecutionAlgorithm):
                         failed_nodes.add(node_id)
                         continue
 
+                    node = workflow.nodes_by_id[node_id]
+                    input_type = workflow.node_input_types[node_id]
+                    output_type = workflow.node_output_types[node_id]
+
                     # Handle yielded nodes
                     if node_result.should_yield is not None:
-                        node = workflow.nodes_by_id[node_id]
                         node_yields[node_id] = node_result.should_yield.message
                         await context.on_node_yield(
                             node=node,
+                            input_type=input_type,
+                            output_type=output_type,
                             input=node_result.input,
                             exception=node_result.should_yield,
                         )
@@ -195,6 +201,8 @@ class ParallelExecutionAlgorithm(ExecutionAlgorithm):
                             state = retry_tracker.get_state(node_id)
                             await context.on_node_retry(
                                 node=node,
+                                input_type=input_type,
+                                output_type=output_type,
                                 input=node_input,
                                 exception=should_retry_error,
                                 attempt=state.attempt,
@@ -323,8 +331,8 @@ class ParallelExecutionAlgorithm(ExecutionAlgorithm):
 
     async def _execute_node(
         self,
-        context: Context,
-        workflow: Workflow,
+        context: ExecutionContext,
+        workflow: ValidatedWorkflow,
         node_id: str,
         node_input: DataMapping,
         semaphore: asyncio.Semaphore | None,
@@ -341,9 +349,19 @@ class ParallelExecutionAlgorithm(ExecutionAlgorithm):
         try:
             if semaphore is not None:
                 async with semaphore:
-                    result = await node(context, node_input)
+                    result = await node(
+                        context=context,
+                        input_type=workflow.node_input_types[node_id],
+                        output_type=workflow.node_output_types[node_id],
+                        input=node_input,
+                    )
             else:
-                result = await node(context, node_input)
+                result = await node(
+                    context=context,
+                    input_type=workflow.node_input_types[node_id],
+                    output_type=workflow.node_output_types[node_id],
+                    input=node_input,
+                )
 
             return NodeResult(node_id, result, input=node_input)
 

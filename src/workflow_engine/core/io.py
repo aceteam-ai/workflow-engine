@@ -1,11 +1,8 @@
 # workflow_engine/core/io.py
-from functools import cached_property
-from typing import TYPE_CHECKING, ClassVar, Literal, Self
+from typing import TYPE_CHECKING, ClassVar, Literal, Self, Type
 
-from pydantic import Field
+from pydantic import Field, PrivateAttr
 from overrides import override
-
-from workflow_engine.core.values.schema import DataValueSchema
 
 from .node import Node, NodeTypeInfo, Params
 from .values import (
@@ -16,7 +13,7 @@ from .values import (
 )
 
 if TYPE_CHECKING:
-    from .context import Context
+    from .context import ExecutionContext, ValidationContext
 
 
 class SchemaParams(Params):
@@ -42,24 +39,29 @@ class InputNode(Node[Data, Data, SchemaParams]):
 
     type: Literal["Input"] = "Input"  # pyright: ignore[reportIncompatibleVariableOverride]
 
-    @cached_property
-    def input_type(self):
-        return self.input_schema.build_data_cls()
-
-    @cached_property
-    def output_type(self):
-        return self.input_type
-
-    @cached_property
-    def input_schema(self):
-        return self.params.fields.to_data_schema("InputData")
-
-    @cached_property
-    def output_schema(self):
-        return self.input_schema
+    _cached_data_cls: Type[Data] | None = PrivateAttr(default=None)
 
     @override
-    async def run(self, context: "Context", input: Data) -> Data:
+    async def input_type(self, context: "ValidationContext") -> Type[Data]:
+        if self._cached_data_cls is None:
+            self._cached_data_cls = self.params.fields.to_data_schema(
+                "InputData"
+            ).build_data_cls()
+        return self._cached_data_cls
+
+    @override
+    async def output_type(self, context: "ValidationContext") -> Type[Data]:
+        return await self.input_type(context)
+
+    @override
+    async def run(
+        self,
+        *,
+        context: "ExecutionContext",
+        input_type: Type[Data],
+        output_type: Type[Data],
+        input: Data,
+    ) -> Data:
         return input
 
     @classmethod
@@ -100,24 +102,29 @@ class OutputNode(Node[Data, Data, SchemaParams]):
 
     type: Literal["Output"] = "Output"  # pyright: ignore[reportIncompatibleVariableOverride]
 
-    @cached_property
-    def input_type(self):
-        return self.output_type
-
-    @cached_property
-    def output_type(self):
-        return self.output_schema.build_data_cls()
-
-    @cached_property
-    def input_schema(self) -> DataValueSchema:
-        return self.output_schema
-
-    @cached_property
-    def output_schema(self) -> DataValueSchema:
-        return self.params.fields.to_data_schema("OutputData")
+    _cached_data_cls: Type[Data] | None = PrivateAttr(default=None)
 
     @override
-    async def run(self, context: "Context", input: Data) -> Data:
+    async def input_type(self, context: "ValidationContext") -> Type[Data]:
+        if self._cached_data_cls is None:
+            self._cached_data_cls = self.params.fields.to_data_schema(
+                "OutputData"
+            ).build_data_cls()
+        return self._cached_data_cls
+
+    @override
+    async def output_type(self, context: "ValidationContext") -> Type[Data]:
+        return await self.input_type(context)
+
+    @override
+    async def run(
+        self,
+        *,
+        context: "ExecutionContext",
+        input_type: Type[Data],
+        output_type: Type[Data],
+        input: Data,
+    ) -> Data:
         return input
 
     @classmethod

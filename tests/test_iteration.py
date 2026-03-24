@@ -15,13 +15,15 @@ from workflow_engine import (
     Empty,
     FloatValue,
     SequenceValue,
+    ValidationContext,
     Workflow,
+    WorkflowEngine,
     WorkflowExecutionResultStatus,
 )
-from workflow_engine.contexts import InMemoryContext
+from workflow_engine.contexts import InMemoryExecutionContext
+from workflow_engine.core import ValidatedWorkflow
 from workflow_engine.core.io import InputNode, OutputNode
 from workflow_engine.core.values import (
-    get_data_dict,
     get_field_annotations,
     get_only_field,
 )
@@ -29,7 +31,7 @@ from workflow_engine.execution import TopologicalExecutionAlgorithm
 from workflow_engine.nodes import AddNode, ForEachNode
 
 
-def _input_element_type(workflow: Workflow):
+def _input_element_type(workflow: ValidatedWorkflow):
     """Mirror ForEachNode's element type logic for input."""
     n = len(get_field_annotations(workflow.input_type))
     if n == 1:
@@ -37,7 +39,7 @@ def _input_element_type(workflow: Workflow):
     return DataValue[workflow.input_type]
 
 
-def _output_element_type(workflow: Workflow):
+def _output_element_type(workflow: ValidatedWorkflow):
     """Mirror ForEachNode's element type logic for output."""
     n = len(get_field_annotations(workflow.output_type))
     if n == 0:
@@ -47,7 +49,7 @@ def _output_element_type(workflow: Workflow):
     return DataValue[workflow.output_type]
 
 
-def _workflow_with_foreach(inner_workflow: Workflow) -> Workflow:
+def _workflow_with_foreach(inner_workflow: ValidatedWorkflow) -> Workflow:
     """Wrap an inner workflow in a ForEach with outer input/output nodes."""
     for_each = ForEachNode.from_workflow(id="for_each", workflow=inner_workflow)
     input_elem = _input_element_type(inner_workflow)
@@ -237,18 +239,16 @@ def multi_in_multi_out_workflow() -> Workflow:
 @pytest.mark.asyncio
 async def test_single_in_single_out(single_in_single_out_workflow: Workflow):
     """ForEach with 1 input field, 1 output field: scalar sequence, no adapters."""
-    workflow = _workflow_with_foreach(single_in_single_out_workflow)
-    context = InMemoryContext()
+    context = InMemoryExecutionContext()
     algorithm = TopologicalExecutionAlgorithm()
-
-    input_data = get_data_dict(
-        workflow.input_type.model_validate({"sequence": [1.0, 2.0, 3.0]})
+    engine = WorkflowEngine(execution_algorithm=algorithm)
+    workflow = _workflow_with_foreach(
+        await engine.validate(single_in_single_out_workflow)
     )
-
-    result = await algorithm.execute(
+    result = await engine.execute(
         context=context,
         workflow=workflow,
-        input=input_data,
+        input={"sequence": [1.0, 2.0, 3.0]},
     )
 
     assert result.status is WorkflowExecutionResultStatus.SUCCESS
@@ -264,18 +264,16 @@ async def test_single_in_single_out(single_in_single_out_workflow: Workflow):
 @pytest.mark.asyncio
 async def test_single_in_multi_out(single_in_multi_out_workflow: Workflow):
     """ForEach with 1 input field, 2 output fields: scalar in, GatherDataNode."""
-    workflow = _workflow_with_foreach(single_in_multi_out_workflow)
-    context = InMemoryContext()
+    context = InMemoryExecutionContext()
     algorithm = TopologicalExecutionAlgorithm()
-
-    input_data = get_data_dict(
-        workflow.input_type.model_validate({"sequence": [5.0, 10.0]})
+    engine = WorkflowEngine(execution_algorithm=algorithm)
+    workflow = _workflow_with_foreach(
+        await engine.validate(single_in_multi_out_workflow)
     )
-
-    result = await algorithm.execute(
+    result = await engine.execute(
         context=context,
         workflow=workflow,
-        input=input_data,
+        input={"sequence": [5.0, 10.0]},
     )
 
     assert result.status is WorkflowExecutionResultStatus.SUCCESS
@@ -292,26 +290,23 @@ async def test_single_in_multi_out(single_in_multi_out_workflow: Workflow):
 @pytest.mark.asyncio
 async def test_multi_in_single_out(multi_in_single_out_workflow: Workflow):
     """ForEach with 2 input fields, 1 output field: ExpandDataNode, no Gather."""
-    workflow = _workflow_with_foreach(multi_in_single_out_workflow)
-    context = InMemoryContext()
+    context = InMemoryExecutionContext()
     algorithm = TopologicalExecutionAlgorithm()
-
-    input_data = get_data_dict(
-        workflow.input_type.model_validate(
-            {
-                "sequence": [
-                    {"a": 1.0, "b": 2.0},
-                    {"a": 3.0, "b": 4.0},
-                    {"a": 5.0, "b": 6.0},
-                ]
-            }
-        )
+    engine = WorkflowEngine(execution_algorithm=algorithm)
+    workflow = _workflow_with_foreach(
+        await engine.validate(multi_in_single_out_workflow)
     )
 
-    result = await algorithm.execute(
+    result = await engine.execute(
         context=context,
         workflow=workflow,
-        input=input_data,
+        input={
+            "sequence": [
+                {"a": 1.0, "b": 2.0},
+                {"a": 3.0, "b": 4.0},
+                {"a": 5.0, "b": 6.0},
+            ]
+        },
     )
 
     assert result.status is WorkflowExecutionResultStatus.SUCCESS
@@ -327,25 +322,20 @@ async def test_multi_in_single_out(multi_in_single_out_workflow: Workflow):
 @pytest.mark.asyncio
 async def test_multi_in_multi_out(multi_in_multi_out_workflow: Workflow):
     """ForEach with 2 input fields, 2 output fields: both ExpandData and GatherData."""
-    workflow = _workflow_with_foreach(multi_in_multi_out_workflow)
-    context = InMemoryContext()
-    algorithm = TopologicalExecutionAlgorithm()
-
-    input_data = get_data_dict(
-        workflow.input_type.model_validate(
-            {
-                "sequence": [
-                    {"a": 1.0, "b": 2.0},
-                    {"a": 10.0, "b": 20.0},
-                ]
-            }
-        )
+    context = InMemoryExecutionContext()
+    engine = WorkflowEngine()
+    workflow = _workflow_with_foreach(
+        await engine.validate(multi_in_multi_out_workflow)
     )
-
-    result = await algorithm.execute(
+    result = await engine.execute(
         context=context,
         workflow=workflow,
-        input=input_data,
+        input={
+            "sequence": [
+                {"a": 1.0, "b": 2.0},
+                {"a": 10.0, "b": 20.0},
+            ]
+        },
     )
 
     assert result.status is WorkflowExecutionResultStatus.SUCCESS
@@ -421,7 +411,11 @@ async def _test_zero_output_workflow(workflow: Workflow, input_data: dict) -> No
         id="for_each",
         workflow=workflow,
     )
-    assert for_each.output_type is Empty
+    validation_context = ValidationContext()
+    assert await for_each.output_type(validation_context) is Empty
+
+    engine = WorkflowEngine()
+    workflow = await engine.validate(workflow)
 
     input_elem = _input_element_type(workflow)
     input_node = InputNode.from_fields(
@@ -442,13 +436,13 @@ async def _test_zero_output_workflow(workflow: Workflow, input_data: dict) -> No
         ],
     )
 
-    context = InMemoryContext()
+    context = InMemoryExecutionContext()
     algorithm = TopologicalExecutionAlgorithm()
-    input_dict = get_data_dict(wf.input_type.model_validate(input_data))
-    result = await algorithm.execute(
+    engine = WorkflowEngine(execution_algorithm=algorithm)
+    result = await engine.execute(
         context=context,
         workflow=wf,
-        input=input_dict,
+        input=input_data,
     )
 
     assert result.status is WorkflowExecutionResultStatus.SUCCESS
@@ -481,16 +475,15 @@ async def test_zero_output_multi_in(zero_output_multi_in_workflow: Workflow):
 @pytest.mark.asyncio
 async def test_for_each_empty(multi_in_single_out_workflow: Workflow):
     """Empty sequence produces empty results."""
-    workflow = _workflow_with_foreach(multi_in_single_out_workflow)
-    context = InMemoryContext()
-    algorithm = TopologicalExecutionAlgorithm()
-
-    input_data = get_data_dict(workflow.input_type.model_validate({"sequence": []}))
-
-    result = await algorithm.execute(
+    context = InMemoryExecutionContext()
+    engine = WorkflowEngine()
+    workflow = _workflow_with_foreach(
+        await engine.validate(multi_in_single_out_workflow)
+    )
+    result = await engine.execute(
         context=context,
         workflow=workflow,
-        input=input_data,
+        input={"sequence": []},
     )
 
     assert result.status is WorkflowExecutionResultStatus.SUCCESS

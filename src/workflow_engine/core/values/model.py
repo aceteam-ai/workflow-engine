@@ -8,7 +8,7 @@ from .json import JSONValue
 from .value import Caster, Value, get_origin_and_args
 
 if TYPE_CHECKING:
-    from ..context import Context
+    from ..context import ExecutionContext
 
 M = TypeVar("M", bound=BaseModel)
 
@@ -37,7 +37,7 @@ def cast_json_to_model(
     if not (isinstance(model_cls, type) and issubclass(model_cls, BaseModel)):
         return None
 
-    def _cast(value: JSONValue, context: "Context") -> ModelValue:
+    def _cast(value: JSONValue, context: "ExecutionContext") -> ModelValue:
         validated = model_cls.model_validate(value.root)
         return target_type(validated)
 
@@ -70,13 +70,13 @@ def cast_model_to_model(
     # Identity shortcut
     if source_model_cls is target_model_cls:
 
-        def _identity(value: ModelValue, context: "Context") -> ModelValue:
+        def _identity(value: ModelValue, context: "ExecutionContext") -> ModelValue:
             return target_type(value.root)
 
         return _identity
 
     # Cross-model cast: serialize then validate
-    def _cast(value: ModelValue, context: "Context") -> ModelValue:
+    def _cast(value: ModelValue, context: "ExecutionContext") -> ModelValue:
         dumped = source_model_cls.model_validate(value.root).model_dump()
         validated = target_model_cls.model_validate(dumped)
         return target_type(validated)

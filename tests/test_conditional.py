@@ -7,10 +7,10 @@ from workflow_engine import (
     IntegerValue,
     OutputNode,
     Workflow,
+    WorkflowEngine,
     WorkflowExecutionResultStatus,
 )
-from workflow_engine.contexts import InMemoryContext
-from workflow_engine.execution import TopologicalExecutionAlgorithm
+from workflow_engine.contexts import InMemoryExecutionContext
 from workflow_engine.nodes import AddNode, ConstantIntegerNode, IfElseNode
 
 
@@ -101,8 +101,8 @@ async def test_conditional_workflow(
 ):
     """Test that the workflow outputs start+1 when condition is True, and
     start-1 when condition is False."""
-    context = InMemoryContext()
-    algorithm = TopologicalExecutionAlgorithm()
+    context = InMemoryExecutionContext()
+    engine = WorkflowEngine()
 
     start_value = 42
 
@@ -146,23 +146,23 @@ async def test_conditional_workflow(
         ],
     )
 
-    result = await algorithm.execute(
+    result = await engine.execute(
         context=context,
         workflow=workflow,
         input={
-            "start": IntegerValue(start_value),
-            "condition": BooleanValue(False),
+            "start": start_value,
+            "condition": False,
         },
     )
     assert result.status is WorkflowExecutionResultStatus.SUCCESS
     assert result.output == {"result": start_value - 1}
 
-    result = await algorithm.execute(
+    result = await engine.execute(
         context=context,
         workflow=workflow,
         input={
-            "start": IntegerValue(start_value),
-            "condition": BooleanValue(True),
+            "start": start_value,
+            "condition": True,
         },
     )
     assert result.status is WorkflowExecutionResultStatus.SUCCESS
@@ -176,8 +176,8 @@ async def test_conditional_workflow_twice_series(
 ):
     """Test that the workflow behaves correctly when condition is called twice
     in series, once with True and once with False."""
-    context = InMemoryContext()
-    algorithm = TopologicalExecutionAlgorithm()
+    context = InMemoryExecutionContext()
+    engine = WorkflowEngine()
 
     start_value = 42
 
@@ -239,49 +239,49 @@ async def test_conditional_workflow_twice_series(
         ],
     )
 
-    result = await algorithm.execute(
+    result = await engine.execute(
         context=context,
         workflow=workflow,
         input={
-            "start": IntegerValue(start_value),
-            "condition_1": BooleanValue(True),
-            "condition_2": BooleanValue(False),
+            "start": start_value,
+            "condition_1": True,
+            "condition_2": False,
         },
     )
     assert result.status is WorkflowExecutionResultStatus.SUCCESS
     assert result.output == {"result": start_value}
 
-    result = await algorithm.execute(
+    result = await engine.execute(
         context=context,
         workflow=workflow,
         input={
-            "start": IntegerValue(start_value),
-            "condition_1": BooleanValue(False),
-            "condition_2": BooleanValue(True),
+            "start": start_value,
+            "condition_1": False,
+            "condition_2": True,
         },
     )
     assert result.status is WorkflowExecutionResultStatus.SUCCESS
     assert result.output == {"result": start_value}
 
-    result = await algorithm.execute(
+    result = await engine.execute(
         context=context,
         workflow=workflow,
         input={
-            "start": IntegerValue(start_value),
-            "condition_1": BooleanValue(True),
-            "condition_2": BooleanValue(True),
+            "start": start_value,
+            "condition_1": True,
+            "condition_2": True,
         },
     )
     assert result.status is WorkflowExecutionResultStatus.SUCCESS
     assert result.output == {"result": start_value + 2}
 
-    result = await algorithm.execute(
+    result = await engine.execute(
         context=context,
         workflow=workflow,
         input={
-            "start": IntegerValue(start_value),
-            "condition_1": BooleanValue(False),
-            "condition_2": BooleanValue(False),
+            "start": start_value,
+            "condition_1": False,
+            "condition_2": False,
         },
     )
     assert result.status is WorkflowExecutionResultStatus.SUCCESS

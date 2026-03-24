@@ -12,10 +12,10 @@ from pydantic import Field
 from ..utils.immutable import ImmutableBaseModel
 from .error import WorkflowErrors
 from .values import DataMapping
-from .workflow import Workflow
+from .workflow import ValidatedWorkflow
 
 if TYPE_CHECKING:
-    from .context import Context
+    from .context import ExecutionContext
 
 
 class WorkflowExecutionResultStatus(StrEnum):
@@ -96,8 +96,8 @@ class ExecutionAlgorithm(ABC, EnforceOverrides):
     async def execute(
         self,
         *,
-        context: Context,
-        workflow: Workflow,
+        context: ExecutionContext,
+        workflow: ValidatedWorkflow,
         input: DataMapping,
     ) -> WorkflowExecutionResult:
         pass

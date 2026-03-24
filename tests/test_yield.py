@@ -11,13 +11,13 @@ Tests run against both TopologicalExecutionAlgorithm and
 ParallelExecutionAlgorithm via the `algorithm` fixture.
 """
 
-from functools import cached_property
-from typing import ClassVar, Literal
+from typing import ClassVar, Literal, Type
 
+from overrides import override
 import pytest
 
 from workflow_engine import (
-    Context,
+    ExecutionContext,
     Data,
     Edge,
     ExecutionAlgorithm,
@@ -25,10 +25,12 @@ from workflow_engine import (
     Params,
     ShouldYield,
     StringValue,
+    ValidationContext,
     Workflow,
+    WorkflowEngine,
     WorkflowExecutionResultStatus,
 )
-from workflow_engine.contexts import InMemoryContext
+from workflow_engine.contexts import InMemoryExecutionContext
 from workflow_engine.core import NodeTypeInfo
 from workflow_engine.core.io import InputNode, OutputNode
 from workflow_engine.execution import TopologicalExecutionAlgorithm
@@ -62,15 +64,23 @@ class EchoNode(Node[SimpleInput, SimpleOutput, Params]):
 
     ran: ClassVar[set[str]] = set()
 
-    @cached_property
-    def input_type(self):
+    @override
+    async def input_type(self, context: ValidationContext) -> Type[SimpleInput]:
         return SimpleInput
 
-    @cached_property
-    def output_type(self):
+    @override
+    async def output_type(self, context: ValidationContext) -> Type[SimpleOutput]:
         return SimpleOutput
 
-    async def run(self, context: Context, input: SimpleInput) -> SimpleOutput:
+    @override
+    async def run(
+        self,
+        *,
+        context: ExecutionContext,
+        input_type: Type[SimpleInput],
+        output_type: Type[SimpleOutput],
+        input: SimpleInput,
+    ) -> SimpleOutput:
         EchoNode.ran.add(self.id)
         return SimpleOutput(result=input.value)
 
@@ -90,17 +100,25 @@ class YieldingNode(Node[SimpleInput, SimpleOutput, Params]):
     message: str = "yielding"
     calls: ClassVar[dict[str, int]] = {}
 
-    @cached_property
-    def input_type(self):
+    @override
+    async def input_type(self, context: ValidationContext) -> Type[SimpleInput]:
         return SimpleInput
 
-    @cached_property
-    def output_type(self):
+    @override
+    async def output_type(self, context: ValidationContext) -> Type[SimpleOutput]:
         return SimpleOutput
 
-    async def run(self, context: Context, input: SimpleInput) -> SimpleOutput:
+    @override
+    async def run(
+        self,
+        *,
+        context: ExecutionContext,
+        input_type: Type[SimpleInput],
+        output_type: Type[SimpleOutput],
+        input: SimpleInput,
+    ) -> SimpleOutput:
         YieldingNode.calls[self.id] = YieldingNode.calls.get(self.id, 0) + 1
-        raise ShouldYield(self.message)
+        raise ShouldYield(self.message)  # type: ignore
 
 
 class ResumableNode(Node[SimpleInput, SimpleOutput, Params]):
@@ -118,15 +136,23 @@ class ResumableNode(Node[SimpleInput, SimpleOutput, Params]):
 
     calls: ClassVar[dict[str, int]] = {}
 
-    @cached_property
-    def input_type(self):
+    @override
+    async def input_type(self, context: ValidationContext) -> Type[SimpleInput]:
         return SimpleInput
 
-    @cached_property
-    def output_type(self):
+    @override
+    async def output_type(self, context: ValidationContext) -> Type[SimpleOutput]:
         return SimpleOutput
 
-    async def run(self, context: Context, input: SimpleInput) -> SimpleOutput:
+    @override
+    async def run(
+        self,
+        *,
+        context: ExecutionContext,
+        input_type: Type[SimpleInput],
+        output_type: Type[SimpleOutput],
+        input: SimpleInput,
+    ) -> SimpleOutput:
         n = ResumableNode.calls.get(self.id, 0) + 1
         ResumableNode.calls[self.id] = n
         if n == 1:
@@ -263,9 +289,14 @@ class TestYieldContinuesProgress:
     ):
         """Nodes in independent branches still execute when another branch yields."""
         workflow, _ = _fan_out_workflow(yielding_ids=["y"], echo_ids=["e"])
-        context = InMemoryContext()
+        context = InMemoryExecutionContext()
 
-        result = await algorithm.execute(context=context, workflow=workflow, input={})
+        engine = WorkflowEngine(execution_algorithm=algorithm)
+        result = await engine.execute(
+            context=context,
+            workflow=workflow,
+            input={},
+        )
 
         assert result.status is WorkflowExecutionResultStatus.YIELDED
         assert "e" in EchoNode.ran
@@ -278,9 +309,14 @@ class TestYieldContinuesProgress:
     ):
         """A node whose only dependency yielded must not execute."""
         workflow = _chain_workflow(yield_first=True)
-        context = InMemoryContext()
+        context = InMemoryExecutionContext()
 
-        result = await algorithm.execute(context=context, workflow=workflow, input={})
+        engine = WorkflowEngine(execution_algorithm=algorithm)
+        result = await engine.execute(
+            context=context,
+            workflow=workflow,
+            input={},
+        )
         assert result.status is WorkflowExecutionResultStatus.YIELDED
 
         assert "node_b" not in EchoNode.ran
@@ -292,9 +328,14 @@ class TestYieldContinuesProgress:
     ):
         """When an earlier node succeeds, its downstream runs even if a sibling yields."""
         workflow = _chain_workflow(yield_first=False)
-        context = InMemoryContext()
+        context = InMemoryExecutionContext()
 
-        result = await algorithm.execute(context=context, workflow=workflow, input={})
+        engine = WorkflowEngine(execution_algorithm=algorithm)
+        result = await engine.execute(
+            context=context,
+            workflow=workflow,
+            input={},
+        )
         assert result.status is WorkflowExecutionResultStatus.YIELDED
 
         # node_a (echo) ran; node_b (yield) yielded
@@ -309,9 +350,14 @@ class TestMultipleYields:
     ):
         """node_yields contains every node that yielded, not just the first."""
         workflow, _ = _fan_out_workflow(yielding_ids=["y1", "y2", "y3"], echo_ids=[])
-        context = InMemoryContext()
+        context = InMemoryExecutionContext()
 
-        result = await algorithm.execute(context=context, workflow=workflow, input={})
+        engine = WorkflowEngine(execution_algorithm=algorithm)
+        result = await engine.execute(
+            context=context,
+            workflow=workflow,
+            input={},
+        )
         assert result.status is WorkflowExecutionResultStatus.YIELDED
 
         assert set(result.node_yields.keys()) == {"y1", "y2", "y3"}
@@ -320,9 +366,14 @@ class TestMultipleYields:
     async def test_yield_messages_preserved(self, algorithm: ExecutionAlgorithm):
         """Each yielded node's message is available in node_yields."""
         workflow, _ = _fan_out_workflow(yielding_ids=["y1", "y2"], echo_ids=[])
-        context = InMemoryContext()
+        context = InMemoryExecutionContext()
 
-        result = await algorithm.execute(context=context, workflow=workflow, input={})
+        engine = WorkflowEngine(execution_algorithm=algorithm)
+        result = await engine.execute(
+            context=context,
+            workflow=workflow,
+            input={},
+        )
         assert result.status is WorkflowExecutionResultStatus.YIELDED
 
         assert result.node_yields["y1"] == "waiting: y1"
@@ -334,9 +385,14 @@ class TestMultipleYields:
         workflow, _ = _fan_out_workflow(
             yielding_ids=["y1", "y2"], echo_ids=["e1", "e2"]
         )
-        context = InMemoryContext()
+        context = InMemoryExecutionContext()
 
-        result = await algorithm.execute(context=context, workflow=workflow, input={})
+        engine = WorkflowEngine(execution_algorithm=algorithm)
+        result = await engine.execute(
+            context=context,
+            workflow=workflow,
+            input={},
+        )
         assert result.status is WorkflowExecutionResultStatus.YIELDED
 
         # Yielded nodes are captured
@@ -351,9 +407,14 @@ class TestMultipleYields:
     ):
         """node_yields is empty when all nodes complete normally."""
         workflow, _ = _fan_out_workflow(yielding_ids=[], echo_ids=["e1", "e2"])
-        context = InMemoryContext()
+        context = InMemoryExecutionContext()
 
-        result = await algorithm.execute(context=context, workflow=workflow, input={})
+        engine = WorkflowEngine(execution_algorithm=algorithm)
+        result = await engine.execute(
+            context=context,
+            workflow=workflow,
+            input={},
+        )
 
         assert result.status is WorkflowExecutionResultStatus.SUCCESS
         assert {"e1", "e2"}.issubset(EchoNode.ran)
@@ -390,9 +451,10 @@ class TestResumption:
     ):
         """The first execution returns with node_yields."""
         workflow = self._resumable_workflow()
-        context = InMemoryContext()
+        context = InMemoryExecutionContext()
 
-        result = await algorithm.execute(context=context, workflow=workflow, input={})
+        engine = WorkflowEngine(execution_algorithm=algorithm)
+        result = await engine.execute(context=context, workflow=workflow, input={})
         assert result.status is WorkflowExecutionResultStatus.YIELDED
 
         assert "resumable" in result.node_yields
@@ -405,14 +467,24 @@ class TestResumption:
     ):
         """Re-running the same workflow with the same context lets the node succeed."""
         workflow = self._resumable_workflow()
-        context = InMemoryContext()
+
+        engine = WorkflowEngine(execution_algorithm=algorithm)
+        context = InMemoryExecutionContext()
 
         # First run — yields
-        result = await algorithm.execute(context=context, workflow=workflow, input={})
+        result = await engine.execute(
+            context=context,
+            workflow=workflow,
+            input={},
+        )
         assert result.status is WorkflowExecutionResultStatus.YIELDED
 
         # Second run — node finds its work complete and returns a result
-        result = await algorithm.execute(context=context, workflow=workflow, input={})
+        result = await engine.execute(
+            context=context,
+            workflow=workflow,
+            input={},
+        )
 
         assert result.status is WorkflowExecutionResultStatus.SUCCESS
         assert result.output == {"result": StringValue("resumed: hello")}
@@ -446,15 +518,24 @@ class TestResumption:
                 ),
             ],
         )
-        context = InMemoryContext()
+        context = InMemoryExecutionContext()
+        engine = WorkflowEngine(execution_algorithm=algorithm)
 
         # First run — both yield
-        result = await algorithm.execute(context=context, workflow=workflow, input={})
+        result = await engine.execute(
+            context=context,
+            workflow=workflow,
+            input={},
+        )
         assert result.status is WorkflowExecutionResultStatus.YIELDED
         assert set(result.node_yields.keys()) == {"r_a", "r_b"}
 
         # Second run — r_a succeeds, r_b yields again
-        result = await algorithm.execute(context=context, workflow=workflow, input={})
+        result = await engine.execute(
+            context=context,
+            workflow=workflow,
+            input={},
+        )
         assert result.status is WorkflowExecutionResultStatus.YIELDED
         assert set(result.node_yields.keys()) == {"r_b"}
         assert ResumableNode.calls["r_a"] == 2

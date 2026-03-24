@@ -1,15 +1,21 @@
-# workflow_engine/core/workflow_engine.py
-from .context import Context
+# workflow_engine/core/engine.py
+from collections.abc import Mapping
+from typing import Any
+from .context import ExecutionContext, ValidationContext
 from .execution import ExecutionAlgorithm, WorkflowExecutionResult
 from .node import NodeRegistry
-from .values import DataMapping
+from .values import get_data_dict
 from .values.value import ValueRegistry
-from .workflow import Workflow
+from .workflow import ValidatedWorkflow, Workflow
 
 
 class WorkflowEngine:
     """
-    WorkflowEngine manages type resolution and execution for workflows using isolated registries.
+    WorkflowEngine manages type resolution and execution for workflows using
+    isolated registries.
+
+    Unlike a Context, a WorkflowEngine instance can be shared by multiple
+    workflows, possibly at the same time.
 
     Each engine instance has its own registries, enabling multi-tenancy where
     different organizations can have different sets of available nodes and values.
@@ -46,61 +52,28 @@ class WorkflowEngine:
             execution_algorithm = TopologicalExecutionAlgorithm()
         self.execution_algorithm = execution_algorithm
 
-    def load(self, workflow: Workflow) -> Workflow:
+    async def _get_validation_context(self) -> ValidationContext:
         """
-        Convert an untyped workflow to a typed workflow.
-
-        Walks the workflow graph and:
-        1. Looks up concrete node types in node_registry
-        2. Applies migrations via the registry's load_node method
-        3. Validates node inputs and edge types
-        4. Returns a new Workflow with typed nodes
-
-        Args:
-            workflow: Untyped workflow (nodes may be base Node instances)
-
-        Returns:
-            Typed workflow (nodes are concrete subclass instances)
-
-        Raises:
-            ValueError: If edges reference non-existent fields or nodes are missing required inputs
-            TypeError: If edge types are incompatible
+        Builds a validation context. Override this for custom validation logic.
         """
-        typed_inner_nodes = []
+        return ValidationContext(
+            node_registry=self.node_registry,
+            value_registry=self.value_registry,
+        )
 
-        for node in workflow.inner_nodes:
-            # Load the node (will return unchanged if already concrete)
-            typed_node = self.node_registry.load_node(node)
-            typed_inner_nodes.append(typed_node)
-
-        # Create new workflow with typed nodes
-        typed_workflow = workflow.model_update(inner_nodes=typed_inner_nodes)
-
-        # Validate edges now that nodes are typed
-        self._validate_edges(typed_workflow)
-        self._validate_nodes(typed_workflow)
-
-        return typed_workflow
-
-    def _validate_edges(self, workflow: Workflow) -> None:
-        """Validate that all edges reference valid fields with compatible types."""
-        for edge in workflow.edges:
-            source = workflow.nodes_by_id[edge.source_id]
-            target = workflow.nodes_by_id[edge.target_id]
-            edge.validate_types(source=source, target=target)
-
-    def _validate_nodes(self, workflow: Workflow) -> None:
-        """Validate that all required node inputs have edges."""
-        for node in workflow.nodes:
-            for key, (_, required) in node.input_fields.items():
-                if required and key not in workflow.edges_by_target[node.id]:
-                    raise ValueError(f"Node {node.id} has no required input edge {key}")
+    async def validate(
+        self,
+        workflow: Workflow,
+    ) -> ValidatedWorkflow:
+        validation_context = await self._get_validation_context()
+        return await workflow.validate(context=validation_context)
 
     async def execute(
         self,
+        *,
+        context: ExecutionContext,
         workflow: Workflow,
-        input: DataMapping,
-        context: Context,
+        input: Mapping[str, Any],
     ) -> WorkflowExecutionResult:
         """
         Load and execute a workflow with the given context.
@@ -113,14 +86,15 @@ class WorkflowEngine:
         Returns:
             WorkflowExecutionResult
         """
-        # Load workflow to ensure it's typed
-        typed_workflow = self.load(workflow)
+        # Load workflow to ensure it's typed, even if it was already validated
+        validated_workflow = await self.validate(workflow)
+        validated_input = validated_workflow.input_type.model_validate(input)
 
         # Execute using the configured algorithm
         return await self.execution_algorithm.execute(
             context=context,
-            workflow=typed_workflow,
-            input=input,
+            workflow=validated_workflow,
+            input=get_data_dict(validated_input),
         )
 
 
