@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 This project uses [PEP 440](https://peps.python.org/pep-0440/) versioning with release candidates (rcN) for pre-release versions.
 
+## [2.0.0rc7] - 2026-03-24
+
+### Changed
+- **BREAKING**: Type resolution is now async and contextual; `can_cast_to()` and `cast_to()` receive a `ValidationContext` enabling context-dependent type compatibility (#94)
+- All node hooks (`on_node_expand`, `on_node_finish`, `on_node_error`) now consistently receive the post-cast input (#94)
+
 ## [2.0.0rc6] - 2026-03-24
 
 ### Added
