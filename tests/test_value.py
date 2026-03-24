@@ -2,8 +2,8 @@ from typing import Literal
 
 import pytest
 
-from workflow_engine import Context
-from workflow_engine.contexts.in_memory import InMemoryContext
+from workflow_engine import ExecutionContext
+from workflow_engine.contexts.in_memory import InMemoryExecutionContext
 from workflow_engine.core import (
     FloatValue,
     IntegerValue,
@@ -37,7 +37,7 @@ class CustomValue(Value[str]):
 @pytest.fixture
 def context():
     """Create a test context for value casting operations."""
-    return InMemoryContext()
+    return InMemoryExecutionContext()
 
 
 @pytest.mark.unit
@@ -303,7 +303,9 @@ async def test_cast_registration(context):
     """Test that cast functions can be registered and work correctly."""
 
     @QuestionValue.register_cast_to(AnswerValue)
-    def cast_question_to_answer(value: QuestionValue, context: Context) -> AnswerValue:
+    def cast_question_to_answer(
+        value: QuestionValue, context: ExecutionContext
+    ) -> AnswerValue:
         return AnswerValue(42)
 
     # Try to register the same cast again (before any casting operations)
@@ -314,7 +316,7 @@ async def test_cast_registration(context):
 
         @QuestionValue.register_cast_to(AnswerValue)
         def cast_question_to_answer(
-            value: QuestionValue, context: Context
+            value: QuestionValue, context: ExecutionContext
         ) -> AnswerValue:
             return AnswerValue(42)
 
@@ -332,7 +334,7 @@ async def test_cast_registration(context):
 
         @QuestionValue.register_cast_to(AnswerValue)
         def cast_question_to_answer(
-            value: QuestionValue, context: Context
+            value: QuestionValue, context: ExecutionContext
         ) -> AnswerValue:
             return AnswerValue(42)
 
@@ -388,7 +390,9 @@ async def test_async_caster_registration_and_usage(context):
 
     # Register an async caster
     @ExampleValue.register_cast_to(StringValue)
-    async def cast_test_to_string(value: ExampleValue, context: Context) -> StringValue:
+    async def cast_test_to_string(
+        value: ExampleValue, context: ExecutionContext
+    ) -> StringValue:
         await asyncio.sleep(0.001)  # Simulate async work
         return StringValue(f"converted: {value.root}")
 

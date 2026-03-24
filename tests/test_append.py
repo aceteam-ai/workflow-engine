@@ -8,9 +8,8 @@ from workflow_engine import (
     WorkflowEngine,
     WorkflowExecutionResultStatus,
 )
-from workflow_engine.contexts import InMemoryContext
+from workflow_engine.contexts import InMemoryExecutionContext
 from workflow_engine.core.io import InputNode, OutputNode
-from workflow_engine.execution import TopologicalExecutionAlgorithm
 from workflow_engine.files import TextFileValue
 from workflow_engine.nodes import AppendToFileNode
 
@@ -58,30 +57,32 @@ def workflow():
 
 
 @pytest.mark.unit
-def test_workflow_serialization(workflow: Workflow):
+async def test_workflow_serialization(workflow: Workflow):
     """Test that the append workflow can be serialized and deserialized correctly."""
     # Test round-trip serialization/deserialization
     workflow_json = workflow.model_dump_json()
     # Deserialize workflow, then load via engine to get typed nodes
-    deserialized_workflow = Workflow.model_validate_json(workflow_json)
     engine = WorkflowEngine()
-    deserialized_workflow = engine.load(deserialized_workflow)
-    assert deserialized_workflow == workflow
+    deserialized_workflow = await engine.validate(
+        Workflow.model_validate_json(workflow_json)
+    )
+    # compare only serialized fields
+    assert deserialized_workflow.model_dump() == workflow.model_dump()
 
 
 @pytest.mark.asyncio
 async def test_workflow_execution(workflow: Workflow):
     """Test that the workflow executes correctly and produces the expected result."""
-    context = InMemoryContext()
-    algorithm = TopologicalExecutionAlgorithm()
+    context = InMemoryExecutionContext()
+    engine = WorkflowEngine()
 
     # Create input with a text file
     hello_world = "Hello, world!"
     input_file = TextFileValue(File(path="test.txt"))
     input_file = await input_file.write_text(context, text=hello_world)
 
-    appended_text = StringValue("This text will be appended to the file.")
-    result = await algorithm.execute(
+    appended_text = "This text will be appended to the file."
+    result = await engine.execute(
         context=context,
         workflow=workflow,
         input={
@@ -98,4 +99,4 @@ async def test_workflow_execution(workflow: Workflow):
     assert isinstance(output_file, TextFileValue)
     assert output_file.path == "test_append.txt"
     output_text = await output_file.read_text(context)
-    assert output_text == hello_world + appended_text.root
+    assert output_text == hello_world + appended_text

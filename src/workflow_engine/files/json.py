@@ -8,7 +8,7 @@ from typing import Any, ClassVar, Self, Type
 from ..core import (
     BooleanValue,
     Caster,
-    Context,
+    ExecutionContext,
     File,
     FileValue,
     FloatValue,
@@ -40,16 +40,18 @@ class JSONFileValue(TextFileValue):
 
     mime_type: ClassVar[str] = "application/json"
 
-    async def read_data(self, context: "Context") -> Any:
+    async def read_data(self, context: "ExecutionContext") -> Any:
         return json.loads(await self.read_text(context))
 
-    async def write_data(self, context: "Context", data: Any) -> Self:
+    async def write_data(self, context: "ExecutionContext", data: Any) -> Self:
         text = json.dumps(data, default=_custom_json_serializer)
         return await self.write_text(context, text)
 
 
 @JSONFileValue.register_cast_to(NullValue)
-async def cast_json_file_to_null(value: JSONFileValue, context: "Context") -> NullValue:
+async def cast_json_file_to_null(
+    value: JSONFileValue, context: "ExecutionContext"
+) -> NullValue:
     data = await value.read_data(context)
     if data is None:
         return NullValue(None)
@@ -58,7 +60,7 @@ async def cast_json_file_to_null(value: JSONFileValue, context: "Context") -> Nu
 
 @JSONFileValue.register_cast_to(BooleanValue)
 async def cast_json_file_to_boolean(
-    value: JSONFileValue, context: "Context"
+    value: JSONFileValue, context: "ExecutionContext"
 ) -> BooleanValue:
     data = await value.read_data(context)
     if isinstance(data, bool):
@@ -68,7 +70,7 @@ async def cast_json_file_to_boolean(
 
 @JSONFileValue.register_cast_to(IntegerValue)
 async def cast_json_file_to_integer(
-    value: JSONFileValue, context: "Context"
+    value: JSONFileValue, context: "ExecutionContext"
 ) -> IntegerValue:
     data = await value.read_data(context)
     if isinstance(data, int):
@@ -78,7 +80,7 @@ async def cast_json_file_to_integer(
 
 @JSONFileValue.register_cast_to(FloatValue)
 async def cast_json_file_to_float(
-    value: JSONFileValue, context: "Context"
+    value: JSONFileValue, context: "ExecutionContext"
 ) -> FloatValue:
     data = await value.read_data(context)
     if isinstance(data, float):
@@ -88,7 +90,7 @@ async def cast_json_file_to_float(
 
 @JSONFileValue.register_cast_to(StringValue)
 async def cast_json_file_to_string(
-    value: JSONFileValue, context: "Context"
+    value: JSONFileValue, context: "ExecutionContext"
 ) -> StringValue:
     data = await value.read_data(context)
     if isinstance(data, str):
@@ -103,7 +105,9 @@ def cast_json_file_to_sequence(
 ) -> Caster[JSONFileValue, SequenceValue]:
     assert issubclass(target_type, SequenceValue)
 
-    async def _cast(value: JSONFileValue, context: "Context") -> SequenceValue[Any]:
+    async def _cast(
+        value: JSONFileValue, context: "ExecutionContext"
+    ) -> SequenceValue[Any]:
         return target_type(await value.read_data(context))
 
     return _cast
@@ -116,19 +120,25 @@ def cast_json_file_to_string_map(
 ) -> Caster[JSONFileValue, StringMapValue]:
     assert issubclass(target_type, StringMapValue)
 
-    async def _cast(value: JSONFileValue, context: "Context") -> StringMapValue[Any]:
+    async def _cast(
+        value: JSONFileValue, context: "ExecutionContext"
+    ) -> StringMapValue[Any]:
         return target_type(await value.read_data(context))
 
     return _cast
 
 
 @JSONFileValue.register_cast_to(JSONValue)
-async def cast_json_file_to_json(value: JSONFileValue, context: "Context") -> JSONValue:
+async def cast_json_file_to_json(
+    value: JSONFileValue, context: "ExecutionContext"
+) -> JSONValue:
     return JSONValue(await value.read_data(context))
 
 
 @Value.register_cast_to(JSONFileValue)
-async def cast_any_to_json_file(value: Value, context: "Context") -> JSONFileValue:
+async def cast_any_to_json_file(
+    value: Value, context: "ExecutionContext"
+) -> JSONFileValue:
     if isinstance(value, JSONFileValue):
         return value
     if isinstance(value, FileValue):
@@ -148,12 +158,14 @@ class JSONLinesFileValue(TextFileValue):
 
     mime_type: ClassVar[str] = "application/jsonl"
 
-    async def read_data(self, context: "Context") -> Sequence[Any]:
+    async def read_data(self, context: "ExecutionContext") -> Sequence[Any]:
         return [
             json.loads(line) for line in (await self.read_text(context)).splitlines()
         ]
 
-    async def write_data(self, context: "Context", data: Sequence[Any]) -> Self:
+    async def write_data(
+        self, context: "ExecutionContext", data: Sequence[Any]
+    ) -> Self:
         text = "\n".join(
             json.dumps(item, default=_custom_json_serializer) for item in data
         )
@@ -184,7 +196,7 @@ def cast_json_lines_to_sequence(
 
         async def _read_lines(
             value: JSONLinesFileValue,
-            context: Context,
+            context: ExecutionContext,
         ) -> SequenceValue[Any]:
             return target_type(
                 [
@@ -199,7 +211,7 @@ def cast_json_lines_to_sequence(
 
         async def _read_then_recast(
             value: JSONLinesFileValue,
-            context: Context,
+            context: ExecutionContext,
         ):
             items = SequenceValue[Value](
                 [Value(item) for item in await value.read_data(context)]
@@ -214,7 +226,7 @@ def cast_json_lines_to_sequence(
 @SequenceValue.register_cast_to(JSONLinesFileValue)
 async def cast_sequence_to_json_lines(
     value: SequenceValue[Value],
-    context: Context,
+    context: ExecutionContext,
 ) -> JSONLinesFileValue:
     file = JSONLinesFileValue(File(path=f"{value.md5}.jsonl"))
     return await file.write_data(context, [v.model_dump() for v in value])

@@ -13,7 +13,7 @@ from .mapping import StringMapValue
 from .value import Caster, Value, ValueType, get_origin_and_args
 
 if TYPE_CHECKING:
-    from ..context import Context
+    from ..context import ExecutionContext
     from .schema import ValueSchema
 
 logger = logging.getLogger(__name__)
@@ -129,7 +129,7 @@ def get_value_at_path(
 
 
 Input_contra = TypeVar("Input_contra", bound=Data, contravariant=True)
-Output_co = TypeVar("Output_co", bound=Data, covariant=True)
+Output = TypeVar("Output", bound=Data)
 
 
 def get_data_fields(cls: type[Data]) -> Mapping[str, tuple[ValueType, bool]]:
@@ -316,7 +316,7 @@ def cast_data_to_data(
 
     async def _cast(
         value: source_type,  # pyright: ignore[reportInvalidTypeForm]
-        context: "Context",
+        context: "ExecutionContext",
     ) -> target_type:  # pyright: ignore[reportInvalidTypeForm]
         assert isinstance(value.root, source_value_type)
 
@@ -355,7 +355,7 @@ def cast_data_to_string_map(
 
     async def _cast(
         value: source_type,  # pyright: ignore[reportInvalidTypeForm]
-        context: "Context",
+        context: "ExecutionContext",
     ) -> target_type:  # pyright: ignore[reportInvalidTypeForm]
         assert isinstance(value.root, Data)
 
@@ -405,7 +405,7 @@ def cast_string_map_to_data(
 
     async def _cast(
         value: source_type,  # pyright: ignore[reportInvalidTypeForm]
-        context: "Context",
+        context: "ExecutionContext",
     ) -> target_type:  # pyright: ignore[reportInvalidTypeForm]
         assert isinstance(value, StringMapValue)
 
@@ -444,7 +444,7 @@ __all__ = [
     "get_only_field",
     "has_path",
     "Input_contra",
-    "Output_co",
+    "Output",
     "resolve_path",
     "serialize_data_mapping",
 ]

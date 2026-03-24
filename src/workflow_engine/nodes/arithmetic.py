@@ -3,13 +3,13 @@
 Simple nodes for testing the workflow engine, with limited usefulness otherwise.
 """
 
-from functools import cached_property
-from typing import ClassVar, Literal, Self
+from typing import ClassVar, Literal, Self, Type
 
+from overrides import override
 from pydantic import Field, create_model
 
 from ..core import (
-    Context,
+    ExecutionContext,
     Data,
     Empty,
     FloatValue,
@@ -18,6 +18,7 @@ from ..core import (
     NodeTypeInfo,
     Params,
     SequenceValue,
+    ValidationContext,
 )
 
 
@@ -62,8 +63,8 @@ class AddNode(Node[Data, SumOutput, AddNodeParams]):
     # we can do this because an empty AddNodeParams is valid
     params: AddNodeParams = Field(default=AddNodeParams())  # pyright: ignore[reportIncompatibleVariableOverride]
 
-    @cached_property
-    def input_type(self):
+    @override
+    async def input_type(self, context: ValidationContext) -> Type[Data]:
         n = self.params.num_arguments.root
         field_names = [_argument_field_name(i) for i in range(n)]
         fields = {
@@ -75,11 +76,19 @@ class AddNode(Node[Data, SumOutput, AddNodeParams]):
         }
         return create_model("AddNodeInput", __base__=Data, **fields)  # type: ignore
 
-    @cached_property
-    def output_type(self):
+    @override
+    async def output_type(self, context: ValidationContext) -> Type[SumOutput]:
         return SumOutput
 
-    async def run(self, context: Context, input: Data) -> SumOutput:
+    @override
+    async def run(
+        self,
+        *,
+        context: ExecutionContext,
+        input_type: Type[Data],
+        output_type: Type[SumOutput],
+        input: Data,
+    ) -> SumOutput:
         total = sum(
             getattr(input, _argument_field_name(i)).root
             for i in range(self.params.num_arguments.root)
@@ -93,12 +102,16 @@ class AddNode(Node[Data, SumOutput, AddNodeParams]):
 
 class SumNodeInput(Data):
     values: SequenceValue[FloatValue] = Field(
-        title="Values", description="The numbers to sum."
+        title="Values",
+        description="The numbers to sum.",
     )
 
 
 class SumNodeOutput(Data):
-    sum: FloatValue = Field(title="Sum", description="The sum of all the numbers.")
+    sum: FloatValue = Field(
+        title="Sum",
+        description="The sum of all the numbers.",
+    )
 
 
 class SumNode(Node[SumNodeInput, SumNodeOutput, Empty]):
@@ -112,25 +125,37 @@ class SumNode(Node[SumNodeInput, SumNodeOutput, Empty]):
 
     type: Literal["Sum"] = "Sum"  # pyright: ignore[reportIncompatibleVariableOverride]
 
-    @cached_property
-    def input_type(self):
+    @override
+    async def input_type(self, context: ValidationContext) -> Type[SumNodeInput]:
         return SumNodeInput
 
-    @cached_property
-    def output_type(self):
+    @override
+    async def output_type(self, context: ValidationContext) -> Type[SumNodeOutput]:
         return SumNodeOutput
 
-    async def run(self, context: Context, input: SumNodeInput) -> SumNodeOutput:
-        return SumNodeOutput(sum=FloatValue(sum(v.root for v in input.values)))
+    @override
+    async def run(
+        self,
+        *,
+        context: ExecutionContext,
+        input_type: Type[SumNodeInput],
+        output_type: Type[SumNodeOutput],
+        input: SumNodeInput,
+    ) -> SumNodeOutput:
+        return output_type(sum=FloatValue(sum(v.root for v in input.values)))
 
 
 class IntegerData(Data):
-    value: IntegerValue = Field(title="Value", description="The integer value.")
+    value: IntegerValue = Field(
+        title="Value",
+        description="The integer value.",
+    )
 
 
 class FactorizationData(Data):
     factors: SequenceValue[IntegerValue] = Field(
-        title="Factors", description="The factors of the integer."
+        title="Factors",
+        description="The factors of the integer.",
     )
 
 
@@ -145,18 +170,26 @@ class FactorizationNode(Node[IntegerData, FactorizationData, Empty]):
 
     type: Literal["Factorization"] = "Factorization"  # pyright: ignore[reportIncompatibleVariableOverride]
 
-    @cached_property
-    def input_type(self):
+    @override
+    async def input_type(self, context: ValidationContext) -> Type[IntegerData]:
         return IntegerData
 
-    @cached_property
-    def output_type(self):
+    @override
+    async def output_type(self, context: ValidationContext) -> Type[FactorizationData]:
         return FactorizationData
 
-    async def run(self, context: Context, input: IntegerData) -> FactorizationData:
+    @override
+    async def run(
+        self,
+        *,
+        context: ExecutionContext,
+        input_type: Type[IntegerData],
+        output_type: Type[FactorizationData],
+        input: IntegerData,
+    ) -> FactorizationData:
         value = input.value.root
         if value > 0:
-            return FactorizationData(
+            return output_type(
                 factors=SequenceValue(
                     [IntegerValue(i) for i in range(1, value + 1) if value % i == 0]
                 )

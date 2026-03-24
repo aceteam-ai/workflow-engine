@@ -39,14 +39,13 @@ from .values import (
     DataMapping,
     Value,
     ValueSchema,
-    ValueType,
     get_data_fields,
 )
-from .values.data import Input_contra, Output_co, get_data_dict, get_data_schema
+from .values.data import Input_contra, Output, get_data_dict, get_data_schema
 
 if TYPE_CHECKING:
-    from .context import Context
-    from .workflow import Workflow
+    from .context import ExecutionContext, ValidationContext
+    from .workflow import ValidatedWorkflow, Workflow
 
 logger = logging.getLogger(__name__)
 
@@ -135,7 +134,14 @@ class NodeTypeInfo(ImmutableBaseModel):
         )
 
 
-class Node(ImmutableBaseModel, Generic[Input_contra, Output_co, Params_co]):
+def get_id_with_namespace(id: str, namespace: str) -> str:
+    """
+    Get the ID of a node with a namespace prefix.
+    """
+    return f"{namespace}/{id}"
+
+
+class Node(ImmutableBaseModel, Generic[Input_contra, Output, Params_co]):
     """
     A data processing node in a workflow.
     Nodes have three sets of fields:
@@ -217,7 +223,7 @@ class Node(ImmutableBaseModel, Generic[Input_contra, Output_co, Params_co]):
     # --------------------------------------------------------------------------
     # NAMING
 
-    async def display_name(self, context: "Context") -> str:
+    async def display_name(self, context: "ValidationContext") -> str:
         """
         A human-readable display name for the node, which is not necessarily
         unique.
@@ -241,7 +247,7 @@ class Node(ImmutableBaseModel, Generic[Input_contra, Output_co, Params_co]):
         Returns:
             A new Node with ID '{namespace}/{self.id}'
         """
-        return self.model_update(id=f"{namespace}/{self.id}")
+        return self.model_update(id=get_id_with_namespace(self.id, namespace))
 
     # --------------------------------------------------------------------------
     # VERSIONING
@@ -282,8 +288,10 @@ class Node(ImmutableBaseModel, Generic[Input_contra, Output_co, Params_co]):
     # --------------------------------------------------------------------------
     # TYPING
 
-    @cached_property
-    def input_type(self) -> type[Input_contra]:  # type: ignore (contravariant return type)
+    async def input_type(
+        self,
+        context: "ValidationContext",
+    ) -> type[Input_contra]:  # type: ignore (contravariant return type)
         """
         The type of the input data for this node.
         This field must always be cached to ensure referential equality on every
@@ -293,8 +301,10 @@ class Node(ImmutableBaseModel, Generic[Input_contra, Output_co, Params_co]):
         # nodes that don't have any input fields
         return Empty  # type: ignore
 
-    @cached_property
-    def output_type(self) -> type[Output_co]:
+    async def output_type(
+        self,
+        context: "ValidationContext",
+    ) -> type[Output]:
         """
         The type of the output data for this node.
         This field must always be cached to ensure referential equality on every
@@ -304,40 +314,24 @@ class Node(ImmutableBaseModel, Generic[Input_contra, Output_co, Params_co]):
         # nodes that don't have any output fields
         return Empty  # type: ignore
 
-    @cached_property
-    def input_fields(self) -> Mapping[str, tuple[ValueType, bool]]:  # type: ignore
-        return get_data_fields(self.input_type)
-
-    @cached_property
-    def output_fields(self) -> Mapping[str, tuple[ValueType, bool]]:
-        return get_data_fields(self.output_type)
-
-    @cached_property
-    def input_schema(self) -> ValueSchema:
-        return get_data_schema(self.input_type)
-
-    @cached_property
-    def output_schema(self) -> ValueSchema:
-        return get_data_schema(self.output_type)
-
     # --------------------------------------------------------------------------
     # EXECUTION
 
     async def _cast_input(
         self,
         input: DataMapping,
-        context: "Context",
+        context: "ExecutionContext",
+        input_type: type[Input_contra],
     ) -> Input_contra:  # type: ignore (contravariant return type)
-        allow_extra_input = (
-            self.input_type.model_config.get("extra", "forbid") == "allow"
-        )
+        input_fields = get_data_fields(input_type)
+        allow_extra_input = input_type.model_config.get("extra", "forbid") == "allow"
 
         # Validate all inputs first
         for key, value in input.items():
-            if key not in self.input_fields and allow_extra_input:
+            if key not in input_fields and allow_extra_input:
                 continue
-            input_type, _ = self.input_fields[key]
-            if not value.can_cast_to(input_type):
+            input_field_type, _ = input_fields[key]
+            if not value.can_cast_to(input_field_type):
                 raise UserException(
                     f"Input {value} for node {self.id} is invalid: {value} is not assignable to {input_type}"
                 )
@@ -346,10 +340,10 @@ class Node(ImmutableBaseModel, Generic[Input_contra, Output_co, Params_co]):
         cast_tasks: list[Awaitable[Value]] = []
         keys: list[str] = []
         for key, value in input.items():
-            if key not in self.input_fields and allow_extra_input:
+            if key not in input_fields and allow_extra_input:
                 continue
-            input_type, _ = self.input_fields[key]  # type: ignore
-            cast_tasks.append(value.cast_to(input_type, context=context))
+            input_field_type, _ = input_fields[key]  # type: ignore
+            cast_tasks.append(value.cast_to(input_field_type, context=context))
             keys.append(key)
 
         casted_values = await asyncio.gather(*cast_tasks)
@@ -360,7 +354,7 @@ class Node(ImmutableBaseModel, Generic[Input_contra, Output_co, Params_co]):
             casted_input[key] = casted_value
 
         try:
-            return self.input_type.model_validate(casted_input)
+            return input_type.model_validate(casted_input)
         except ValidationError as e:
             raise UserException(
                 f"Input {casted_input} for node {self.id} is invalid: {e}"
@@ -369,9 +363,12 @@ class Node(ImmutableBaseModel, Generic[Input_contra, Output_co, Params_co]):
     # @abstractmethod
     async def run(
         self,
-        context: "Context",
+        *,
+        context: "ExecutionContext",
+        input_type: type[Input_contra],
+        output_type: type[Output],
         input: Input_contra,
-    ) -> "Output_co | Workflow":
+    ) -> "Output | Workflow":
         """
         Computes the node's outputs based on its inputs.
         Subclasses must implement this method, but it is not marked as abstract
@@ -382,32 +379,52 @@ class Node(ImmutableBaseModel, Generic[Input_contra, Output_co, Params_co]):
     @final
     async def __call__(
         self,
-        context: "Context",
+        *,
+        context: "ExecutionContext",
+        input_type: type[Input_contra],
+        output_type: type[Output],
         input: DataMapping,
-    ) -> "DataMapping | Workflow":
+    ) -> "DataMapping | ValidatedWorkflow":
         """
         Executes the node.
         """
         try:
             logger.info("Starting node %s", self.id)
             try:
-                input_obj = await self._cast_input(input, context)
+                input_obj = await self._cast_input(input, context, input_type)
             except ValidationError as e:
                 raise UserException(f"Input {input} for node {self.id} is invalid: {e}")
             output = await context.on_node_start(
-                node=self, input=get_data_dict(input_obj)
+                node=self,
+                input_type=input_type,
+                output_type=output_type,
+                input=get_data_dict(input_obj),
             )
             if output is not None:
                 return output
-            output_obj = await self.run(context, input_obj)
+            output_obj = await self.run(
+                context=context,
+                input_type=input_type,
+                output_type=output_type,
+                input=input_obj,
+            )
 
-            from .workflow import Workflow  # lazy to avoid circular import
+            from .workflow import (
+                Workflow,
+                ValidatedWorkflow,
+            )  # lazy to avoid circular import
 
             if isinstance(output_obj, Workflow):
+                if not isinstance(output_obj, ValidatedWorkflow):
+                    workflow = await output_obj.validate(context.validation_context)
+                else:
+                    workflow = output_obj
                 output = await context.on_node_expand(
                     node=self,
+                    input_type=input_type,
+                    output_type=output_type,
                     input=input,
-                    workflow=output_obj,
+                    workflow=workflow,
                 )
                 # TODO: once that workflow eventually finishes running, its
                 # output should be the output of this node, and we should call
@@ -415,6 +432,8 @@ class Node(ImmutableBaseModel, Generic[Input_contra, Output_co, Params_co]):
             else:
                 output = await context.on_node_finish(
                     node=self,
+                    input_type=input_type,
+                    output_type=output_type,
                     input=input,
                     output=get_data_dict(output_obj),
                 )
@@ -426,7 +445,13 @@ class Node(ImmutableBaseModel, Generic[Input_contra, Output_co, Params_co]):
             # In subclasses, you don't have to worry about logging the error,
             # since it'll be logged here.
             logger.exception("Error in node %s", self.id)
-            e = await context.on_node_error(node=self, input=input, exception=e)
+            e = await context.on_node_error(
+                node=self,
+                input_type=input_type,
+                output_type=output_type,
+                input=input,
+                exception=e,
+            )
             if isinstance(e, Mapping):
                 logger.exception(
                     "Error absorbed by context and replaced with output %s", e

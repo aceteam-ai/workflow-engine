@@ -3,12 +3,18 @@
 
 import warnings
 from collections.abc import Mapping
-from functools import cached_property
-from typing import Any, ClassVar, Literal
+from typing import Any, ClassVar, Literal, Type
 
+from overrides import override
 import pytest
 
-from workflow_engine import NodeRegistry, StringValue, WorkflowEngine
+from workflow_engine import (
+    ExecutionContext,
+    NodeRegistry,
+    StringValue,
+    ValidationContext,
+    WorkflowEngine,
+)
 from workflow_engine.core import Empty, Node, NodeTypeInfo, Params
 from workflow_engine.core.migration import Migration, migration_registry
 from workflow_engine.core.values import Data
@@ -41,15 +47,23 @@ class MigratableNode(Node[Empty, MigratableOutput, MigratableParams]):
 
     type: Literal["MigratableNode"] = "MigratableNode"  # pyright: ignore[reportIncompatibleVariableOverride]
 
-    @cached_property
-    def input_type(self):
+    @override
+    async def input_type(self, context: ValidationContext) -> Type[Empty]:
         return Empty
 
-    @cached_property
-    def output_type(self):
+    @override
+    async def output_type(self, context: ValidationContext) -> Type[MigratableOutput]:
         return MigratableOutput
 
-    async def run(self, context: Any, input: Empty) -> MigratableOutput:
+    @override
+    async def run(
+        self,
+        *,
+        context: ExecutionContext,
+        input_type: Type[Empty],
+        output_type: Type[MigratableOutput],
+        input: Empty,
+    ) -> MigratableOutput:
         return MigratableOutput(result=self.params.value)
 
 
@@ -164,8 +178,7 @@ class TestNodeMigration:
         assert isinstance(node, MigratableNode)
         assert node.version == "1.5.0"  # Version unchanged (no migration)
 
-    @pytest.mark.unit
-    def test_migration_via_workflow_deserialization(self):
+    async def test_migration_via_workflow_deserialization(self):
         """Test that migration works when loading workflow from JSON."""
         from workflow_engine import Workflow
 
@@ -206,7 +219,7 @@ class TestNodeMigration:
         # Deserialize workflow, then load via engine to get typed nodes
         workflow = Workflow.model_validate(workflow_data)
         engine = WorkflowEngine()
-        workflow = engine.load(workflow)
+        workflow = await engine.validate(workflow)
 
         # Node should be migrated (inner_nodes[0] is the MigratableNode)
         node = workflow.inner_nodes[0]

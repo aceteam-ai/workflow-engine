@@ -14,11 +14,13 @@ from workflow_engine import (
     JSONValue,
     OutputNode,
     SequenceValue,
+    ValidationContext,
     Workflow,
+    WorkflowEngine,
     WorkflowExecutionResultStatus,
 )
-from workflow_engine.contexts import InMemoryContext
-from workflow_engine.core.values import resolve_path
+from workflow_engine.contexts import InMemoryExecutionContext
+from workflow_engine.core.values import get_data_fields, resolve_path
 from workflow_engine.execution.parallel import ParallelExecutionAlgorithm
 from workflow_engine.execution.topological import TopologicalExecutionAlgorithm
 from workflow_engine.files import JSONLinesFileValue
@@ -26,7 +28,6 @@ from workflow_engine.nodes import AddNode, ConstantIntegerNode, ConstantStringNo
 
 
 @pytest.mark.unit
-@pytest.mark.asyncio
 async def test_basic_output_casting():
     """Test that IntegerValue is cast to FloatValue in workflow output."""
     input_node = InputNode.empty()
@@ -49,10 +50,9 @@ async def test_basic_output_casting():
         ],
     )
 
-    context = InMemoryContext()
-    algorithm = TopologicalExecutionAlgorithm()
-
-    result = await algorithm.execute(context=context, workflow=workflow, input={})
+    engine = WorkflowEngine()
+    context = InMemoryExecutionContext()
+    result = await engine.execute(context=context, workflow=workflow, input={})
 
     assert result.status is WorkflowExecutionResultStatus.SUCCESS
 
@@ -62,7 +62,6 @@ async def test_basic_output_casting():
 
 
 @pytest.mark.unit
-@pytest.mark.asyncio
 async def test_multiple_outputs_casting():
     """Test that multiple outputs are cast correctly in parallel."""
     input_node = InputNode.empty()
@@ -94,10 +93,14 @@ async def test_multiple_outputs_casting():
         ],
     )
 
-    context = InMemoryContext()
-    algorithm = TopologicalExecutionAlgorithm()
+    context = InMemoryExecutionContext()
+    engine = WorkflowEngine(execution_algorithm=TopologicalExecutionAlgorithm())
 
-    result = await algorithm.execute(context=context, workflow=workflow, input={})
+    result = await engine.execute(
+        context=context,
+        workflow=workflow,
+        input={},
+    )
     assert result.status is WorkflowExecutionResultStatus.SUCCESS
 
     int_result = result.output["int_result"]
@@ -110,7 +113,6 @@ async def test_multiple_outputs_casting():
 
 
 @pytest.mark.unit
-@pytest.mark.asyncio
 async def test_parallel_execution_algorithm():
     """Test that output casting works with ParallelExecutionAlgorithm."""
     input_node = InputNode.empty()
@@ -134,10 +136,9 @@ async def test_parallel_execution_algorithm():
         ],
     )
 
-    context = InMemoryContext()
-    algorithm = ParallelExecutionAlgorithm()
-
-    result = await algorithm.execute(context=context, workflow=workflow, input={})
+    context = InMemoryExecutionContext()
+    engine = WorkflowEngine(execution_algorithm=ParallelExecutionAlgorithm())
+    result = await engine.execute(context=context, workflow=workflow, input={})
 
     assert result.status is WorkflowExecutionResultStatus.SUCCESS
     assert isinstance(result.output["result"], FloatValue)
@@ -153,7 +154,7 @@ async def test_complex_type_sequence_to_jsonlines():
     sequence = SequenceValue(json_values)
 
     # Test that the sequence can be cast to JSONLinesFileValue
-    context = InMemoryContext()
+    context = InMemoryExecutionContext()
 
     # Verify the cast is possible
     assert sequence.can_cast_to(JSONLinesFileValue)
@@ -169,7 +170,6 @@ async def test_complex_type_sequence_to_jsonlines():
 
 
 @pytest.mark.unit
-@pytest.mark.asyncio
 async def test_no_casting_when_types_match():
     """Test that no casting occurs when output types already match."""
     input_node = InputNode.empty()
@@ -191,10 +191,13 @@ async def test_no_casting_when_types_match():
         ],
     )
 
-    context = InMemoryContext()
-    algorithm = TopologicalExecutionAlgorithm()
-
-    result = await algorithm.execute(context=context, workflow=workflow, input={})
+    context = InMemoryExecutionContext()
+    engine = WorkflowEngine(execution_algorithm=TopologicalExecutionAlgorithm())
+    result = await engine.execute(
+        context=context,
+        workflow=workflow,
+        input={},
+    )
 
     assert result.status is WorkflowExecutionResultStatus.SUCCESS
     assert isinstance(result.output["result"], IntegerValue)
@@ -202,7 +205,6 @@ async def test_no_casting_when_types_match():
 
 
 @pytest.mark.unit
-@pytest.mark.asyncio
 async def test_input_casting():
     """Test that workflow inputs can be cast to expected types."""
     input_node = InputNode.from_fields(
@@ -241,14 +243,18 @@ async def test_input_casting():
         ],
     )
 
+    engine = WorkflowEngine(execution_algorithm=TopologicalExecutionAlgorithm())
+    validated_workflow = await engine.validate(workflow)
+
     # Workflow should expect FloatValue inputs
-    assert issubclass(workflow.input_fields["a"][0], FloatValue)
-    assert issubclass(workflow.input_fields["b"][0], FloatValue)
+    input_fields = get_data_fields(validated_workflow.input_type)
+    assert issubclass(input_fields["a"][0], FloatValue)
+    assert issubclass(input_fields["b"][0], FloatValue)
 
-    context = InMemoryContext()
-    algorithm = TopologicalExecutionAlgorithm()
+    context = InMemoryExecutionContext()
+    engine = WorkflowEngine(execution_algorithm=TopologicalExecutionAlgorithm())
 
-    result = await algorithm.execute(
+    result = await engine.execute(
         context=context,
         workflow=workflow,
         input={"a": FloatValue(10.5), "b": FloatValue(20.3)},
@@ -258,7 +264,7 @@ async def test_input_casting():
 
 
 @pytest.mark.unit
-def test_workflow_output_type_inference():
+async def test_workflow_output_type_inference():
     """Test that workflow infers output types from OutputNode."""
     input_node = InputNode.empty()
     output_node = OutputNode.from_fields(
@@ -280,6 +286,8 @@ def test_workflow_output_type_inference():
             )
         ],
     )
+    context = ValidationContext()
+    workflow = await workflow.validate(context=context)
     assert issubclass(
         resolve_path(data_type=workflow.output_type, path=["result"]),
         IntegerValue,

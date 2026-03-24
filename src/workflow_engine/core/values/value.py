@@ -28,7 +28,7 @@ from pydantic import PrivateAttr
 from ...utils.immutable import ImmutableRootModel
 
 if TYPE_CHECKING:
-    from ..context import Context
+    from ..context import ExecutionContext
     from .schema import ValueSchema
 
 
@@ -92,7 +92,7 @@ class Caster(Protocol, Generic[SourceType, TargetType]):  # type: ignore
     def __call__(
         self,
         value: SourceType,
-        context: "Context",
+        context: "ExecutionContext",
     ) -> TargetType | Awaitable[TargetType]: ...
 
 
@@ -272,7 +272,7 @@ class Value(ImmutableRootModel[T], Generic[T]):
     def md5(self) -> str:
         return md5(str(self).encode()).hexdigest()
 
-    async def cast_to(self, t: type[V], *, context: "Context") -> V:
+    async def cast_to(self, t: type[V], *, context: "ExecutionContext") -> V:
         key = get_value_type_key(t)
         if key in self._cast_cache:
             casted: V = self._cast_cache[key]  # type: ignore
@@ -288,7 +288,7 @@ class Value(ImmutableRootModel[T], Generic[T]):
         raise ValueError(f"Cannot convert {self} to {t}")
 
     @classmethod
-    async def cast_from(cls, v: "Value", *, context: "Context") -> Self:
+    async def cast_from(cls, v: "Value", *, context: "ExecutionContext") -> Self:
         return await v.cast_to(cls, context=context)
 
     @classmethod

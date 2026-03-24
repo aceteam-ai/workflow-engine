@@ -1,36 +1,44 @@
 # workflow_engine/nodes/text.py
 import os
-from functools import cached_property
-from typing import ClassVar, Literal, Self
-
+from typing import ClassVar, Literal, Self, Type
+from overrides import override
 from pydantic import Field
 
 from ..core import (
-    Context,
+    ExecutionContext,
     Data,
     File,
     Node,
     NodeTypeInfo,
     Params,
     StringValue,
+    ValidationContext,
 )
 from ..files import TextFileValue
 
 
 class AppendToFileInput(Data):
-    file: TextFileValue = Field(title="File", description="The file to append to.")
-    text: StringValue = Field(title="Text", description="The text to append.")
+    file: TextFileValue = Field(
+        title="File",
+        description="The file to append to.",
+    )
+    text: StringValue = Field(
+        title="Text",
+        description="The text to append.",
+    )
 
 
 class AppendToFileOutput(Data):
     file: TextFileValue = Field(
-        title="File", description="The resulting file with the text appended."
+        title="File",
+        description="The resulting file with the text appended.",
     )
 
 
 class AppendToFileParams(Params):
     suffix: StringValue = Field(
-        title="Suffix", description="The suffix to add to the output filename."
+        title="Suffix",
+        description="The suffix to add to the output filename.",
     )
 
 
@@ -45,17 +53,21 @@ class AppendToFileNode(Node[AppendToFileInput, AppendToFileOutput, AppendToFileP
 
     type: Literal["AppendToFile"] = "AppendToFile"  # pyright: ignore[reportIncompatibleVariableOverride]
 
-    @cached_property
-    def input_type(self):
+    @override
+    async def input_type(self, context: ValidationContext) -> Type[AppendToFileInput]:
         return AppendToFileInput
 
-    @cached_property
-    def output_type(self):
+    @override
+    async def output_type(self, context: ValidationContext) -> Type[AppendToFileOutput]:
         return AppendToFileOutput
 
+    @override
     async def run(
         self,
-        context: Context,
+        *,
+        context: ExecutionContext,
+        input_type: Type[AppendToFileInput],
+        output_type: Type[AppendToFileOutput],
         input: AppendToFileInput,
     ) -> AppendToFileOutput:
         old_text = await input.file.read_text(context)

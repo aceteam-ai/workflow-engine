@@ -2,14 +2,13 @@
 """Tests for retry behavior in workflow execution."""
 
 from datetime import timedelta
-from functools import cached_property
-from typing import ClassVar, Literal
+from typing import ClassVar, Literal, Type, override
 from unittest.mock import AsyncMock
 
 import pytest
 
 from workflow_engine import (
-    Context,
+    ExecutionContext,
     Data,
     Edge,
     InputNode,
@@ -19,10 +18,12 @@ from workflow_engine import (
     Params,
     ShouldRetry,
     StringValue,
+    ValidationContext,
     Workflow,
+    WorkflowEngine,
     WorkflowExecutionResultStatus,
 )
-from workflow_engine.contexts import InMemoryContext
+from workflow_engine.contexts import InMemoryExecutionContext
 from workflow_engine.execution.retry import NodeRetryState, RetryTracker
 from workflow_engine.execution.topological import TopologicalExecutionAlgorithm
 
@@ -55,15 +56,23 @@ class RetryableNode(Node[RetryableInput, RetryableOutput, RetryableParams]):
     type: Literal["Retryable"] = "Retryable"  # pyright: ignore[reportIncompatibleVariableOverride]
     _attempt_counts: ClassVar[dict[str, int]] = {}
 
-    @cached_property
-    def input_type(self):
+    @override
+    async def input_type(self, context: ValidationContext) -> Type[RetryableInput]:
         return RetryableInput
 
-    @cached_property
-    def output_type(self):
+    @override
+    async def output_type(self, context: ValidationContext) -> Type[RetryableOutput]:
         return RetryableOutput
 
-    async def run(self, context: Context, input: RetryableInput) -> RetryableOutput:
+    @override
+    async def run(
+        self,
+        *,
+        context: ExecutionContext,
+        input_type: Type[RetryableInput],
+        output_type: Type[RetryableOutput],
+        input: RetryableInput,
+    ) -> RetryableOutput:
         # Track attempts per node id
         if self.id not in RetryableNode._attempt_counts:
             RetryableNode._attempt_counts[self.id] = 0
@@ -93,15 +102,23 @@ class RetryableNode2(Node[RetryableInput, RetryableOutput, RetryableParams]):
     type: Literal["Retryable2"] = "Retryable2"  # pyright: ignore[reportIncompatibleVariableOverride]
     _attempt_counts: ClassVar[dict[str, int]] = {}
 
-    @cached_property
-    def input_type(self):
+    @override
+    async def input_type(self, context: ValidationContext) -> Type[RetryableInput]:
         return RetryableInput
 
-    @cached_property
-    def output_type(self):
+    @override
+    async def output_type(self, context: ValidationContext) -> Type[RetryableOutput]:
         return RetryableOutput
 
-    async def run(self, context: Context, input: RetryableInput) -> RetryableOutput:
+    @override
+    async def run(
+        self,
+        *,
+        context: ExecutionContext,
+        input_type: Type[RetryableInput],
+        output_type: Type[RetryableOutput],
+        input: RetryableInput,
+    ) -> RetryableOutput:
         if self.id not in RetryableNode2._attempt_counts:
             RetryableNode2._attempt_counts[self.id] = 0
         RetryableNode2._attempt_counts[self.id] += 1
@@ -134,15 +151,23 @@ class CustomRetryNode(Node[RetryableInput, RetryableOutput, RetryableParams]):
     type: Literal["CustomRetry"] = "CustomRetry"  # pyright: ignore[reportIncompatibleVariableOverride]
     _attempt_counts: ClassVar[dict[str, int]] = {}
 
-    @cached_property
-    def input_type(self):
+    @override
+    async def input_type(self, context: ValidationContext) -> Type[RetryableInput]:
         return RetryableInput
 
-    @cached_property
-    def output_type(self):
+    @override
+    async def output_type(self, context: ValidationContext) -> Type[RetryableOutput]:
         return RetryableOutput
 
-    async def run(self, context: Context, input: RetryableInput) -> RetryableOutput:
+    @override
+    async def run(
+        self,
+        *,
+        context: ExecutionContext,
+        input_type: Type[RetryableInput],
+        output_type: Type[RetryableOutput],
+        input: RetryableInput,
+    ) -> RetryableOutput:
         if self.id not in CustomRetryNode._attempt_counts:
             CustomRetryNode._attempt_counts[self.id] = 0
         CustomRetryNode._attempt_counts[self.id] += 1
@@ -313,10 +338,10 @@ class TestRetryIntegration:
             ],
         )
 
-        context = InMemoryContext()
+        context = InMemoryExecutionContext()
         algorithm = TopologicalExecutionAlgorithm(max_retries=3)
-
-        result = await algorithm.execute(
+        engine = WorkflowEngine(execution_algorithm=algorithm)
+        result = await engine.execute(
             context=context,
             workflow=workflow,
             input={},
@@ -359,10 +384,10 @@ class TestRetryIntegration:
             ],
         )
 
-        context = InMemoryContext()
+        context = InMemoryExecutionContext()
         algorithm = TopologicalExecutionAlgorithm(max_retries=3)
-
-        result = await algorithm.execute(
+        engine = WorkflowEngine(execution_algorithm=algorithm)
+        result = await engine.execute(
             context=context,
             workflow=workflow,
             input={},
@@ -406,13 +431,12 @@ class TestRetryIntegration:
             ],
         )
 
-        context = InMemoryContext()
+        context = InMemoryExecutionContext()
         mock_on_node_retry = AsyncMock()
         context.on_node_retry = mock_on_node_retry
-
         algorithm = TopologicalExecutionAlgorithm(max_retries=3)
-
-        await algorithm.execute(
+        engine = WorkflowEngine(execution_algorithm=algorithm)
+        _ = await engine.execute(
             context=context,
             workflow=workflow,
             input={},
@@ -464,11 +488,11 @@ class TestRetryIntegration:
             ],
         )
 
-        context = InMemoryContext()
+        context = InMemoryExecutionContext()
         # Algorithm default is 2, but CustomRetryNode.TYPE_INFO.max_retries is 5
         algorithm = TopologicalExecutionAlgorithm(max_retries=2)
-
-        result = await algorithm.execute(
+        engine = WorkflowEngine(execution_algorithm=algorithm)
+        result = await engine.execute(
             context=context,
             workflow=workflow,
             input={},
@@ -513,17 +537,17 @@ class TestRetryIntegration:
             ],
         )
 
-        context = InMemoryContext()
+        context = InMemoryExecutionContext()
 
         # Configure rate limiting for the retryable node
         rate_limits = RateLimitRegistry()
         rate_limits.configure("Retryable", RateLimitConfig(max_concurrency=1))
-
         algorithm = TopologicalExecutionAlgorithm(
-            max_retries=3, rate_limits=rate_limits
+            max_retries=3,
+            rate_limits=rate_limits,
         )
-
-        result = await algorithm.execute(
+        engine = WorkflowEngine(execution_algorithm=algorithm)
+        result = await engine.execute(
             context=context,
             workflow=workflow,
             input={},
@@ -583,10 +607,10 @@ class TestRetryIntegration:
             ],
         )
 
-        context = InMemoryContext()
+        context = InMemoryExecutionContext()
         algorithm = TopologicalExecutionAlgorithm(max_retries=3)
-
-        result = await algorithm.execute(
+        engine = WorkflowEngine(execution_algorithm=algorithm)
+        result = await engine.execute(
             context=context,
             workflow=workflow,
             input={},

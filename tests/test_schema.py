@@ -524,7 +524,7 @@ def test_sequence_schema_aliasing():
 def test_constrained_sequence_is_castable():
     """Constrained SequenceValue subclasses must remain compatible with the casting system."""
     import asyncio
-    from workflow_engine.contexts import InMemoryContext
+    from workflow_engine.contexts import InMemoryExecutionContext
 
     json_schema = {
         "type": "array",
@@ -543,7 +543,7 @@ def test_constrained_sequence_is_castable():
 
     # A plain SequenceValue[FloatValue] can be cast to the constrained subclass
     source = SequenceValue[FloatValue].model_validate([1.0, 2.0, 3.0])
-    context = InMemoryContext()
+    context = InMemoryExecutionContext()
     result = asyncio.run(source.cast_to(U, context=context))
     assert isinstance(result, U)
 

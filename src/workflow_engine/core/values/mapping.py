@@ -8,7 +8,7 @@ from .primitives import StringValue
 from .value import Caster, Value, get_origin_and_args
 
 if TYPE_CHECKING:
-    from ..context import Context
+    from ..context import ExecutionContext
 
 
 V = TypeVar("V", bound=Value)
@@ -67,7 +67,7 @@ def cast_string_map_to_string_map(
 
     async def _cast(
         value: source_type,  # pyright: ignore[reportInvalidTypeForm]
-        context: "Context",
+        context: "ExecutionContext",
     ) -> target_type:  # pyright: ignore[reportInvalidTypeForm]
         assert isinstance(value, StringMapValue)
         # Cast all values in parallel

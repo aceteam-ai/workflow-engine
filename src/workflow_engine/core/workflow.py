@@ -1,16 +1,19 @@
 # workflow_engine/core/workflow.py
+from __future__ import annotations
+
 import asyncio
 from collections.abc import Mapping, Sequence
 from functools import cached_property
-from typing import TYPE_CHECKING, Type
+from typing import TYPE_CHECKING, Self, Type
 
 import networkx as nx
-from pydantic import ConfigDict, ValidationError, model_validator
+from overrides import override
+from pydantic import ConfigDict, Field, ValidationError, model_validator
 
 from ..utils.immutable import ImmutableBaseModel
 from .edge import Edge
 from .error import NodeExpansionException, UserException
-from .node import Node
+from .node import Node, get_id_with_namespace
 from .values import (
     Data,
     DataMapping,
@@ -20,10 +23,14 @@ from .values import (
     resolve_path,
 )
 from .io import InputNode, OutputNode
-from .values.schema import DataValueSchema
 
 if TYPE_CHECKING:
-    from .context import Context
+    from .context import ExecutionContext, ValidationContext
+
+
+class ValidatedWorkflowRef:
+    def __init__(self, workflow: ValidatedWorkflow | None = None):
+        self.workflow = workflow
 
 
 class Workflow(ImmutableBaseModel):
@@ -65,40 +72,6 @@ class Workflow(ImmutableBaseModel):
         return edges_by_target
 
     @cached_property
-    def input_fields(self) -> Mapping[str, tuple[ValueType, bool]]:
-        """
-        Returns the input fields for this workflow.
-
-        If an InputNode has an input_schema specified, that schema's type is used.
-        Otherwise, the type is inferred from the target node's input field.
-        """
-        return self.input_node.input_fields
-
-    @cached_property
-    def input_type(self) -> Type[Data]:
-        return self.input_node.input_type
-
-    @cached_property
-    def output_type(self) -> Type[Data]:
-        return self.output_node.output_type
-
-    @cached_property
-    def input_schema(self) -> DataValueSchema:
-        return self.input_node.input_schema
-
-    @cached_property
-    def output_schema(self) -> DataValueSchema:
-        return self.output_node.output_schema
-
-    @cached_property
-    def input_edges(self) -> Sequence[Edge]:
-        return [edge for edge in self.edges if edge.source_id == self.input_node.id]
-
-    @cached_property
-    def output_edges(self) -> Sequence[Edge]:
-        return [edge for edge in self.edges if edge.target_id == self.output_node.id]
-
-    @cached_property
     def nx_graph(self) -> nx.DiGraph:
         graph = nx.DiGraph()
 
@@ -138,6 +111,133 @@ class Workflow(ImmutableBaseModel):
                     f"Please ensure no node ID is a prefix of another when followed by '/'."
                 )
         return self
+
+    def with_namespace(self, namespace: str) -> Self:
+        """
+        Create a copy of this workflow with all node IDs namespaced.
+
+        Args:
+            namespace: The namespace to prefix all node IDs with
+
+        Returns:
+            A new Workflow with all node IDs prefixed with '{namespace}/'
+        """
+        # Create namespaced nodes
+        return self.model_update(
+            input_node=self.input_node.with_namespace(namespace),
+            inner_nodes=[node.with_namespace(namespace) for node in self.inner_nodes],
+            output_node=self.output_node.with_namespace(namespace),
+            edges=[edge.with_namespace(namespace) for edge in self.edges],
+        )
+
+    # NOTE: this clobbers a long-deprecated method of the same name by Pydantic but we don't care
+    async def validate(  # pyright: ignore[reportIncompatibleMethodOverride]
+        self,
+        context: "ValidationContext",
+    ) -> ValidatedWorkflow:
+        """
+        Convert an untyped workflow to a typed workflow.
+
+        Walks the workflow graph and:
+        1. Looks up concrete node types in node_registry
+        2. Applies migrations via the registry's load_node method
+        3. Validates node inputs and edge types
+        4. Returns a new Workflow with typed nodes
+
+        Args:
+            workflow: Untyped workflow (nodes may be base Node instances)
+
+        Returns:
+            Typed workflow (nodes are concrete subclass instances)
+
+        Raises:
+            ValueError: If edges reference non-existent fields or nodes are missing required inputs
+            TypeError: If edge types are incompatible
+        """
+        typed_inner_nodes = await asyncio.gather(
+            *[
+                asyncio.to_thread(context.node_registry.load_node, node)
+                for node in self.inner_nodes
+            ]
+        )
+        typed_nodes = (self.input_node, *typed_inner_nodes, self.output_node)
+
+        async def get_input_output_types(
+            node: Node,
+        ) -> tuple[str, tuple[type[Data], type[Data]]]:
+            # NOTE: it would be faster to do this in parallel but later on we
+            # are going to have to do this in series anyway due to type variable
+            # resolution, so we might as well do it in series here too.
+            input_type = await node.input_type(context)
+            output_type = await node.output_type(context)
+            return node.id, (input_type, output_type)
+
+        node_input_output_types = dict(
+            await asyncio.gather(
+                *[get_input_output_types(node) for node in typed_nodes]
+            )
+        )
+        node_input_types = {
+            node_id: input_type
+            for node_id, (input_type, _) in node_input_output_types.items()
+        }
+        node_output_types = {
+            node_id: output_type
+            for node_id, (_, output_type) in node_input_output_types.items()
+        }
+
+        for edge in self.edges:
+            if edge.source_id not in node_input_types:
+                raise ValueError(
+                    f"Edge {edge.source_id} -> {edge.target_id} has a source that is not a node"
+                )
+            if edge.target_id not in node_output_types:
+                raise ValueError(
+                    f"Edge {edge.source_id} -> {edge.target_id} has a target that is not a node"
+                )
+            edge.validate_types(
+                source_type=node_output_types[edge.source_id],
+                target_type=node_input_types[edge.target_id],
+            )
+
+        return ValidatedWorkflow(
+            input_node=self.input_node,
+            inner_nodes=typed_inner_nodes,
+            output_node=self.output_node,
+            edges=self.edges,
+            node_input_types=node_input_types,
+            node_output_types=node_output_types,
+        )
+
+
+class ValidatedWorkflow(Workflow):
+    node_input_types: Mapping[str, type[Data]] = Field(exclude=True)
+    node_output_types: Mapping[str, type[Data]] = Field(exclude=True)
+
+    @override
+    def with_namespace(self, namespace: str) -> Self:
+        return (
+            super()
+            .with_namespace(namespace)
+            .model_update(
+                node_input_types={
+                    get_id_with_namespace(node_id, namespace): node_input_type
+                    for node_id, node_input_type in self.node_input_types.items()
+                },
+                node_output_types={
+                    get_id_with_namespace(node_id, namespace): node_output_type
+                    for node_id, node_output_type in self.node_output_types.items()
+                },
+            )
+        )
+
+    @cached_property
+    def input_type(self) -> Type[Data]:
+        return self.node_input_types[self.input_node.id]
+
+    @cached_property
+    def output_type(self) -> Type[Data]:
+        return self.node_output_types[self.output_node.id]
 
     def get_ready_nodes(
         self,
@@ -196,7 +296,7 @@ class Workflow(ImmutableBaseModel):
     async def get_output(
         self,
         *,
-        context: "Context",
+        context: "ExecutionContext",
         node_outputs: Mapping[str, DataMapping],
         partial: bool = False,
     ) -> DataMapping:
@@ -220,7 +320,9 @@ class Workflow(ImmutableBaseModel):
         # First pass: Validate all outputs exist and can be cast
         outputs_to_cast: list[tuple[str, Value, ValueType]] = []
 
-        for edge in self.output_edges:
+        for edge in self.edges:
+            if edge.target_id != self.output_node.id:
+                continue
             if edge.source_id not in node_outputs:
                 if partial:
                     continue
@@ -241,7 +343,7 @@ class Workflow(ImmutableBaseModel):
                 )
 
             expected_type = resolve_path(
-                data_type=self.output_node.output_type,
+                data_type=self.output_type,
                 path=[edge.target_key],
             )
 
@@ -279,14 +381,17 @@ class Workflow(ImmutableBaseModel):
     def expand_node(
         self,
         node_id: str,
-        subgraph: "Workflow",
-    ) -> "Workflow":
+        subgraph: "ValidatedWorkflow",
+    ) -> Self:
         """
         Replace a node in this workflow with a subgraph.
 
         This method performs graph surgery to replace a node with a subgraph.
         The subgraph's nodes are namespaced with the original node's ID to prevent
         ID collisions. Input and output edges are reconnected appropriately.
+
+        Perhaps foolishly, we do not re-validate that the new workflow's input
+        and output types are compatible with the
 
         Args:
             node_id: ID of the node to replace
@@ -298,13 +403,13 @@ class Workflow(ImmutableBaseModel):
 
         Raises:
             ValueError: If the node_id doesn't exist or if the replacement would
-                       create an invalid graph
+                        create an invalid graph
         """
         try:
             if node_id not in self.nodes_by_id:
                 raise ValueError(f"Node {node_id} not found in workflow")
 
-            subgraph = subgraph.with_namespace(node_id)
+            subgraph = subgraph.with_namespace(namespace=node_id)
 
             # Collect all edges that need to be modified
             new_inner_nodes: list[Node] = [
@@ -315,7 +420,7 @@ class Workflow(ImmutableBaseModel):
             for edge in self.edges:
                 if edge.target_id == node_id:
                     # Only create the edge if the subgraph's input_node has this field
-                    if edge.target_key in subgraph.input_node.input_fields:
+                    if edge.target_key in subgraph.input_type.model_fields:
                         new_edges.append(
                             Edge(
                                 source_id=edge.source_id,
@@ -324,8 +429,6 @@ class Workflow(ImmutableBaseModel):
                                 target_key=edge.target_key,
                             )
                         )
-                    # Edges to fields not in the subgraph input are dropped
-                    # (e.g., control fields like 'condition' for IfElseNode)
                 elif edge.source_id == node_id:
                     new_edges.append(
                         Edge(
@@ -338,32 +441,24 @@ class Workflow(ImmutableBaseModel):
                 else:
                     new_edges.append(edge)
 
-            return Workflow(
+            # the new node types contain all nodes except the one being expanded,
+            # plus all nodes from the namespaced subgraph
+            new_node_input_types = dict(self.node_input_types)
+            del new_node_input_types[node_id]
+            new_node_input_types.update(subgraph.node_input_types)
+
+            new_node_output_types = dict(self.node_output_types)
+            del new_node_output_types[node_id]
+            new_node_output_types.update(subgraph.node_output_types)
+
+            return self.model_update(
                 inner_nodes=new_inner_nodes,
-                input_node=self.input_node,
-                output_node=self.output_node,
                 edges=new_edges,
+                node_input_types=new_node_input_types,
+                node_output_types=new_node_output_types,
             )
         except Exception as e:
             raise NodeExpansionException(node_id, workflow=subgraph) from e
-
-    def with_namespace(self, namespace: str) -> "Workflow":
-        """
-        Create a copy of this workflow with all node IDs namespaced.
-
-        Args:
-            namespace: The namespace to prefix all node IDs with
-
-        Returns:
-            A new Workflow with all node IDs prefixed with '{namespace}/'
-        """
-        # Create namespaced nodes
-        return Workflow(
-            input_node=self.input_node.with_namespace(namespace),
-            inner_nodes=[node.with_namespace(namespace) for node in self.inner_nodes],
-            output_node=self.output_node.with_namespace(namespace),
-            edges=[edge.with_namespace(namespace) for edge in self.edges],
-        )
 
 
 class WorkflowValue(Value[Workflow]):

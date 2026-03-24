@@ -1,12 +1,12 @@
 # workflow_engine/nodes/constant.py
-from functools import cached_property
-from typing import ClassVar, Literal
+from typing import ClassVar, Literal, Type
 
+from overrides import override
 from pydantic import Field
 
 from ..core import (
     BooleanValue,
-    Context,
+    ExecutionContext,
     Data,
     Empty,
     IntegerValue,
@@ -14,12 +14,14 @@ from ..core import (
     NodeTypeInfo,
     Params,
     StringValue,
+    ValidationContext,
 )
 
 
 class ConstantBoolean(Params):
     value: BooleanValue = Field(
-        title="Value", description="The constant boolean value."
+        title="Value",
+        description="The constant boolean value.",
     )
 
 
@@ -34,11 +36,19 @@ class ConstantBooleanNode(Node[Empty, ConstantBoolean, ConstantBoolean]):
 
     type: Literal["ConstantBoolean"] = "ConstantBoolean"  # pyright: ignore[reportIncompatibleVariableOverride]
 
-    @cached_property
-    def output_type(self):
+    @override
+    async def output_type(self, context: ValidationContext) -> Type[ConstantBoolean]:
         return ConstantBoolean
 
-    async def run(self, context: Context, input: Empty) -> ConstantBoolean:
+    @override
+    async def run(
+        self,
+        *,
+        context: ExecutionContext,
+        input_type: Type[Empty],
+        output_type: Type[ConstantBoolean],
+        input: Empty,
+    ) -> ConstantBoolean:
         return self.params
 
     @classmethod
@@ -63,11 +73,19 @@ class ConstantIntegerNode(Node[Empty, ConstantInteger, ConstantInteger]):
 
     type: Literal["ConstantInteger"] = "ConstantInteger"  # pyright: ignore[reportIncompatibleVariableOverride]
 
-    @cached_property
-    def output_type(self):
+    @override
+    async def output_type(self, context: ValidationContext) -> Type[ConstantInteger]:
         return ConstantInteger
 
-    async def run(self, context: Context, input: Empty) -> ConstantInteger:
+    @override
+    async def run(
+        self,
+        *,
+        context: ExecutionContext,
+        input_type: Type[Empty],
+        output_type: Type[ConstantInteger],
+        input: Empty,
+    ) -> ConstantInteger:
         return self.params
 
     @classmethod
@@ -90,11 +108,19 @@ class ConstantStringNode(Node[Empty, ConstantString, ConstantString]):
 
     type: Literal["ConstantString"] = "ConstantString"  # pyright: ignore[reportIncompatibleVariableOverride]
 
-    @cached_property
-    def output_type(self):
+    @override
+    async def output_type(self, context: ValidationContext) -> Type[ConstantString]:
         return ConstantString
 
-    async def run(self, context: Context, input: Data) -> ConstantString:
+    @override
+    async def run(
+        self,
+        *,
+        context: ExecutionContext,
+        input_type: Type[Data],
+        output_type: Type[ConstantString],
+        input: Data,
+    ) -> ConstantString:
         return self.params
 
     @classmethod

@@ -3,8 +3,7 @@
 Nodes that iterate over a sequence of items.
 """
 
-from functools import cached_property
-from typing import ClassVar, Literal, Self
+from typing import ClassVar, Literal, Self, Type
 
 from overrides import override
 from pydantic import Field
@@ -12,7 +11,8 @@ from pydantic import Field
 from workflow_engine.core.io import SchemaParams
 
 from ..core import (
-    Context,
+    ExecutionContext,
+    ValidationContext,
     DataValue,
     Edge,
     Empty,
@@ -22,6 +22,8 @@ from ..core import (
     OutputNode,
     Params,
     SequenceValue,
+    ValidatedWorkflow,
+    Value,
     Workflow,
     WorkflowValue,
 )
@@ -70,78 +72,96 @@ class ForEachNode(Node[SequenceData, SequenceData | Empty, ForEachParams]):
 
     type: Literal["ForEach"] = "ForEach"  # pyright: ignore[reportIncompatibleVariableOverride]
 
-    @cached_property
-    def workflow(self) -> Workflow:
-        return self.params.workflow.root
+    _workflow: ValidatedWorkflow | None = None
 
-    @cached_property
-    def _input_field_count(self) -> int:
-        return len(get_field_annotations(self.workflow.input_type))
+    async def workflow(self, context: ValidationContext) -> ValidatedWorkflow:
+        if self._workflow is None:
+            self._workflow = await self.params.workflow.root.validate(context=context)
+        return self._workflow
 
-    @cached_property
-    def _output_field_count(self) -> int:
-        return len(get_field_annotations(self.workflow.output_type))
+    def _input_field_count(self, workflow: ValidatedWorkflow) -> int:
+        return len(get_field_annotations(workflow.input_type))
 
-    def _has_single_input(self) -> bool:
-        return self._input_field_count == 1
+    def _output_field_count(self, workflow: ValidatedWorkflow) -> int:
+        return len(get_field_annotations(workflow.output_type))
 
-    def _has_single_output(self) -> bool:
-        return self._output_field_count == 1
+    def _has_single_input(self, workflow: ValidatedWorkflow) -> bool:
+        return self._input_field_count(workflow) == 1
 
-    def _has_no_output(self) -> bool:
-        return self._output_field_count == 0
+    def _has_single_output(self, workflow: ValidatedWorkflow) -> bool:
+        return self._output_field_count(workflow) == 1
 
-    @cached_property
-    def _input_item_type(self):
+    def _has_no_output(self, workflow: ValidatedWorkflow) -> bool:
+        return self._output_field_count(workflow) == 0
+
+    def _input_item_type(self, workflow: ValidatedWorkflow) -> Type[Value]:
         """Single input field type; only valid when _has_single_input()."""
-        return get_only_field(self.workflow.input_type)[1]
+        return get_only_field(workflow.input_type)[1]
 
-    @cached_property
-    def _output_item_type(self):
+    def _output_item_type(self, workflow: ValidatedWorkflow) -> Type[Value]:
         """Single output field type; only valid when _has_single_output()."""
-        return get_only_field(self.workflow.output_type)[1]
+        return get_only_field(workflow.output_type)[1]
 
-    def _input_element_type(self):
-        if self._has_single_input():
-            return self._input_item_type
-        return DataValue[self.workflow.input_type]
+    def _input_element_type(self, workflow: ValidatedWorkflow) -> Type[Value]:
+        if self._has_single_input(workflow):
+            return self._input_item_type(workflow)
+        return DataValue[workflow.input_type]
 
-    def _output_element_type(self):
+    def _output_element_type(self, workflow: ValidatedWorkflow) -> Type[Value]:
         """Only valid when _has_no_output() is False."""
-        assert not self._has_no_output()
-        if self._has_single_output():
-            return self._output_item_type
-        return DataValue[self.workflow.output_type]
+        assert not self._has_no_output(workflow)
+        if self._has_single_output(workflow):
+            return self._output_item_type(workflow)
+        return DataValue[workflow.output_type]
 
-    @cached_property
-    def input_type(self):
-        return SequenceData[self._input_element_type()]
+    @override
+    async def input_type(
+        self,
+        context: ValidationContext,
+    ) -> Type[SequenceData]:
+        workflow = await self.workflow(context)
+        return SequenceData[self._input_element_type(workflow)]
 
-    @cached_property
-    def output_type(self):
-        if self._has_no_output():
+    @override
+    async def output_type(
+        self,
+        context: ValidationContext,
+    ) -> Type[SequenceData | Empty]:
+        workflow = await self.workflow(context)
+        if self._has_no_output(workflow):
             return Empty
-        return SequenceData[self._output_element_type()]
+        return SequenceData[self._output_element_type(workflow)]
 
-    def _build_input_output_nodes(self, n: int) -> tuple[InputNode, OutputNode]:
-        input_seq_type = SequenceValue[self._input_element_type()]
+    def _build_input_output_nodes(
+        self,
+        workflow: ValidatedWorkflow,
+    ) -> tuple[InputNode, OutputNode]:
+        input_seq_type = SequenceValue[self._input_element_type(workflow)]
         input_params = SchemaParams.from_fields(sequence=input_seq_type)
         input_node = InputNode(id="input", params=input_params)
-        if self._has_no_output():
+        if self._has_no_output(workflow):
             output_node = OutputNode.empty()
         else:
-            output_seq_type = SequenceValue[self._output_element_type()]
+            output_seq_type = SequenceValue[self._output_element_type(workflow)]
             output_params = SchemaParams.from_fields(sequence=output_seq_type)
             output_node = OutputNode(id="output", params=output_params)
         return input_node, output_node
 
     @override
-    async def run(self, context: Context, input: SequenceData) -> Workflow:
+    async def run(
+        self,
+        *,
+        context: ExecutionContext,
+        input_type: Type[SequenceData],
+        output_type: Type[SequenceData | Empty],
+        input: SequenceData,
+    ) -> Workflow:
         n = len(input.sequence)
-        input_node, output_node = self._build_input_output_nodes(n)
-        has_no_output = self._has_no_output()
+        workflow = await self.workflow(context.validation_context)
+        input_node, output_node = self._build_input_output_nodes(workflow)
+        has_no_output = self._has_no_output(workflow)
 
-        expand_element_type = self._input_element_type()
+        expand_element_type = self._input_element_type(workflow)
         expand = ExpandSequenceNode.from_length(
             id="expand",
             length=n,
@@ -163,7 +183,7 @@ class ForEachNode(Node[SequenceData, SequenceData | Empty, ForEachParams]):
             gather = GatherSequenceNode.from_length(
                 id="gather",
                 length=n,
-                element_type=self._output_element_type(),
+                element_type=self._output_element_type(workflow),
             )
             inner_nodes.append(gather)
             edges.append(
@@ -177,22 +197,22 @@ class ForEachNode(Node[SequenceData, SequenceData | Empty, ForEachParams]):
 
         for i in range(n):
             namespace = f"element_{i}"
-            item_workflow = self.workflow.with_namespace(namespace)
+            item_workflow = workflow.with_namespace(namespace)
 
             input_adapter = (
                 ExpandDataNode.from_data_type(
                     id="input_adapter",
-                    data_type=self.workflow.input_type,
+                    data_type=workflow.input_type,
                 ).with_namespace(namespace)
-                if not self._has_single_input()
+                if not self._has_single_input(workflow)
                 else None
             )
             output_adapter = (
                 GatherDataNode.from_data_type(
                     id="output_adapter",
-                    data_type=self.workflow.output_type,
+                    data_type=workflow.output_type,
                 ).with_namespace(namespace)
-                if self._has_single_output() is False and has_no_output is False
+                if self._has_single_output(workflow) is False and has_no_output is False
                 else None
             )
 

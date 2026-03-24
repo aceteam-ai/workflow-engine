@@ -1,15 +1,17 @@
 """Tests for NodeRegistry implementations."""
 
-from functools import cached_property
-from typing import Literal
+from typing import Literal, Type
 
+from overrides import override
 import pytest
 
 from workflow_engine import (
     Empty,
+    ExecutionContext,
     Node,
     NodeRegistry,
     NodeTypeInfo,
+    ValidationContext,
 )
 from workflow_engine.core.node import ImmutableNodeRegistry, NodeRegistryBuilder
 
@@ -24,15 +26,23 @@ class SampleNodeA(Node[Empty, Empty, Empty]):
     )
     type: Literal["TestA"] = "TestA"  # pyright: ignore[reportIncompatibleVariableOverride]
 
-    @cached_property
-    def input_type(self):
+    @override
+    async def input_type(self, context: ValidationContext) -> Type[Empty]:
         return Empty
 
-    @cached_property
-    def output_type(self):
+    @override
+    async def output_type(self, context: ValidationContext) -> Type[Empty]:
         return Empty
 
-    async def run(self, context, input):
+    @override
+    async def run(
+        self,
+        *,
+        context: ExecutionContext,
+        input_type: Type[Empty],
+        output_type: Type[Empty],
+        input: Empty,
+    ):
         return Empty()
 
 
@@ -45,15 +55,23 @@ class SampleNodeB(Node[Empty, Empty, Empty]):
     )
     type: Literal["TestB"] = "TestB"  # pyright: ignore[reportIncompatibleVariableOverride]
 
-    @cached_property
-    def input_type(self):
+    @override
+    async def input_type(self, context: ValidationContext) -> Type[Empty]:
         return Empty
 
-    @cached_property
-    def output_type(self):
+    @override
+    async def output_type(self, context: ValidationContext) -> Type[Empty]:
         return Empty
 
-    async def run(self, context, input):
+    @override
+    async def run(
+        self,
+        *,
+        context: ExecutionContext,
+        input_type: Type[Empty],
+        output_type: Type[Empty],
+        input: Empty,
+    ):
         return Empty()
 
 
@@ -287,15 +305,23 @@ class TestLazyNodeRegistry:
                 )
                 type: Literal["TestA"] = "TestA"  # pyright: ignore[reportIncompatibleVariableOverride]
 
-                @cached_property
-                def input_type(self):
+                @override
+                async def input_type(self, context: ValidationContext) -> Type[Empty]:
                     return Empty
 
-                @cached_property
-                def output_type(self):
+                @override
+                async def output_type(self, context: ValidationContext) -> Type[Empty]:
                     return Empty
 
-                async def run(self, context, input):
+                @override
+                async def run(
+                    self,
+                    *,
+                    context: ExecutionContext,
+                    input_type: Type[Empty],
+                    output_type: Type[Empty],
+                    input: Empty,
+                ):
                     return Empty()
 
         finally:
