@@ -1,7 +1,7 @@
 # workflow_engine/core/io.py
 from typing import TYPE_CHECKING, ClassVar, Literal, Self, Type
 
-from pydantic import Field
+from pydantic import Field, PrivateAttr
 from overrides import override
 
 from .node import Node, NodeTypeInfo, Params
@@ -39,9 +39,15 @@ class InputNode(Node[Data, Data, SchemaParams]):
 
     type: Literal["Input"] = "Input"  # pyright: ignore[reportIncompatibleVariableOverride]
 
+    _cached_data_cls: Type[Data] | None = PrivateAttr(default=None)
+
     @override
     async def input_type(self, context: "ValidationContext") -> Type[Data]:
-        return self.params.fields.to_data_schema("InputData").build_data_cls()
+        if self._cached_data_cls is None:
+            self._cached_data_cls = self.params.fields.to_data_schema(
+                "InputData"
+            ).build_data_cls()
+        return self._cached_data_cls
 
     @override
     async def output_type(self, context: "ValidationContext") -> Type[Data]:
@@ -96,9 +102,15 @@ class OutputNode(Node[Data, Data, SchemaParams]):
 
     type: Literal["Output"] = "Output"  # pyright: ignore[reportIncompatibleVariableOverride]
 
+    _cached_data_cls: Type[Data] | None = PrivateAttr(default=None)
+
     @override
     async def input_type(self, context: "ValidationContext") -> Type[Data]:
-        return self.params.fields.to_data_schema("OutputData").build_data_cls()
+        if self._cached_data_cls is None:
+            self._cached_data_cls = self.params.fields.to_data_schema(
+                "OutputData"
+            ).build_data_cls()
+        return self._cached_data_cls
 
     @override
     async def output_type(self, context: "ValidationContext") -> Type[Data]:
