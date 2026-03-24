@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 
 This project uses [PEP 440](https://peps.python.org/pep-0440/) versioning with release candidates (rcN) for pre-release versions.
 
+## [2.0.0rc6] - 2026-03-24
+
+### Added
+- Deep output field selection on edges: output fields can now be selected using dot-separated paths to extract nested values (#90)
+
 ## [2.0.0rc5] - 2026-03-01
 
 ### Added
