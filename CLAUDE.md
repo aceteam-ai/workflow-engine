@@ -11,6 +11,7 @@ Aceteam Workflow Engine is a Python library for building and executing graph-bas
 ```bash
 # Install dependencies
 uv sync
+uv run pre-commit install
 
 # Run all tests
 uv run pytest
@@ -106,7 +107,12 @@ class MyInput(Data):
 
 ### Coding Best Practices
 
-**Prefer Explicit Methods Over Dunder Method Overrides**
+#### Don't Overthink Formatting
+
+Pre-commit hooks will automatically format and clean up imports.
+Don't worry about manually formatting.
+
+#### Prefer Explicit Methods Over Dunder Method Overrides
 
 Avoid clever dunder method overrides (`__contains__`, `__getitem__`, etc.) in favor of explicit named methods:
 
@@ -158,15 +164,15 @@ To cut a new release:
 
 2. **Run the release script** — must be on a clean, up-to-date `main` branch. The script bumps the version in `pyproject.toml` and `src/workflow_engine/__init__.py`, then runs the full check suite (tests, ruff check, ruff format, pyright) before committing, tagging, pushing, and creating a GitHub release:
 
-```bash
-./release.sh --rc      # bump release candidate: 2.0.0rc4 -> 2.0.0rc5
-./release.sh           # bump patch: 2.0.0 -> 2.0.1
-./release.sh --minor   # bump minor: 2.0.0 -> 2.1.0
-./release.sh --major   # bump major: 2.0.0 -> 3.0.0
-./release.sh 2.0.0     # explicit version
-```
+   ```bash
+   ./release.sh --rc      # bump release candidate: 2.0.0rc4 -> 2.0.0rc5
+   ./release.sh           # bump patch: 2.0.0 -> 2.0.1
+   ./release.sh --minor   # bump minor: 2.0.0 -> 2.1.0
+   ./release.sh --major   # bump major: 2.0.0 -> 3.0.0
+   ./release.sh 2.0.0     # explicit version
+   ```
 
-The script prompts for confirmation before making any changes.
+   The script prompts for confirmation before making any changes.
 
 3. **PyPI publish** — triggered automatically by GitHub Actions when the tag is pushed. For a manual deploy (emergency or CI unavailable), use `./deploy.sh`.
 

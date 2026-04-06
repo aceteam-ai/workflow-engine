@@ -64,6 +64,7 @@ Check the `examples` directory for more sample workflows in JSON form:
 ### Workflow Structure
 
 Workflows are defined as JSON with:
+
 - **input_node**: Defines the workflow's input schema using `InputNode`
 - **inner_nodes**: The processing nodes that perform computations
 - **output_node**: Defines the workflow's output schema using `OutputNode`
@@ -121,9 +122,7 @@ src/workflow_engine/
 ```bash
 # Using uv (recommended)
 uv sync
-
-# Using pip
-pip install -e .
+uv run pre-commit install
 ```
 
 ### Testing

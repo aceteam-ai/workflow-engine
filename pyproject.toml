@@ -49,6 +49,7 @@ Changelog = "https://github.com/aceteam-ai/workflow-engine/blob/main/CHANGELOG.m
 [dependency-groups]
 dev = [
     "networkx>=3.6.1",
+    "pre-commit>=4.0.0",
     "pydot>=3.0.0",
     "pyright>=1.1.408",
     "pytest>=8.3.5",
