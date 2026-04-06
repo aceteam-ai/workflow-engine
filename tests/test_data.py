@@ -2,8 +2,9 @@
 from collections.abc import Mapping
 from typing import Type
 
+from pydantic.fields import FieldInfo
 import pytest
-from pydantic import ValidationError
+from pydantic import Field, ValidationError
 
 from workflow_engine import (
     BooleanValue,
@@ -22,6 +23,7 @@ from workflow_engine.core.values import (
     resolve_path,
     validate_value_schema,
 )
+from workflow_engine.core.values.data import compare_fields
 from workflow_engine.core.values.value import get_origin_and_args
 
 
@@ -30,42 +32,78 @@ def ExampleData() -> Type[Data]:
     """Test data class."""
 
     class ExampleData(Data):
-        name: StringValue
-        age: IntegerValue
-        active: BooleanValue = None  # type: ignore
+        name: StringValue = Field(
+            title="Name",
+            description="The full name of the user.",
+        )
+        age: IntegerValue = Field(
+            title="Age",
+            description="The time since the birth of the user in full years, rounded down.",
+        )
+        active: BooleanValue = Field(
+            title="Active",
+            description="Whether the user is currently active.",
+            default=BooleanValue(True),
+        )
 
     return ExampleData
 
 
 @pytest.fixture
-def example_fields() -> Mapping[str, tuple[ValueType, bool]]:
+def example_fields() -> Mapping[str, tuple[ValueType, FieldInfo]]:
     """Test fields."""
 
     return {
-        "name": (StringValue, True),
-        "age": (IntegerValue, True),
-        "active": (BooleanValue, False),
+        "name": (
+            StringValue,
+            FieldInfo(
+                annotation=StringValue,
+                title="Name",
+                description="The full name of the user.",
+            ),
+        ),
+        "age": (
+            IntegerValue,
+            FieldInfo(
+                annotation=IntegerValue,
+                title="Age",
+                description="The time since the birth of the user in full years, rounded down.",
+            ),
+        ),
+        "active": (
+            BooleanValue,
+            FieldInfo(
+                annotation=BooleanValue,
+                title="Active",
+                description="Whether the user is currently active.",
+                default=BooleanValue(True),
+            ),
+        ),
     }
 
 
 @pytest.mark.unit
 def test_get_data_fields(
     ExampleData: Type[Data],
-    example_fields: Mapping[str, tuple[ValueType, bool]],
+    example_fields: Mapping[str, tuple[ValueType, FieldInfo]],
 ):
-    """Test that get_data_fields returns the correct fields."""
+    """Test that get_data_fields is the inverse of build_data_type."""
 
-    assert get_data_fields(ExampleData) == example_fields
+    roundtrip_fields = get_data_fields(ExampleData)
+    assert roundtrip_fields.keys() == example_fields.keys()
+    for name, roundtrip_field in roundtrip_fields.items():
+        expected_field = example_fields[name]
+        assert compare_fields(roundtrip_field, expected_field)
 
 
 @pytest.mark.unit
 def test_build_data_type(
     ExampleData: Type[Data],
-    example_fields: Mapping[str, tuple[ValueType, bool]],
+    example_fields: Mapping[str, tuple[ValueType, FieldInfo]],
 ):
     """Test that build_data_type returns the correct class."""
 
-    cls = build_data_type("ExampleData", example_fields)
+    cls = build_data_type(name="ExampleData", fields=example_fields)
 
     # build_data_type preserves field ordering (used by InputNode/OutputNode.from_fields)
     assert list(cls.model_fields.keys()) == ["name", "age", "active"]

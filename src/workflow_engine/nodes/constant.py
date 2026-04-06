@@ -28,7 +28,7 @@ class ConstantBoolean(Params):
 class ConstantBooleanNode(Node[Empty, ConstantBoolean, ConstantBoolean]):
     TYPE_INFO: ClassVar[NodeTypeInfo] = NodeTypeInfo.from_parameter_type(
         name="ConstantBoolean",
-        display_name="ConstantBoolean",
+        display_name="Constant Boolean",
         description="A node that outputs a constant boolean value.",
         version="0.4.0",
         parameter_type=ConstantBoolean,
@@ -65,7 +65,7 @@ class ConstantInteger(Params):
 class ConstantIntegerNode(Node[Empty, ConstantInteger, ConstantInteger]):
     TYPE_INFO: ClassVar[NodeTypeInfo] = NodeTypeInfo.from_parameter_type(
         name="ConstantInteger",
-        display_name="ConstantInteger",
+        display_name="Constant Integer",
         description="A node that outputs a constant integer value.",
         version="0.4.0",
         parameter_type=ConstantInteger,
@@ -100,7 +100,7 @@ class ConstantString(Params):
 class ConstantStringNode(Node[Empty, ConstantString, ConstantString]):
     TYPE_INFO: ClassVar[NodeTypeInfo] = NodeTypeInfo.from_parameter_type(
         name="ConstantString",
-        display_name="ConstantString",
+        display_name="Constant String",
         description="A node that outputs a constant string value.",
         version="0.4.0",
         parameter_type=ConstantString,

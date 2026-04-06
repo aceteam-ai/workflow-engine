@@ -6,6 +6,7 @@ from collections.abc import Mapping, Sequence
 from typing import TYPE_CHECKING, Any, ClassVar, Generic, TypeVar
 
 from pydantic import ConfigDict, create_model
+from pydantic.fields import FieldInfo
 
 from ...utils.immutable import ImmutableBaseModel
 from ...utils.iter import only
@@ -132,21 +133,23 @@ Input_contra = TypeVar("Input_contra", bound=Data, contravariant=True)
 Output = TypeVar("Output", bound=Data)
 
 
-def get_data_fields(cls: type[Data]) -> Mapping[str, tuple[ValueType, bool]]:
+def get_data_fields(cls: type[Data]) -> Mapping[str, tuple[ValueType, FieldInfo]]:
     """
     Extract the fields of a Data subclass.
+
+    The inverse of this function is build_data_type.
 
     Args:
         cls: The Data subclass to extract fields from
 
     Returns:
-        A mapping of field names to (ValueType, is_required) tuples
+        A mapping of field names to (ValueType, FieldInfo) tuples
     """
-    fields: Mapping[str, tuple[ValueType, bool]] = {}
+    fields: Mapping[str, tuple[ValueType, FieldInfo]] = {}
     for k, v in cls.model_fields.items():
         assert v.annotation is not None
         assert issubclass(v.annotation, Value)
-        fields[k] = (v.annotation, v.is_required())
+        fields[k] = (v.annotation, v)
     return fields
 
 
@@ -163,33 +166,28 @@ D = TypeVar("D", bound=Data)
 
 
 def build_data_type(
+    *,
     name: str,
-    fields: Mapping[str, tuple[ValueType, bool]],
+    fields: Mapping[str, tuple[ValueType, FieldInfo]],
     base_cls: type[D] = Data,
 ) -> type[D]:
     """
-    Create a Data subclass whose fields are given by a mapping of field names to
-    (ValueType, is_required) tuples.
+    A thin wrapper around create_model that builds a Data subclass from a
+    mapping of field names to (ValueType, FieldInfo) tuples.
 
-    This is the inverse of get_fields() - it constructs a class that would return
-    the same mapping when passed to get_fields().
+    FieldInfo is required to encourage the creation of descriptive field names
+    and descriptions.
 
     Args:
         name: The name of the class to create
-        fields: Mapping of field names to (ValueType, required) tuples
+        fields: Mapping of field names to (ValueType, FieldInfo) tuples
         base_class: The base class to inherit from (defaults to Data)
 
     Returns:
-        A new Pydantic BaseModel class with the specified fields
+        A new Data subclass with the specified fields
     """
-    # Create field annotations dictionary
-    annotations: dict[str, ValueType | tuple[ValueType, Any]] = {
-        field_name: value_type if required else (value_type, None)
-        for field_name, (value_type, required) in fields.items()
-    }
-
     # Create the class dynamically
-    cls = create_model(name, __base__=base_cls, **annotations)  # type: ignore
+    cls = create_model(name, __base__=base_cls, **fields)  # type: ignore
 
     return cls
 
@@ -285,6 +283,31 @@ def has_path(
         return False
 
 
+def compare_fields(
+    field_1: tuple[ValueType, FieldInfo],
+    field_2: tuple[ValueType, FieldInfo],
+) -> bool:
+    """
+    Compare two (ValueType, FieldInfo) tuples for equality.
+    """
+    type_1, field_info_1 = field_1
+    type_2, field_info_2 = field_2
+    return (
+        type_1.can_cast_to(type_2)
+        and type_2.can_cast_to(type_1)
+        and (
+            field_info_1.title is None
+            or field_info_2.title is None
+            or field_info_1.title == field_info_2.title
+        )
+        and (
+            field_info_1.description is None
+            or field_info_2.description is None
+            or field_info_1.description == field_info_2.description
+        )
+    )
+
+
 V = TypeVar("V", bound=Value)
 
 
@@ -304,9 +327,9 @@ def cast_data_to_data(
     source_fields = get_data_fields(source_value_type)
     target_fields = get_data_fields(target_value_type)
 
-    for name, (target_field_type, is_required) in target_fields.items():
+    for name, (target_field_type, target_field_info) in target_fields.items():
         if name not in source_fields:
-            if is_required:
+            if target_field_info.is_required():
                 return None
             continue
 

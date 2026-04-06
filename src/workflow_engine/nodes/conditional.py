@@ -8,6 +8,8 @@ from typing import ClassVar, Literal, Self, Type
 from overrides import override
 from pydantic import ConfigDict, Field
 
+from workflow_engine.core.values.data import compare_fields
+
 from ..core.values import build_data_type, get_data_fields
 
 from ..core import (
@@ -76,7 +78,11 @@ class IfNode(Node[ConditionalInput, Empty, IfParams]):
         for key, field in get_data_fields(workflow_if_true.input_type).items():
             assert key not in fields
             fields[key] = field
-        return build_data_type("IfInput", fields, base_cls=ConditionalInput)
+        return build_data_type(
+            name="IfInput",
+            fields=fields,
+            base_cls=ConditionalInput,
+        )
 
     @override
     async def output_type(self, context: ValidationContext) -> Type[Empty]:
@@ -118,7 +124,7 @@ class IfElseNode(Node[ConditionalInput, Data, IfElseParams]):
 
     TYPE_INFO: ClassVar[NodeTypeInfo] = NodeTypeInfo.from_parameter_type(
         name="IfElse",
-        display_name="IfElse",
+        display_name="If Or Else",
         description="Executes one of the two internal workflows based on the boolean condition.",
         version="0.4.0",
         parameter_type=IfElseParams,
@@ -132,7 +138,11 @@ class IfElseNode(Node[ConditionalInput, Data, IfElseParams]):
         for key, field in get_data_fields(workflow_if_true.input_type).items():
             assert key not in fields
             fields[key] = field
-        return build_data_type("IfElseInput", fields, base_cls=ConditionalInput)
+        return build_data_type(
+            name="IfElseInput",
+            fields=fields,
+            base_cls=ConditionalInput,
+        )
 
     @override
     async def output_type(self, context: ValidationContext) -> Type[Data]:
@@ -141,8 +151,13 @@ class IfElseNode(Node[ConditionalInput, Data, IfElseParams]):
         fields = mapping_intersection(
             get_data_fields(workflow_if_true.output_type),
             get_data_fields(workflow_if_false.output_type),
+            compare_fn=compare_fields,
         )
-        return build_data_type("IfElseOutput", fields)
+        return build_data_type(
+            name="IfElseOutput",
+            fields=fields,
+            base_cls=Data,
+        )
 
     @override
     async def run(

@@ -9,6 +9,7 @@ from typing import ClassVar, Generic, Literal, Self, Type, TypeVar
 
 from overrides import override
 from pydantic import Field
+from pydantic.fields import FieldInfo
 
 from workflow_engine.core.values import build_data_type, get_data_dict
 
@@ -60,7 +61,7 @@ class GatherSequenceNode(Node[Data, SequenceData, SequenceParams]):
 
     TYPE_INFO: ClassVar[NodeTypeInfo] = NodeTypeInfo.from_parameter_type(
         name="GatherSequence",
-        display_name="GatherSequence",
+        display_name="Gather Sequence",
         description="Creates a new sequence object of a given length.",
         version="0.4.0",
         parameter_type=SequenceParams,
@@ -74,19 +75,39 @@ class GatherSequenceNode(Node[Data, SequenceData, SequenceParams]):
     # TODO: make this available at runtime
     element_type: ValueType = Field(default=Value, exclude=True)
 
+    @cached_property
+    def indices(self) -> Sequence[int]:
+        return range(self.params.length.root)
+
     def key(self, index: int) -> str:
         return f"element_{index}"
 
-    @cached_property
-    def keys(self) -> Sequence[str]:
-        N = self.params.length.root
-        return [self.key(i) for i in range(N)]
+    def title(self, index: int) -> str:
+        """
+        We display the indices as 1-based for readability.
+        """
+        return f"Item {index + 1}"
+
+    def description(self, index: int) -> str:
+        """
+        We display the indices as 1-based for readability.
+        """
+        return f"The {index + 1} item in the sequence."
 
     @override
     async def input_type(self, context: ValidationContext) -> Type[Data]:
         return build_data_type(
-            "GatherSequenceInput",
-            {key: (self.element_type, True) for key in self.keys},
+            name="GatherSequenceInput",
+            fields={
+                self.key(i): (
+                    self.element_type,
+                    FieldInfo(
+                        title=self.title(i),
+                        description=self.description(i),
+                    ),
+                )
+                for i in self.indices
+            },
         )
 
     @override
@@ -105,7 +126,7 @@ class GatherSequenceNode(Node[Data, SequenceData, SequenceParams]):
         input_dict = get_data_dict(input)
         return output_type(
             sequence=SequenceValue[self.element_type](
-                root=[input_dict[key] for key in self.keys]
+                root=[input_dict[self.key(i)] for i in self.indices]
             )
         )
 
@@ -130,7 +151,7 @@ class ExpandSequenceNode(Node[SequenceData, Data, SequenceParams]):
 
     TYPE_INFO: ClassVar[NodeTypeInfo] = NodeTypeInfo.from_parameter_type(
         name="ExpandSequence",
-        display_name="ExpandSequence",
+        display_name="Expand Sequence",
         description="Extracts a sequence of elements to a data object.",
         version="0.4.0",
         parameter_type=SequenceParams,
@@ -147,10 +168,21 @@ class ExpandSequenceNode(Node[SequenceData, Data, SequenceParams]):
     def key(self, index: int) -> str:
         return f"element_{index}"
 
+    def title(self, index: int) -> str:
+        """
+        We display the indices as 1-based for readability.
+        """
+        return f"Item {index + 1}"
+
+    def description(self, index: int) -> str:
+        """
+        We display the indices as 1-based for readability.
+        """
+        return f"The {index + 1} item in the sequence."
+
     @cached_property
-    def keys(self) -> Sequence[str]:
-        N = self.params.length.root
-        return [self.key(i) for i in range(N)]
+    def indices(self) -> Sequence[int]:
+        return range(self.params.length.root)
 
     @override
     async def input_type(self, context: ValidationContext) -> Type[SequenceData]:
@@ -159,8 +191,14 @@ class ExpandSequenceNode(Node[SequenceData, Data, SequenceParams]):
     @override
     async def output_type(self, context: ValidationContext) -> Type[Data]:
         return build_data_type(
-            "ExpandSequenceOutput",
-            {key: (self.element_type, True) for key in self.keys},
+            name="ExpandSequenceOutput",
+            fields={
+                self.key(i): (
+                    self.element_type,
+                    FieldInfo(title=self.title(i), description=self.description(i)),
+                )
+                for i in self.indices
+            },
         )
 
     @override
@@ -239,8 +277,14 @@ class GatherMappingNode(Node[Data, MappingData, MappingParams]):
     @override
     async def input_type(self, context: ValidationContext) -> Type[Data]:
         return build_data_type(
-            "GatherMappingInput",
-            {key.root: (self.value_type, True) for key in self.params.keys},
+            name="GatherMappingInput",
+            fields={
+                key.root: (
+                    self.value_type,
+                    FieldInfo(title=key.root),
+                )
+                for key in self.params.keys
+            },
         )
 
     @override
@@ -288,7 +332,7 @@ class ExpandMappingNode(Node[MappingData, Data, MappingParams]):
 
     TYPE_INFO: ClassVar[NodeTypeInfo] = NodeTypeInfo.from_parameter_type(
         name="ExpandMapping",
-        display_name="ExpandMapping",
+        display_name="Expand Mapping",
         description="Extracts values from a mapping object at specific keys.",
         version="0.4.0",
         parameter_type=MappingParams,
@@ -309,8 +353,14 @@ class ExpandMappingNode(Node[MappingData, Data, MappingParams]):
     @override
     async def output_type(self, context: ValidationContext) -> Type[Data]:
         return build_data_type(
-            "ExpandMappingOutput",
-            {key.root: (self.value_type, True) for key in self.params.keys},
+            name="ExpandMappingOutput",
+            fields={
+                key.root: (
+                    self.value_type,
+                    FieldInfo(title=key.root),
+                )
+                for key in self.params.keys
+            },
         )
 
     @override

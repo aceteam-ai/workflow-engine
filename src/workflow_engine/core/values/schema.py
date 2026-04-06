@@ -19,6 +19,7 @@ from pydantic import (
     model_serializer,
     model_validator,
 )
+from pydantic.fields import FieldInfo
 
 from workflow_engine.utils.immutable import ImmutableBaseModel
 from .data import Data, DataValue, build_data_type
@@ -306,6 +307,33 @@ class BaseValueSchema(ImmutableBaseModel):
         """
         raise NotImplementedError("Subclasses must implement this method")
 
+    def to_field_info(
+        self,
+        *extra_defs: Mapping[str, ValueSchema],
+        is_required: bool = False,
+    ) -> FieldInfo:
+        """
+        Returns a Pydantic FieldInfo object for the schema.
+
+        This method is somewhat lossy since it is almost impossible to
+        faithfully convert the schema to a FieldInfo object.
+        """
+        annotation = self.to_value_cls(*extra_defs)
+        return (
+            FieldInfo(
+                annotation=annotation,
+                title=self.title,
+                description=self.description,
+            )
+            if is_required
+            else FieldInfo(
+                annotation=annotation,
+                title=self.title,
+                description=self.description,
+                default=self.default,
+            )
+        )
+
 
 class BooleanValueSchema(BaseValueSchema):
     type: Final[Literal["boolean"]]
@@ -434,15 +462,16 @@ class DataValueSchema(BaseValueSchema):
         """
         # TODO: capture the descriptions from the schema
         required_set = frozenset(self.required)
+        defs = (self.defs, *extra_defs)
         properties = {
             k: (
-                v.to_value_cls(self.defs, *extra_defs),
-                k in required_set,
+                v.to_value_cls(*defs),
+                v.to_field_info(*defs, is_required=k in required_set),
             )
             for k, v in self.properties.items()
         }
         assert self.title is not None
-        return build_data_type(self.title, properties)
+        return build_data_type(name=self.title, fields=properties)
 
     @override
     def build_value_cls(
