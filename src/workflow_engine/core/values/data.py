@@ -181,7 +181,7 @@ def build_data_type(
     Args:
         name: The name of the class to create
         fields: Mapping of field names to (ValueType, FieldInfo) tuples
-        base_class: The base class to inherit from (defaults to Data)
+        base_cls: The base class to inherit from (defaults to Data)
 
     Returns:
         A new Data subclass with the specified fields
@@ -305,6 +305,7 @@ def compare_fields(
             or field_info_2.description is None
             or field_info_1.description == field_info_2.description
         )
+        and (field_info_1.is_required() == field_info_2.is_required())
     )
 
 

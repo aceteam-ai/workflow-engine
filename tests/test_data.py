@@ -151,7 +151,7 @@ def test_resolve_path_from_json_schema_simple():
         "type": "object",
         "properties": {
             "foo": {"x-value-type": "StringValue"},
-            "bar": {"x-value-type": "IntegerValue"},
+            "bar": {"x-value-type": "IntegerValue", "default": 42},
         },
         "required": ["foo", "bar"],
     }
@@ -252,7 +252,7 @@ def test_resolve_path_from_schema_flat(path_factory):
         "type": "object",
         "properties": {
             "name": {"x-value-type": "StringValue"},
-            "count": {"x-value-type": "IntegerValue"},
+            "count": {"x-value-type": "IntegerValue", "default": 42},
         },
         "required": ["name"],
     }
@@ -381,7 +381,7 @@ def test_resolve_path_flat_data_from_schema():
         "type": "object",
         "properties": {
             "foo": {"x-value-type": "StringValue"},
-            "bar": {"x-value-type": "IntegerValue"},
+            "bar": {"x-value-type": "IntegerValue", "default": 42},
         },
         "required": ["foo"],
     }
@@ -490,7 +490,7 @@ def test_has_path_from_schema():
         "type": "object",
         "properties": {
             "foo": {"x-value-type": "StringValue"},
-            "bar": {"x-value-type": "IntegerValue"},
+            "bar": {"x-value-type": "IntegerValue", "default": 42},
         },
         "required": ["foo"],
     }
