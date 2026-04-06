@@ -2,6 +2,7 @@ import pytest
 
 from workflow_engine import (
     Edge,
+    FloatValue,
     IntegerValue,
     ValidationContext,
     Workflow,
@@ -163,21 +164,25 @@ async def test_add_30_arguments():
 async def test_add_1000_arguments_field_names():
     """Spot-check field names for a 1000-argument AddNode without executing it."""
     add = AddNode.with_arity(id="add", arity=1000)
-    fields = get_data_fields(await add.input_type(ValidationContext()))
-
+    fields = [
+        (name, value_type, field_info.title)
+        for name, (value_type, field_info) in get_data_fields(
+            await add.input_type(ValidationContext())
+        ).items()
+    ]
     assert len(fields) == 1000
 
     # 1-letter boundaries
-    assert "a" in fields  # index 0
-    assert "z" in fields  # index 25
+    assert fields[0] == ("a", FloatValue, "A")
+    assert fields[25] == ("z", FloatValue, "Z")
 
     # 2-letter boundaries
-    assert "aa" in fields  # index 26
-    assert "zz" in fields  # index 701
+    assert fields[26] == ("aa", FloatValue, "AA")
+    assert fields[701] == ("zz", FloatValue, "ZZ")
 
     # 3-letter start and a spot-check in the middle
-    assert "aaa" in fields  # index 702
-    assert "all" in fields  # index 999
+    assert fields[702] == ("aaa", FloatValue, "AAA")
+    assert fields[999] == ("all", FloatValue, "ALL")
 
 
 @pytest.mark.asyncio

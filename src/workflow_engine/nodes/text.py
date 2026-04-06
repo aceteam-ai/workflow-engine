@@ -45,7 +45,7 @@ class AppendToFileParams(Params):
 class AppendToFileNode(Node[AppendToFileInput, AppendToFileOutput, AppendToFileParams]):
     TYPE_INFO: ClassVar[NodeTypeInfo] = NodeTypeInfo.from_parameter_type(
         name="AppendToFile",
-        display_name="AppendToFile",
+        display_name="Append to File",
         description="Appends a string to the end of a file.",
         version="0.4.0",
         parameter_type=AppendToFileParams,

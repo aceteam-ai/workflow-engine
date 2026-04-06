@@ -6,7 +6,9 @@ Simple nodes for testing the workflow engine, with limited usefulness otherwise.
 from typing import ClassVar, Literal, Self, Type
 
 from overrides import override
-from pydantic import Field, create_model
+from pydantic import Field
+
+from workflow_engine.core.values import build_data_type
 
 from ..core import (
     ExecutionContext,
@@ -70,11 +72,15 @@ class AddNode(Node[Data, SumOutput, AddNodeParams]):
         fields = {
             name: (
                 FloatValue,
-                Field(title=name.upper(), description=f"The number {name}."),
+                Field(title=name.upper()),
             )
             for name in field_names
         }
-        return create_model("AddNodeInput", __base__=Data, **fields)  # type: ignore
+        return build_data_type(
+            name="AddNodeInput",
+            fields=fields,
+            base_cls=Data,
+        )
 
     @override
     async def output_type(self, context: ValidationContext) -> Type[SumOutput]:

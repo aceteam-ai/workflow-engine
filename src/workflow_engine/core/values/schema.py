@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from functools import cached_property
+import logging
 from typing import Annotated, Any, ClassVar, Final, Literal, Self, TypeVar
 
 from overrides import override
@@ -19,6 +20,8 @@ from pydantic import (
     model_serializer,
     model_validator,
 )
+from pydantic.fields import FieldInfo
+from pydantic_core import PydanticUndefined
 
 from workflow_engine.utils.immutable import ImmutableBaseModel
 from .data import Data, DataValue, build_data_type
@@ -33,6 +36,8 @@ from .primitives import (
 from .sequence import SequenceValue
 from .value import Value, ValueRegistry, ValueType
 from workflow_engine.utils.hash import json_digest
+
+logger = logging.getLogger(__name__)
 
 _T_item = TypeVar("_T_item", bound=Value)
 
@@ -306,6 +311,51 @@ class BaseValueSchema(ImmutableBaseModel):
         """
         raise NotImplementedError("Subclasses must implement this method")
 
+    def to_field_info(
+        self,
+        *extra_defs: Mapping[str, ValueSchema],
+        is_required: bool = False,
+    ) -> FieldInfo:
+        """
+        Returns a Pydantic FieldInfo object for the schema.
+
+        This method is somewhat lossy since it is almost impossible to
+        faithfully convert the schema to a FieldInfo object.
+        """
+        annotation = self.to_value_cls(*extra_defs)
+        if is_required:
+            # required fields may optionally have a default value, but invalid
+            # default values are ignored for the sake of being permissive
+            try:
+                default_value = annotation.model_validate(self.default)
+            except ValidationError as e:
+                if self.default is not None:
+                    e.add_note(f"Default value: {self.default}")
+                    logger.warning(
+                        f"Invalid default value for schema {self}", exc_info=True
+                    )
+                default_value = PydanticUndefined
+            return FieldInfo(
+                annotation=annotation,
+                title=self.title,
+                description=self.description,
+                default=default_value,
+            )
+        else:
+            # non-required fields must have a valid default value and failure to
+            # provide one is an unrecoverable error
+            try:
+                default_value = annotation.model_validate(self.default)
+            except ValidationError as e:
+                e.add_note(f"Invalid default value for schema {self}")
+                raise
+            return FieldInfo(
+                annotation=annotation,
+                title=self.title,
+                description=self.description,
+                default=default_value,
+            )
+
 
 class BooleanValueSchema(BaseValueSchema):
     type: Final[Literal["boolean"]]
@@ -434,15 +484,16 @@ class DataValueSchema(BaseValueSchema):
         """
         # TODO: capture the descriptions from the schema
         required_set = frozenset(self.required)
+        defs = (self.defs, *extra_defs)
         properties = {
             k: (
-                v.to_value_cls(self.defs, *extra_defs),
-                k in required_set,
+                v.to_value_cls(*defs),
+                v.to_field_info(*defs, is_required=k in required_set),
             )
             for k, v in self.properties.items()
         }
         assert self.title is not None
-        return build_data_type(self.title, properties)
+        return build_data_type(name=self.title, fields=properties)
 
     @override
     def build_value_cls(
@@ -554,6 +605,7 @@ class FieldSchemaMappingValue(StringMapValue[ValueSchemaValue]):
             title=title,
             properties={k: v.root for k, v in self.root.items()},
             additionalProperties=False,
+            required=list(self.root.keys()),
         )
 
     @classmethod

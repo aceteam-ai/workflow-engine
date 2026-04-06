@@ -64,7 +64,7 @@ class ForEachNode(Node[SequenceData, SequenceData | Empty, ForEachParams]):
 
     TYPE_INFO: ClassVar[NodeTypeInfo] = NodeTypeInfo.from_parameter_type(
         name="ForEach",
-        display_name="ForEach",
+        display_name="For Each",
         description="Executes the internal workflow for each item in the input sequence.",
         version="1.0.0",
         parameter_type=ForEachParams,
