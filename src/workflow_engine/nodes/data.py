@@ -44,8 +44,13 @@ class SequenceParams(Params):
 
 class SequenceData(Data, Generic[V]):
     sequence: SequenceValue[V] = Field(
-        title="Sequence", description="The sequence of values."
+        title="Sequence",
+        description="The sequence of values.",
     )
+
+    @classmethod
+    def empty(cls) -> Self:
+        return cls(sequence=SequenceValue[V](root=()))
 
 
 class GatherSequenceNode(Node[Data, SequenceData, SequenceParams]):

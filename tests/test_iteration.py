@@ -473,6 +473,15 @@ async def test_zero_output_multi_in(zero_output_multi_in_workflow: Workflow):
 
 
 @pytest.mark.asyncio
+async def test_zero_output_multi_in_empty(zero_output_multi_in_workflow: Workflow):
+    """ForEach: 2 inputs, 0 outputs. Outputs nothing (Empty)."""
+    await _test_zero_output_workflow(
+        zero_output_multi_in_workflow,
+        {"sequence": []},
+    )
+
+
+@pytest.mark.asyncio
 async def test_for_each_empty(multi_in_single_out_workflow: Workflow):
     """Empty sequence produces empty results."""
     context = InMemoryExecutionContext()
