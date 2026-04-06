@@ -4,11 +4,11 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from enum import StrEnum
 from functools import cached_property
-from typing import Mapping, Self, TYPE_CHECKING
+from typing import TYPE_CHECKING, Mapping, Self
 
 from overrides import EnforceOverrides
-
 from pydantic import Field
+
 from ..utils.immutable import ImmutableBaseModel
 from .error import WorkflowErrors
 from .values import DataMapping

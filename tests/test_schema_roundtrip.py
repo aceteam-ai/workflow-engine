@@ -273,8 +273,8 @@ def test_constrained_float_roundtrip():
 def test_constrained_integer_roundtrip():
     """IntegerValue with numeric constraints round-trips without losing the constraints."""
     from workflow_engine.core.values.schema import (
-        _build_constrained_cls,
         _NUMERIC_FIELD_MAP,
+        _build_constrained_cls,
     )
 
     original = _build_constrained_cls(

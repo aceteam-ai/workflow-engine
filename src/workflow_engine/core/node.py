@@ -414,8 +414,8 @@ class Node(ImmutableBaseModel, Generic[Input_contra, Output, Params_co]):
             )
 
             from .workflow import (
-                Workflow,
                 ValidatedWorkflow,
+                Workflow,
             )  # lazy to avoid circular import
 
             if isinstance(output_obj, Workflow):

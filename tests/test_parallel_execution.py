@@ -3,15 +3,15 @@
 import asyncio
 from typing import ClassVar, Literal, Type
 
-from overrides import override
 import pytest
+from overrides import override
 
 from workflow_engine import (
-    ExecutionContext,
     Data,
     DataValue,
     Edge,
     Empty,
+    ExecutionContext,
     FloatValue,
     InputNode,
     IntegerValue,

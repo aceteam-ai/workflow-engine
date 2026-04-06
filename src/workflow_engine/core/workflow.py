@@ -14,6 +14,7 @@ from ..utils.asynchronous import gather
 from ..utils.immutable import ImmutableBaseModel
 from .edge import Edge
 from .error import NodeExpansionException, UserException
+from .io import InputNode, OutputNode
 from .node import Node, get_id_with_namespace
 from .values import (
     Data,
@@ -23,7 +24,6 @@ from .values import (
     get_value_at_path,
     resolve_path,
 )
-from .io import InputNode, OutputNode
 
 if TYPE_CHECKING:
     from .context import ExecutionContext, ValidationContext

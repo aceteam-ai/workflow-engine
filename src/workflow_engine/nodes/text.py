@@ -1,12 +1,13 @@
 # workflow_engine/nodes/text.py
 import os
 from typing import ClassVar, Literal, Self, Type
+
 from overrides import override
 from pydantic import Field
 
 from ..core import (
-    ExecutionContext,
     Data,
+    ExecutionContext,
     File,
     Node,
     NodeTypeInfo,

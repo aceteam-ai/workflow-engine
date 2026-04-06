@@ -2,8 +2,8 @@
 
 from typing import Literal, Type
 
-from overrides import override
 import pytest
+from overrides import override
 
 from workflow_engine import (
     Edge,

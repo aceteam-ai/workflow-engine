@@ -1,7 +1,7 @@
 from collections.abc import MutableMapping
 from typing import Any, Generic, Self, TypeVar
-from pydantic import BaseModel, ConfigDict, RootModel
 
+from pydantic import BaseModel, ConfigDict, RootModel
 
 _immutable_model_config = ConfigDict(
     frozen=True,

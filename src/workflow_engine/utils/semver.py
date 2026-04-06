@@ -2,7 +2,6 @@
 
 import re
 
-
 SEMANTIC_VERSION_PATTERN = r"^(\d+)\.(\d+)\.(\d+)$"
 _SEMANTIC_VERSION_REGEX = re.compile(SEMANTIC_VERSION_PATTERN)
 

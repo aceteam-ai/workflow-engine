@@ -2,9 +2,9 @@
 from collections.abc import Mapping
 from typing import Type
 
-from pydantic.fields import FieldInfo
 import pytest
 from pydantic import Field, ValidationError
+from pydantic.fields import FieldInfo
 
 from workflow_engine import (
     BooleanValue,

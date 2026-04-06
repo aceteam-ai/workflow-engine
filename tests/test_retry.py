@@ -8,9 +8,9 @@ from unittest.mock import AsyncMock
 import pytest
 
 from workflow_engine import (
-    ExecutionContext,
     Data,
     Edge,
+    ExecutionContext,
     InputNode,
     Node,
     NodeTypeInfo,

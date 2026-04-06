@@ -13,14 +13,14 @@ ParallelExecutionAlgorithm via the `algorithm` fixture.
 
 from typing import ClassVar, Literal, Type
 
-from overrides import override
 import pytest
+from overrides import override
 
 from workflow_engine import (
-    ExecutionContext,
     Data,
     Edge,
     ExecutionAlgorithm,
+    ExecutionContext,
     Node,
     Params,
     ShouldYield,

@@ -1,6 +1,7 @@
 # workflow_engine/core/engine.py
 from collections.abc import Mapping
 from typing import Any
+
 from .context import ExecutionContext, ValidationContext
 from .execution import ExecutionAlgorithm, WorkflowExecutionResult
 from .node import NodeRegistry

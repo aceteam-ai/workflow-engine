@@ -31,8 +31,8 @@ from workflow_engine import (
 )
 from workflow_engine.core.values import get_data_schema, validate_value_schema
 from workflow_engine.core.values.schema import (
-    BooleanValueSchema,
     BaseValueSchema,
+    BooleanValueSchema,
     FieldSchemaMappingValue,
     FloatValueSchema,
     IntegerValueSchema,
@@ -524,6 +524,7 @@ def test_sequence_schema_aliasing():
 def test_constrained_sequence_is_castable():
     """Constrained SequenceValue subclasses must remain compatible with the casting system."""
     import asyncio
+
     from workflow_engine.contexts import InMemoryExecutionContext
 
     json_schema = {

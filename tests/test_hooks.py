@@ -5,15 +5,15 @@ from collections.abc import Mapping
 from typing import ClassVar, Literal, Type
 from unittest.mock import AsyncMock
 
-from overrides import override
 import pytest
+from overrides import override
 
 from workflow_engine import (
-    ExecutionContext,
     Data,
     DataMapping,
     Edge,
     ExecutionAlgorithm,
+    ExecutionContext,
     Node,
     NodeTypeInfo,
     Params,

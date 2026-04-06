@@ -5,8 +5,8 @@ import warnings
 from collections.abc import Mapping
 from typing import Any, ClassVar, Literal, Type
 
-from overrides import override
 import pytest
+from overrides import override
 
 from workflow_engine import (
     ExecutionContext,

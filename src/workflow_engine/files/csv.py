@@ -5,7 +5,6 @@ from hashlib import md5
 from io import StringIO
 from typing import Any, ClassVar, Self, TypeVar
 
-from ..core.values import get_origin_and_args
 from ..core import (
     Caster,
     ExecutionContext,
@@ -16,8 +15,8 @@ from ..core import (
     UserException,
     Value,
 )
+from ..core.values import get_origin_and_args
 from .text import TextFileValue
-
 
 V = TypeVar("V", bound=Value)
 

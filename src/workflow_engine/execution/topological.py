@@ -8,9 +8,9 @@ import asyncio
 from overrides import override
 
 from ..core import (
-    ExecutionContext,
     DataMapping,
     ExecutionAlgorithm,
+    ExecutionContext,
     ValidatedWorkflow,
     WorkflowErrors,
     WorkflowExecutionResult,

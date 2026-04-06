@@ -1,7 +1,6 @@
 # workflow_engine/utils/mappings.py
 
 from collections.abc import Mapping
-
 from functools import reduce
 from operator import eq
 from typing import Callable, TypeVar
