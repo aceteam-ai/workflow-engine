@@ -11,6 +11,7 @@ from overrides import override
 from pydantic import Field
 
 from workflow_engine.core.values import build_data_type, get_data_dict
+from workflow_engine.core.values.data import get_data_field
 
 from ..core import (
     ExecutionContext,
@@ -44,8 +45,16 @@ class SequenceParams(Params):
 
 class SequenceData(Data, Generic[V]):
     sequence: SequenceValue[V] = Field(
-        title="Sequence", description="The sequence of values."
+        title="Sequence",
+        description="The sequence of values.",
     )
+
+    @classmethod
+    def empty(cls) -> Self:
+        sequence_type = get_data_field(cls, "sequence")
+        assert sequence_type is not None
+        assert issubclass(sequence_type, SequenceValue)
+        return cls(sequence=sequence_type(root=()))
 
 
 class GatherSequenceNode(Node[Data, SequenceData, SequenceParams]):

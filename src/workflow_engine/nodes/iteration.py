@@ -155,12 +155,17 @@ class ForEachNode(Node[SequenceData, SequenceData | Empty, ForEachParams]):
         input_type: Type[SequenceData],
         output_type: Type[SequenceData | Empty],
         input: SequenceData,
-    ) -> Workflow:
+    ) -> Workflow | SequenceData | Empty:
         n = len(input.sequence)
+        if n == 0:
+            if issubclass(output_type, Empty):
+                return output_type()
+            else:
+                return output_type.empty()
+
         workflow = await self.workflow(context.validation_context)
         input_node, output_node = self._build_input_output_nodes(workflow)
         has_no_output = self._has_no_output(workflow)
-
         expand_element_type = self._input_element_type(workflow)
         expand = ExpandSequenceNode.from_length(
             id="expand",
