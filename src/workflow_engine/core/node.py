@@ -404,25 +404,27 @@ class Node(ImmutableBaseModel, Generic[Input_contra, Output, Params_co]):
                 output_type=output_type,
                 input=casted_input,
             )
-            if output is not None:
-                return output
-            output_obj = await self.run(
-                context=context,
-                input_type=input_type,
-                output_type=output_type,
-                input=input_obj,
-            )
 
             from .workflow import (
                 ValidatedWorkflow,
                 Workflow,
             )  # lazy to avoid circular import
 
-            if isinstance(output_obj, Workflow):
-                if not isinstance(output_obj, ValidatedWorkflow):
-                    workflow = await output_obj.validate(context.validation_context)
+            if output is None:
+                output = await self.run(
+                    context=context,
+                    input_type=input_type,
+                    output_type=output_type,
+                    input=input_obj,
+                )
+                if not isinstance(output, Workflow):
+                    output = get_data_dict(output)
+
+            if isinstance(output, Workflow):
+                if not isinstance(output, ValidatedWorkflow):
+                    workflow = await output.validate(context.validation_context)
                 else:
-                    workflow = output_obj
+                    workflow = output
                 output = await context.on_node_expand(
                     node=self,
                     input_type=input_type,
@@ -439,7 +441,7 @@ class Node(ImmutableBaseModel, Generic[Input_contra, Output, Params_co]):
                     input_type=input_type,
                     output_type=output_type,
                     input=casted_input,
-                    output=get_data_dict(output_obj),
+                    output=output,
                 )
             logger.info("Finished node %s", self.id)
             return output
