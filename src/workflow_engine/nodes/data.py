@@ -11,14 +11,11 @@ from overrides import override
 from pydantic import Field
 from pydantic.fields import FieldInfo
 
-from workflow_engine.core.values import build_data_type, get_data_dict
-from workflow_engine.core.values.data import get_data_field
-
 from ..core import (
-    ExecutionContext,
     Data,
     DataValue,
     Empty,
+    ExecutionContext,
     IntegerValue,
     Node,
     NodeTypeInfo,
@@ -30,6 +27,7 @@ from ..core import (
     Value,
     ValueType,
 )
+from ..core.values import build_data_type, get_data_dict, get_data_field
 
 V = TypeVar("V", bound=Value)
 

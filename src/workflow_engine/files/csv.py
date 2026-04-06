@@ -5,8 +5,7 @@ from hashlib import md5
 from io import StringIO
 from typing import Any, ClassVar, Self, TypeVar
 
-from workflow_engine.core.values import get_origin_and_args
-
+from ..core.values import get_origin_and_args
 from ..core import (
     Caster,
     ExecutionContext,

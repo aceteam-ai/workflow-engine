@@ -232,7 +232,7 @@ class LocalContext(ExecutionContext):
             path=self.workflow_error_path,
             data=json.dumps(
                 {
-                    "errors": errors.model_dump(),
+                    "errors": errors.model_dump(mode="json"),
                     "output": dump_data_mapping(partial_output),
                     "node_yields": node_yields,
                 }

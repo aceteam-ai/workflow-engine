@@ -1,5 +1,4 @@
 # workflow_engine/core/values/data.py
-import asyncio
 import json
 import logging
 from collections.abc import Mapping, Sequence
@@ -8,6 +7,7 @@ from typing import TYPE_CHECKING, Any, ClassVar, Generic, TypeVar
 from pydantic import ConfigDict, create_model
 from pydantic.fields import FieldInfo
 
+from ...utils.asynchronous import gather
 from ...utils.immutable import ImmutableBaseModel
 from ...utils.iter import only
 from .mapping import StringMapValue
@@ -347,7 +347,7 @@ def cast_data_to_data(
         items = list(get_data_dict(value.root).items())
         keys = [k for k, v in items]
         cast_tasks = [v.cast_to(target_fields[k][0], context=context) for k, v in items]
-        casted_values = await asyncio.gather(*cast_tasks)
+        casted_values = await gather(cast_tasks)
         data_dict = dict(zip(keys, casted_values))
         return target_type(data_dict)
 
@@ -386,8 +386,9 @@ def cast_data_to_string_map(
         # Cast all fields in parallel
         items = list(get_data_dict(value.root).items())
         keys = [k for k, v in items]
-        cast_tasks = [v.cast_to(target_value_type, context=context) for k, v in items]
-        casted_values = await asyncio.gather(*cast_tasks)
+        casted_values = await gather(
+            v.cast_to(target_value_type, context=context) for k, v in items
+        )
         return target_type(dict(zip(keys, casted_values)))  # type: ignore
 
     return _cast
@@ -448,8 +449,7 @@ def cast_string_map_to_data(
 
         items = list(value.root.items())
         keys = [k for k, v in items]
-        cast_tasks = [cast_field(k, v) for k, v in items]
-        casted_values = await asyncio.gather(*cast_tasks)
+        casted_values = await gather(cast_field(k, v) for k, v in items)
         return target_type(dict(zip(keys, casted_values)))  # type: ignore
 
     return _cast

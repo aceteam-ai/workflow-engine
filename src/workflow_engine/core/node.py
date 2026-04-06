@@ -1,7 +1,6 @@
 # workflow_engine/core/node.py
 from __future__ import annotations
 
-import asyncio
 import logging
 import re
 import warnings
@@ -26,6 +25,7 @@ from overrides import final, override
 from pydantic import ConfigDict, Field, ValidationError, model_validator
 from typing_extensions import overload
 
+from ..utils.asynchronous import gather
 from ..utils.immutable import ImmutableBaseModel
 from ..utils.semver import (
     LATEST_SEMANTIC_VERSION,
@@ -348,7 +348,7 @@ class Node(ImmutableBaseModel, Generic[Input_contra, Output, Params_co]):
             cast_tasks.append(value.cast_to(input_field_type, context=context))
             keys.append(key)
 
-        casted_values = await asyncio.gather(*cast_tasks)
+        casted_values = await gather(cast_tasks)
 
         # Build the result dictionary
         casted_input: dict[str, Value] = {}

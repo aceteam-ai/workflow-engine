@@ -1,7 +1,6 @@
 # workflow_engine/core/values/value.py
 from __future__ import annotations
 
-import inspect
 import re
 
 from abc import ABC, abstractmethod
@@ -25,6 +24,7 @@ from typing import (
 from overrides import override
 from pydantic import PrivateAttr
 
+from ...utils.asynchronous import is_coroutine
 from ...utils.immutable import ImmutableRootModel
 
 if TYPE_CHECKING:
@@ -281,7 +281,7 @@ class Value(ImmutableRootModel[T], Generic[T]):
         cast_fn = self.__class__.get_caster(t)
         if cast_fn is not None:
             result = cast_fn(self, context)
-            casted: V = (await result) if inspect.iscoroutine(result) else result  # type: ignore
+            casted: V = (await result) if is_coroutine(result) else result  # type: ignore
             self._cast_cache[key] = casted
             return casted
 
