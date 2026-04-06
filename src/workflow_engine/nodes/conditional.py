@@ -8,15 +8,11 @@ from typing import ClassVar, Literal, Self, Type
 from overrides import override
 from pydantic import ConfigDict, Field
 
-from workflow_engine.core.values.data import compare_fields
-
-from ..core.values import build_data_type, get_data_fields
-
 from ..core import (
     BooleanValue,
-    ExecutionContext,
     Data,
     Empty,
+    ExecutionContext,
     Node,
     NodeTypeInfo,
     Params,
@@ -24,6 +20,7 @@ from ..core import (
     Workflow,
     WorkflowValue,
 )
+from ..core.values import build_data_type, compare_fields, get_data_fields
 from ..utils.mappings import mapping_intersection
 
 

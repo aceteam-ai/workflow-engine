@@ -6,9 +6,9 @@ Pydantic for Value subclasses.
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Mapping, Sequence
 from functools import cached_property
-import logging
 from typing import Annotated, Any, ClassVar, Final, Literal, Self, TypeVar
 
 from overrides import override
@@ -23,7 +23,8 @@ from pydantic import (
 from pydantic.fields import FieldInfo
 from pydantic_core import PydanticUndefined
 
-from workflow_engine.utils.immutable import ImmutableBaseModel
+from ...utils.hash import json_digest
+from ...utils.immutable import ImmutableBaseModel
 from .data import Data, DataValue, build_data_type
 from .mapping import StringMapValue
 from .primitives import (
@@ -35,7 +36,6 @@ from .primitives import (
 )
 from .sequence import SequenceValue
 from .value import Value, ValueRegistry, ValueType
-from workflow_engine.utils.hash import json_digest
 
 logger = logging.getLogger(__name__)
 

@@ -67,7 +67,9 @@ async def test_workflow_serialization(workflow: Workflow):
         Workflow.model_validate_json(workflow_json)
     )
     # compare only serialized fields
-    assert deserialized_workflow.model_dump() == workflow.model_dump()
+    assert deserialized_workflow.model_dump(mode="json") == workflow.model_dump(
+        mode="json"
+    )
 
 
 @pytest.mark.asyncio

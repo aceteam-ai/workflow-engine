@@ -1,9 +1,9 @@
 # workflow_engine/core/values/mapping.py
 
-import asyncio
 from collections.abc import ItemsView, Iterator, KeysView, Mapping, ValuesView
-from typing import TYPE_CHECKING, Generic, Type, TypeVar
+from typing import TYPE_CHECKING, Generic, Type, TypeVar, cast
 
+from ...utils.asynchronous import gather
 from .primitives import StringValue
 from .value import Caster, Value, get_origin_and_args
 
@@ -72,11 +72,10 @@ def cast_string_map_to_string_map(
         assert isinstance(value, StringMapValue)
         # Cast all values in parallel
         keys, values = zip(*value.items())
-        cast_tasks = [
-            v.cast_to(target_value_type, context=context)  # type: ignore
+        casted_values = await gather(
+            cast(source_value_type, v).cast_to(target_value_type, context=context)
             for v in values
-        ]
-        casted_values = await asyncio.gather(*cast_tasks)
+        )
         return target_type(dict(zip(keys, casted_values)))  # type: ignore
 
     return _cast

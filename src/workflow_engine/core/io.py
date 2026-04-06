@@ -1,15 +1,15 @@
 # workflow_engine/core/io.py
 from typing import TYPE_CHECKING, ClassVar, Literal, Self, Type
 
-from pydantic import Field, PrivateAttr
 from overrides import override
+from pydantic import Field, PrivateAttr
 
 from .node import Node, NodeTypeInfo, Params
 from .values import (
     Data,
+    FieldSchemaMappingValue,
     ValueSchemaValue,
     ValueType,
-    FieldSchemaMappingValue,
 )
 
 if TYPE_CHECKING:

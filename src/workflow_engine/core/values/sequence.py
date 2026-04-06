@@ -1,9 +1,9 @@
 # workflow_engine/core/values/sequence.py
 
-import asyncio
 from collections.abc import Iterator, Sequence
-from typing import TYPE_CHECKING, Any, Generic, TypeVar
+from typing import TYPE_CHECKING, Any, Generic, TypeVar, cast
 
+from ...utils.asynchronous import gather
 from .primitives import IntegerValue
 from .value import Caster, Value, get_origin_and_args
 
@@ -53,11 +53,10 @@ def cast_sequence_to_sequence(
         context: "ExecutionContext",
     ) -> target_type:  # pyright: ignore[reportInvalidTypeForm]
         # Cast all items in parallel
-        cast_tasks = [
-            x.cast_to(target_item_type, context=context)  # type: ignore
+        casted_items = await gather(
+            cast(source_item_type, x).cast_to(target_item_type, context=context)
             for x in value.root
-        ]
-        casted_items = await asyncio.gather(*cast_tasks)
+        )
         return target_type(casted_items)  # type: ignore
 
     return _cast

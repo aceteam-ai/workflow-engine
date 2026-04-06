@@ -10,6 +10,7 @@ import networkx as nx
 from overrides import override
 from pydantic import ConfigDict, Field, ValidationError, model_validator
 
+from ..utils.asynchronous import gather
 from ..utils.immutable import ImmutableBaseModel
 from .edge import Edge
 from .error import NodeExpansionException, UserException
@@ -149,11 +150,9 @@ class Workflow(ImmutableBaseModel):
             ValueError: If edges reference non-existent fields or nodes are missing required inputs
             TypeError: If edge types are incompatible
         """
-        typed_inner_nodes = await asyncio.gather(
-            *[
-                asyncio.to_thread(context.node_registry.load_node, node)
-                for node in self.inner_nodes
-            ]
+        typed_inner_nodes = await gather(
+            asyncio.to_thread(context.node_registry.load_node, node)
+            for node in self.inner_nodes
         )
         typed_nodes = (self.input_node, *typed_inner_nodes, self.output_node)
 
@@ -168,9 +167,7 @@ class Workflow(ImmutableBaseModel):
             return node.id, (input_type, output_type)
 
         node_input_output_types = dict(
-            await asyncio.gather(
-                *[get_input_output_types(node) for node in typed_nodes]
-            )
+            await gather(get_input_output_types(node) for node in typed_nodes)
         )
         node_input_types = {
             node_id: input_type
@@ -360,7 +357,7 @@ class ValidatedWorkflow(Workflow):
         if len(cast_tasks) == 0:
             return {}
 
-        casted_values = await asyncio.gather(*cast_tasks)
+        casted_values = await gather(cast_tasks)
 
         # Build the result dictionary
         output: DataMapping = {}

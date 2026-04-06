@@ -8,14 +8,11 @@ from typing import ClassVar, Literal, Self, Type
 from overrides import override
 from pydantic import Field, PrivateAttr
 
-from workflow_engine.core.io import SchemaParams
-
 from ..core import (
-    ExecutionContext,
-    ValidationContext,
     DataValue,
     Edge,
     Empty,
+    ExecutionContext,
     InputNode,
     Node,
     NodeTypeInfo,
@@ -23,10 +20,12 @@ from ..core import (
     Params,
     SequenceValue,
     ValidatedWorkflow,
+    ValidationContext,
     Value,
     Workflow,
     WorkflowValue,
 )
+from ..core.io import SchemaParams
 from ..core.values.data import get_field_annotations, get_only_field
 from .data import (
     ExpandDataNode,

@@ -21,7 +21,7 @@ class JSONValue(Value[JSON]):
 
 @Value.register_cast_to(JSONValue)
 def cast_any_to_json(value: Value, context: "ExecutionContext") -> JSONValue:
-    return JSONValue(value.model_dump())
+    return JSONValue(value.model_dump(mode="json"))
 
 
 @JSONValue.register_cast_to(NullValue)

@@ -7,7 +7,7 @@ from workflow_engine.nodes import ConstantStringNode
 @pytest.mark.unit
 def test_constant_string_node_type_info():
     """Test ConstantStringNode TYPE_INFO metadata."""
-    assert ConstantStringNode.TYPE_INFO.model_dump() == {
+    assert ConstantStringNode.TYPE_INFO.model_dump(mode="json") == {
         "description": "A node that outputs a constant string value.",
         "display_name": "Constant String",
         "max_retries": None,
