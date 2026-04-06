@@ -323,38 +323,29 @@ class BaseValueSchema(ImmutableBaseModel):
         faithfully convert the schema to a FieldInfo object.
         """
         annotation = self.to_value_cls(*extra_defs)
-        if is_required:
-            # required fields may optionally have a default value, but invalid
-            # default values are ignored for the sake of being permissive
-            try:
-                default_value = annotation.model_validate(self.default)
-            except ValidationError as e:
+        try:
+            default_value = annotation.model_validate(self.default)
+        except ValidationError as e:
+            if is_required:
+                # Required fields may optionally have a default value.
+                # Invalid default values are ignored to be permissive.
                 if self.default is not None:
                     e.add_note(f"Default value: {self.default}")
                     logger.warning(
                         f"Invalid default value for schema {self}", exc_info=True
                     )
                 default_value = PydanticUndefined
-            return FieldInfo(
-                annotation=annotation,
-                title=self.title,
-                description=self.description,
-                default=default_value,
-            )
-        else:
-            # non-required fields must have a valid default value and failure to
-            # provide one is an unrecoverable error
-            try:
-                default_value = annotation.model_validate(self.default)
-            except ValidationError as e:
+            else:
+                # Non-required fields must have a valid default value.
+                # Failure to provide one is an unrecoverable error.
                 e.add_note(f"Invalid default value for schema {self}")
                 raise
-            return FieldInfo(
-                annotation=annotation,
-                title=self.title,
-                description=self.description,
-                default=default_value,
-            )
+        return FieldInfo(
+            annotation=annotation,
+            title=self.title,
+            description=self.description,
+            default=default_value,
+        )
 
 
 class BooleanValueSchema(BaseValueSchema):
