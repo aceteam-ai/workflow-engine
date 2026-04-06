@@ -262,7 +262,7 @@ class TestOnNodeStart:
             input_type: Type[Data],
             output_type: Type[Data],
             input: DataMapping,
-        ) -> DataMapping | None:
+        ) -> DataMapping | Workflow | None:
             assert isinstance(node, Node)
             assert input_type is not None
             assert output_type is not None
@@ -306,7 +306,7 @@ class TestOnNodeStart:
             input_type: Type[Data],
             output_type: Type[Data],
             input: DataMapping,
-        ) -> DataMapping | None:
+        ) -> DataMapping | Workflow | None:
             assert isinstance(node, Node)
             assert input_type is not None
             assert output_type is not None
@@ -332,6 +332,102 @@ class TestOnNodeStart:
 
         assert result.status is WorkflowExecutionResultStatus.SUCCESS
         assert result.output == {"value": StringValue("cached")}
+
+    @pytest.mark.asyncio
+    async def test_can_short_circuit_expanding_node(self):
+        """Returning a Workflow from on_node_start bypasses run() and triggers expansion."""
+        workflow = _expanding_workflow()
+        context = InMemoryExecutionContext()
+        run_called = False
+        expand_called = False
+
+        original_on_node_start = context.on_node_start
+        original_on_node_expand = context.on_node_expand
+
+        # Build a replacement workflow to return from on_node_start
+        replacement_input = InputNode.empty()
+        replacement_output = OutputNode.from_fields(value=StringValue)
+        replacement_constant = ConstantStringNode.from_value(
+            id="replacement_constant", value="short-circuited"
+        )
+        replacement_workflow = Workflow(
+            input_node=replacement_input,
+            output_node=replacement_output,
+            inner_nodes=[replacement_constant],
+            edges=[
+                Edge.from_nodes(
+                    source=replacement_constant,
+                    source_key="value",
+                    target=replacement_output,
+                    target_key="value",
+                )
+            ],
+        )
+
+        async def on_node_start(
+            *,
+            node: Node,
+            input_type: Type[Data],
+            output_type: Type[Data],
+            input: DataMapping,
+        ) -> DataMapping | Workflow | None:
+            if node.id == "expanding":
+                return replacement_workflow
+            return await original_on_node_start(
+                node=node,
+                input_type=input_type,
+                output_type=output_type,
+                input=input,
+            )
+
+        async def on_node_expand(
+            *,
+            node: Node,
+            input_type: Type[Data],
+            output_type: Type[Data],
+            input: DataMapping,
+            workflow: ValidatedWorkflow,
+        ) -> DataMapping:
+            nonlocal expand_called
+            expand_called = True
+            return await original_on_node_expand(
+                node=node,
+                input_type=input_type,
+                output_type=output_type,
+                input=input,
+                workflow=workflow,
+            )
+
+        # Patch run to detect if it's called on the expanding node
+        original_run = ExpandingNode.run
+
+        async def patched_run(self, **kwargs):
+            nonlocal run_called
+            if self.id == "expanding":
+                run_called = True
+            return await original_run(self, **kwargs)
+
+        context.on_node_start = on_node_start
+        context.on_node_expand = on_node_expand
+
+        algorithm = TopologicalExecutionAlgorithm()
+        engine = WorkflowEngine(execution_algorithm=algorithm)
+
+        import unittest.mock
+
+        with unittest.mock.patch.object(ExpandingNode, "run", patched_run):
+            result = await engine.execute(
+                context=context,
+                workflow=workflow,
+                input={},
+            )
+
+        assert result.status is WorkflowExecutionResultStatus.SUCCESS
+        assert not run_called, (
+            "run() should not be called when on_node_start returns a Workflow"
+        )
+        assert expand_called, "on_node_expand should still be called"
+        assert result.output == {"value": StringValue("short-circuited")}
 
 
 class TestOnNodeFinish:
@@ -715,7 +811,7 @@ class TestOnWorkflowStart:
             input_type: Type[Data],
             output_type: Type[Data],
             input: DataMapping,
-        ) -> DataMapping | None:
+        ) -> DataMapping | Workflow | None:
             node_start_ids.append(node.id)
             return await original_on_node_start(
                 node=node,

@@ -9,7 +9,7 @@ from .error import ShouldRetry, ShouldYield, WorkflowErrors
 from .execution import WorkflowExecutionResult
 from .node import Node, NodeRegistry
 from .values import Data, DataMapping, FileValue, ValueRegistry
-from .workflow import ValidatedWorkflow
+from .workflow import ValidatedWorkflow, Workflow
 
 F = TypeVar("F", bound=FileValue)
 
@@ -83,7 +83,7 @@ class ExecutionContext(ABC, EnforceOverrides):
         input_type: type[Data],
         output_type: type[Data],
         input: DataMapping,
-    ) -> DataMapping | None:
+    ) -> DataMapping | Workflow | None:
         """
         A hook that is called when a node starts execution.
 
