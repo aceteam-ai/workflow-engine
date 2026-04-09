@@ -69,7 +69,9 @@ class IfNode(Node[ConditionalInput, Empty, IfParams]):
     type: Literal["If"] = "If"  # pyright: ignore[reportIncompatibleVariableOverride]
 
     @override
-    async def input_type(self, context: ValidationContext) -> Type[ConditionalInput]:
+    async def dynamic_input_type(
+        self, context: ValidationContext
+    ) -> Type[ConditionalInput]:
         workflow_if_true = await self.params.if_true.root.validate(context)
         fields = dict(get_data_fields(ConditionalInput))
         for key, field in get_data_fields(workflow_if_true.input_type).items():
@@ -82,7 +84,7 @@ class IfNode(Node[ConditionalInput, Empty, IfParams]):
         )
 
     @override
-    async def output_type(self, context: ValidationContext) -> Type[Empty]:
+    async def dynamic_output_type(self, context: ValidationContext) -> Type[Empty]:
         return Empty
 
     @override
@@ -129,7 +131,9 @@ class IfElseNode(Node[ConditionalInput, Data, IfElseParams]):
     type: Literal["IfElse"] = "IfElse"  # pyright: ignore[reportIncompatibleVariableOverride]
 
     @override
-    async def input_type(self, context: ValidationContext) -> Type[ConditionalInput]:
+    async def dynamic_input_type(
+        self, context: ValidationContext
+    ) -> Type[ConditionalInput]:
         fields = dict(get_data_fields(ConditionalInput))
         workflow_if_true = await self.params.if_true.root.validate(context)
         for key, field in get_data_fields(workflow_if_true.input_type).items():
@@ -142,7 +146,7 @@ class IfElseNode(Node[ConditionalInput, Data, IfElseParams]):
         )
 
     @override
-    async def output_type(self, context: ValidationContext) -> Type[Data]:
+    async def dynamic_output_type(self, context: ValidationContext) -> Type[Data]:
         workflow_if_true = await self.params.if_true.root.validate(context)
         workflow_if_false = await self.params.if_false.root.validate(context)
         fields = mapping_intersection(

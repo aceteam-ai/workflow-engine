@@ -288,6 +288,26 @@ class Node(ImmutableBaseModel, Generic[Input_contra, Output, Params_co]):
     # --------------------------------------------------------------------------
     # TYPING
 
+    @classmethod
+    def static_input_type(cls) -> type[Input_contra] | None:  # type: ignore (contravariant return type)
+        """
+        The unchanging input type of the node, or None if the input type is
+        dynamic.
+        """
+        return None
+
+    async def dynamic_input_type(
+        self,
+        context: "ValidationContext",
+    ) -> type[Input_contra]:  # type: ignore (contravariant return type)
+        """
+        The dynamic input type of the node.
+        """
+        raise NotImplementedError(
+            "All concrete node classes must either provide a static_input_type or implement dynamic_input_type."
+        )
+
+    @final
     async def input_type(
         self,
         context: "ValidationContext",
@@ -297,10 +317,31 @@ class Node(ImmutableBaseModel, Generic[Input_contra, Output, Params_co]):
         This field must always be cached to ensure referential equality on every
         call; otherwise we will be constructing instances of different types.
         """
-        # return Empty to spare users from having to specify the input type on
-        # nodes that don't have any input fields
-        return Empty  # type: ignore
+        static_input_type = self.__class__.static_input_type()
+        if static_input_type is not None:
+            return static_input_type
+        return await self.dynamic_input_type(context)
 
+    @classmethod
+    def static_output_type(cls) -> type[Output] | None:  # type: ignore (covariant return type)
+        """
+        The unchanging output type of the node, or None if the output type is
+        dynamic.
+        """
+        return None
+
+    async def dynamic_output_type(
+        self,
+        context: "ValidationContext",
+    ) -> type[Output]:  # type: ignore (covariant return type)
+        """
+        The dynamic output type of the node.
+        """
+        raise NotImplementedError(
+            "All concrete node classes must either provide a static_output_type or implement dynamic_output_type."
+        )
+
+    @final
     async def output_type(
         self,
         context: "ValidationContext",
@@ -310,9 +351,10 @@ class Node(ImmutableBaseModel, Generic[Input_contra, Output, Params_co]):
         This field must always be cached to ensure referential equality on every
         call; otherwise we will be constructing instances of different types.
         """
-        # return Empty to spare users from having to specify the output type on
-        # nodes that don't have any output fields
-        return Empty  # type: ignore
+        static_output_type = self.__class__.static_output_type()
+        if static_output_type is not None:
+            return static_output_type
+        return await self.dynamic_output_type(context)
 
     # --------------------------------------------------------------------------
     # EXECUTION
@@ -653,7 +695,10 @@ class NodeRegistryBuilder(ABC):
 
     @abstractmethod
     def remove_node_class(
-        self, node_cls: type[Node], *, missing_ok: bool = False
+        self,
+        node_cls: type[Node],
+        *,
+        missing_ok: bool = False,
     ) -> Self:
         pass
 

@@ -102,7 +102,7 @@ class GatherSequenceNode(Node[Data, SequenceData, SequenceParams]):
         return f"The {index + 1} item in the sequence."
 
     @override
-    async def input_type(self, context: ValidationContext) -> Type[Data]:
+    async def dynamic_input_type(self, context: ValidationContext) -> Type[Data]:
         return build_data_type(
             name="GatherSequenceInput",
             fields={
@@ -118,7 +118,9 @@ class GatherSequenceNode(Node[Data, SequenceData, SequenceParams]):
         )
 
     @override
-    async def output_type(self, context: ValidationContext) -> Type[SequenceData]:
+    async def dynamic_output_type(
+        self, context: ValidationContext
+    ) -> Type[SequenceData]:
         return SequenceData[self.element_type]
 
     @override
@@ -192,11 +194,13 @@ class ExpandSequenceNode(Node[SequenceData, Data, SequenceParams]):
         return range(self.params.length.root)
 
     @override
-    async def input_type(self, context: ValidationContext) -> Type[SequenceData]:
+    async def dynamic_input_type(
+        self, context: ValidationContext
+    ) -> Type[SequenceData]:
         return SequenceData[self.element_type]
 
     @override
-    async def output_type(self, context: ValidationContext) -> Type[Data]:
+    async def dynamic_output_type(self, context: ValidationContext) -> Type[Data]:
         return build_data_type(
             name="ExpandSequenceOutput",
             fields={
@@ -282,7 +286,7 @@ class GatherMappingNode(Node[Data, MappingData, MappingParams]):
     value_type: ValueType = Value
 
     @override
-    async def input_type(self, context: ValidationContext) -> Type[Data]:
+    async def dynamic_input_type(self, context: ValidationContext) -> Type[Data]:
         return build_data_type(
             name="GatherMappingInput",
             fields={
@@ -295,7 +299,9 @@ class GatherMappingNode(Node[Data, MappingData, MappingParams]):
         )
 
     @override
-    async def output_type(self, context: ValidationContext) -> Type[MappingData]:
+    async def dynamic_output_type(
+        self, context: ValidationContext
+    ) -> Type[MappingData]:
         return MappingData[self.value_type]
 
     @override
@@ -354,11 +360,11 @@ class ExpandMappingNode(Node[MappingData, Data, MappingParams]):
     value_type: ValueType = Value
 
     @override
-    async def input_type(self, context: ValidationContext) -> Type[MappingData]:
+    async def dynamic_input_type(self, context: ValidationContext) -> Type[MappingData]:
         return MappingData[self.value_type]
 
     @override
-    async def output_type(self, context: ValidationContext) -> Type[Data]:
+    async def dynamic_output_type(self, context: ValidationContext) -> Type[Data]:
         return build_data_type(
             name="ExpandMappingOutput",
             fields={
@@ -433,11 +439,11 @@ class GatherDataNode(Node[Data, NestedData, Empty]):
     data_type: Type[Data] = Field(default=Data, exclude=True)
 
     @override
-    async def input_type(self, context: ValidationContext) -> Type[Data]:
+    async def dynamic_input_type(self, context: ValidationContext) -> Type[Data]:
         return self.data_type
 
     @override
-    async def output_type(self, context: ValidationContext) -> Type[NestedData]:
+    async def dynamic_output_type(self, context: ValidationContext) -> Type[NestedData]:
         return NestedData[self.data_type]
 
     @override
@@ -487,11 +493,11 @@ class ExpandDataNode(Node[NestedData, Data, Empty]):
     data_type: Type[Data] = Field(default=Data, exclude=True)
 
     @override
-    async def input_type(self, context: ValidationContext) -> Type[NestedData]:
+    async def dynamic_input_type(self, context: ValidationContext) -> Type[NestedData]:
         return NestedData[self.data_type]
 
     @override
-    async def output_type(self, context: ValidationContext) -> Type[Data]:
+    async def dynamic_output_type(self, context: ValidationContext) -> Type[Data]:
         return self.data_type
 
     @override

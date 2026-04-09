@@ -13,7 +13,6 @@ from ..core import (
     NodeTypeInfo,
     Params,
     StringValue,
-    ValidationContext,
 )
 from ..files import TextFileValue
 
@@ -54,12 +53,14 @@ class AppendToFileNode(Node[AppendToFileInput, AppendToFileOutput, AppendToFileP
 
     type: Literal["AppendToFile"] = "AppendToFile"  # pyright: ignore[reportIncompatibleVariableOverride]
 
+    @classmethod
     @override
-    async def input_type(self, context: ValidationContext) -> Type[AppendToFileInput]:
+    def static_input_type(cls) -> Type[AppendToFileInput]:
         return AppendToFileInput
 
+    @classmethod
     @override
-    async def output_type(self, context: ValidationContext) -> Type[AppendToFileOutput]:
+    def static_output_type(cls) -> Type[AppendToFileOutput]:
         return AppendToFileOutput
 
     @override

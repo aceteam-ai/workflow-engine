@@ -19,7 +19,6 @@ from workflow_engine import (
     Params,
     ShouldYield,
     StringValue,
-    ValidationContext,
     Workflow,
     WorkflowEngine,
     WorkflowErrors,
@@ -112,12 +111,14 @@ class ExpandingNode(Node[Data, ExpandingOutput, Params]):
 
     output_value: str
 
+    @classmethod
     @override
-    async def input_type(self, context: ValidationContext) -> Type[Data]:
+    def static_input_type(cls) -> Type[Data]:
         return Data
 
+    @classmethod
     @override
-    async def output_type(self, context: ValidationContext) -> Type[ExpandingOutput]:
+    def static_output_type(cls) -> Type[ExpandingOutput]:
         return ExpandingOutput
 
     @override
@@ -163,14 +164,17 @@ class YieldingNode(Node[Data, ExpandingOutput, Params]):
     )
     type: Literal["HookYielding"] = "HookYielding"  # pyright: ignore[reportIncompatibleVariableOverride]
 
+    @classmethod
     @override
-    async def input_type(self, context: ValidationContext) -> Type[Data]:
+    def static_input_type(cls) -> Type[Data]:
         return Data
 
+    @classmethod
     @override
-    async def output_type(self, context: ValidationContext) -> Type[ExpandingOutput]:
+    def static_output_type(cls) -> Type[ExpandingOutput]:
         return ExpandingOutput
 
+    @override
     async def run(
         self,
         *,
@@ -387,7 +391,7 @@ class TestOnNodeStart:
             output_type: Type[Data],
             input: DataMapping,
             workflow: ValidatedWorkflow,
-        ) -> DataMapping:
+        ) -> ValidatedWorkflow:
             nonlocal expand_called
             expand_called = True
             return await original_on_node_expand(

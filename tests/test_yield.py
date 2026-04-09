@@ -25,7 +25,6 @@ from workflow_engine import (
     Params,
     ShouldYield,
     StringValue,
-    ValidationContext,
     Workflow,
     WorkflowEngine,
     WorkflowExecutionResultStatus,
@@ -64,12 +63,14 @@ class EchoNode(Node[SimpleInput, SimpleOutput, Params]):
 
     ran: ClassVar[set[str]] = set()
 
+    @classmethod
     @override
-    async def input_type(self, context: ValidationContext) -> Type[SimpleInput]:
+    def static_input_type(cls) -> Type[SimpleInput]:
         return SimpleInput
 
+    @classmethod
     @override
-    async def output_type(self, context: ValidationContext) -> Type[SimpleOutput]:
+    def static_output_type(cls) -> Type[SimpleOutput]:
         return SimpleOutput
 
     @override
@@ -100,12 +101,14 @@ class YieldingNode(Node[SimpleInput, SimpleOutput, Params]):
     message: str = "yielding"
     calls: ClassVar[dict[str, int]] = {}
 
+    @classmethod
     @override
-    async def input_type(self, context: ValidationContext) -> Type[SimpleInput]:
+    def static_input_type(cls) -> Type[SimpleInput]:
         return SimpleInput
 
+    @classmethod
     @override
-    async def output_type(self, context: ValidationContext) -> Type[SimpleOutput]:
+    def static_output_type(cls) -> Type[SimpleOutput]:
         return SimpleOutput
 
     @override
@@ -136,12 +139,14 @@ class ResumableNode(Node[SimpleInput, SimpleOutput, Params]):
 
     calls: ClassVar[dict[str, int]] = {}
 
+    @classmethod
     @override
-    async def input_type(self, context: ValidationContext) -> Type[SimpleInput]:
+    def static_input_type(cls) -> Type[SimpleInput]:
         return SimpleInput
 
+    @classmethod
     @override
-    async def output_type(self, context: ValidationContext) -> Type[SimpleOutput]:
+    def static_output_type(cls) -> Type[SimpleOutput]:
         return SimpleOutput
 
     @override

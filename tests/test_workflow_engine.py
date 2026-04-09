@@ -34,6 +34,16 @@ class SampleAddNode(Node[Empty, Empty, Empty]):
     )
     type: Literal["SampleAdd"] = "SampleAdd"  # pyright: ignore[reportIncompatibleVariableOverride]
 
+    @classmethod
+    @override
+    def static_input_type(cls) -> Type[Empty]:
+        return Empty
+
+    @classmethod
+    @override
+    def static_output_type(cls) -> Type[Empty]:
+        return Empty
+
     @override
     async def run(
         self,
@@ -54,6 +64,16 @@ class SampleMultiplyNode(Node[Empty, Empty, Empty]):
         parameter_type=Empty,
     )
     type: Literal["SampleMultiply"] = "SampleMultiply"  # pyright: ignore[reportIncompatibleVariableOverride]
+
+    @classmethod
+    @override
+    def static_input_type(cls) -> Type[Empty]:
+        return Empty
+
+    @classmethod
+    @override
+    def static_output_type(cls) -> Type[Empty]:
+        return Empty
 
     @override
     async def run(

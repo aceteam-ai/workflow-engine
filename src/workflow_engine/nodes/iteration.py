@@ -114,7 +114,7 @@ class ForEachNode(Node[SequenceData, SequenceData | Empty, ForEachParams]):
         return DataValue[workflow.output_type]
 
     @override
-    async def input_type(
+    async def dynamic_input_type(
         self,
         context: ValidationContext,
     ) -> Type[SequenceData]:
@@ -122,7 +122,7 @@ class ForEachNode(Node[SequenceData, SequenceData | Empty, ForEachParams]):
         return SequenceData[self._input_element_type(workflow)]
 
     @override
-    async def output_type(
+    async def dynamic_output_type(
         self,
         context: ValidationContext,
     ) -> Type[SequenceData | Empty]:

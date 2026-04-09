@@ -11,7 +11,6 @@ from workflow_engine import (
     Node,
     NodeRegistry,
     NodeTypeInfo,
-    ValidationContext,
 )
 from workflow_engine.core.node import ImmutableNodeRegistry, NodeRegistryBuilder
 
@@ -26,12 +25,14 @@ class SampleNodeA(Node[Empty, Empty, Empty]):
     )
     type: Literal["TestA"] = "TestA"  # pyright: ignore[reportIncompatibleVariableOverride]
 
+    @classmethod
     @override
-    async def input_type(self, context: ValidationContext) -> Type[Empty]:
+    def static_input_type(cls) -> Type[Empty]:
         return Empty
 
+    @classmethod
     @override
-    async def output_type(self, context: ValidationContext) -> Type[Empty]:
+    def static_output_type(cls) -> Type[Empty]:
         return Empty
 
     @override
@@ -55,12 +56,14 @@ class SampleNodeB(Node[Empty, Empty, Empty]):
     )
     type: Literal["TestB"] = "TestB"  # pyright: ignore[reportIncompatibleVariableOverride]
 
+    @classmethod
     @override
-    async def input_type(self, context: ValidationContext) -> Type[Empty]:
+    def static_input_type(cls) -> Type[Empty]:
         return Empty
 
+    @classmethod
     @override
-    async def output_type(self, context: ValidationContext) -> Type[Empty]:
+    def static_output_type(cls) -> Type[Empty]:
         return Empty
 
     @override
@@ -305,12 +308,14 @@ class TestLazyNodeRegistry:
                 )
                 type: Literal["TestA"] = "TestA"  # pyright: ignore[reportIncompatibleVariableOverride]
 
+                @classmethod
                 @override
-                async def input_type(self, context: ValidationContext) -> Type[Empty]:
+                def static_input_type(cls) -> Type[Empty]:
                     return Empty
 
+                @classmethod
                 @override
-                async def output_type(self, context: ValidationContext) -> Type[Empty]:
+                def static_output_type(cls) -> Type[Empty]:
                     return Empty
 
                 @override
