@@ -303,7 +303,9 @@ class Node(ImmutableBaseModel, Generic[Input_contra, Output, Params_co]):
         """
         The dynamic input type of the node.
         """
-        raise NotImplementedError()
+        raise NotImplementedError(
+            "All concrete node classes must either provide a static_input_type or implement dynamic_input_type."
+        )
 
     @final
     async def input_type(
@@ -335,7 +337,9 @@ class Node(ImmutableBaseModel, Generic[Input_contra, Output, Params_co]):
         """
         The dynamic output type of the node.
         """
-        raise NotImplementedError()
+        raise NotImplementedError(
+            "All concrete node classes must either provide a static_output_type or implement dynamic_output_type."
+        )
 
     @final
     async def output_type(

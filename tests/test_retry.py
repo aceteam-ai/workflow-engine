@@ -164,6 +164,7 @@ class CustomRetryNode(Node[RetryableInput, RetryableOutput, RetryableParams]):
     def static_output_type(cls) -> Type[RetryableOutput]:
         return RetryableOutput
 
+    @override
     async def run(
         self,
         *,
