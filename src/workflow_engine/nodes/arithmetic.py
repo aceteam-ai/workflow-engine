@@ -66,7 +66,7 @@ class AddNode(Node[Data, SumOutput, AddNodeParams]):
     params: AddNodeParams = Field(default=AddNodeParams())  # pyright: ignore[reportIncompatibleVariableOverride]
 
     @override
-    async def input_type(self, context: ValidationContext) -> Type[Data]:
+    async def dynamic_input_type(self, context: ValidationContext) -> Type[Data]:
         n = self.params.num_arguments.root
         field_names = [_argument_field_name(i) for i in range(n)]
         fields = {
@@ -82,8 +82,9 @@ class AddNode(Node[Data, SumOutput, AddNodeParams]):
             base_cls=Data,
         )
 
+    @classmethod
     @override
-    async def output_type(self, context: ValidationContext) -> Type[SumOutput]:
+    def static_output_type(cls) -> Type[SumOutput]:
         return SumOutput
 
     @override
@@ -131,12 +132,14 @@ class SumNode(Node[SumNodeInput, SumNodeOutput, Empty]):
 
     type: Literal["Sum"] = "Sum"  # pyright: ignore[reportIncompatibleVariableOverride]
 
+    @classmethod
     @override
-    async def input_type(self, context: ValidationContext) -> Type[SumNodeInput]:
+    def static_input_type(cls) -> Type[SumNodeInput]:
         return SumNodeInput
 
+    @classmethod
     @override
-    async def output_type(self, context: ValidationContext) -> Type[SumNodeOutput]:
+    def static_output_type(cls) -> Type[SumNodeOutput]:
         return SumNodeOutput
 
     @override
@@ -176,12 +179,14 @@ class FactorizationNode(Node[IntegerData, FactorizationData, Empty]):
 
     type: Literal["Factorization"] = "Factorization"  # pyright: ignore[reportIncompatibleVariableOverride]
 
+    @classmethod
     @override
-    async def input_type(self, context: ValidationContext) -> Type[IntegerData]:
+    def static_input_type(cls) -> Type[IntegerData]:
         return IntegerData
 
+    @classmethod
     @override
-    async def output_type(self, context: ValidationContext) -> Type[FactorizationData]:
+    def static_output_type(cls) -> Type[FactorizationData]:
         return FactorizationData
 
     @override

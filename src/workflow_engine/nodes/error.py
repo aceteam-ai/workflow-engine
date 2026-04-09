@@ -14,7 +14,6 @@ from ..core import (
     Params,
     StringValue,
     UserException,
-    ValidationContext,
 )
 
 
@@ -45,12 +44,14 @@ class ErrorNode(Node[ErrorInput, Empty, ErrorParams]):
 
     type: Literal["Error"] = "Error"  # pyright: ignore[reportIncompatibleVariableOverride]
 
+    @classmethod
     @override
-    async def input_type(self, context: ValidationContext) -> Type[ErrorInput]:
+    def static_input_type(cls) -> Type[ErrorInput]:
         return ErrorInput
 
+    @classmethod
     @override
-    async def output_type(self, context: ValidationContext) -> Type[Empty]:
+    def static_output_type(cls) -> Type[Empty]:
         return Empty
 
     @override

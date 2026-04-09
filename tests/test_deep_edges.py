@@ -21,7 +21,6 @@ from workflow_engine import (
     IntegerValue,
     StringMapValue,
     StringValue,
-    ValidationContext,
     Workflow,
     WorkflowEngine,
     WorkflowExecutionResultStatus,
@@ -75,12 +74,14 @@ class MultiLevelOutputNode(Node[Empty, Level0Output, Empty]):
     type: Literal["MultiLevelOutput"] = "MultiLevelOutput"  # pyright: ignore[reportIncompatibleVariableOverride]
     params: Empty = Field(default_factory=Empty)
 
+    @classmethod
     @override
-    async def input_type(self, context: ValidationContext) -> Type[Empty]:
+    def static_input_type(cls) -> Type[Empty]:
         return Empty
 
+    @classmethod
     @override
-    async def output_type(self, context: ValidationContext) -> Type[Level0Output]:
+    def static_output_type(cls) -> Type[Level0Output]:
         return Level0Output
 
     @override
@@ -206,12 +207,14 @@ class MapOutputNode(Node[Empty, MapOutput, Empty]):
     type: Literal["MapOutput"] = "MapOutput"  # pyright: ignore[reportIncompatibleVariableOverride]
     params: Empty = Field(default_factory=Empty)
 
+    @classmethod
     @override
-    async def input_type(self, context: ValidationContext) -> Type[Empty]:
+    def static_input_type(cls) -> Type[Empty]:
         return Empty
 
+    @classmethod
     @override
-    async def output_type(self, context: ValidationContext) -> Type[MapOutput]:
+    def static_output_type(cls) -> Type[MapOutput]:
         return MapOutput
 
     @override

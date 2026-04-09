@@ -20,7 +20,6 @@ from workflow_engine import (
     OutputNode,
     Params,
     SequenceValue,
-    ValidationContext,
     Workflow,
     WorkflowEngine,
     WorkflowExecutionResultStatus,
@@ -62,12 +61,14 @@ class SlowNode(Node[Empty, SlowNodeOutput, SlowNodeParams]):
 
     type: Literal["SlowNode"] = "SlowNode"  # pyright: ignore[reportIncompatibleVariableOverride]
 
+    @classmethod
     @override
-    async def input_type(self, context: ValidationContext) -> Type[Empty]:
+    def static_input_type(cls) -> Type[Empty]:
         return Empty
 
+    @classmethod
     @override
-    async def output_type(self, context: ValidationContext) -> Type[SlowNodeOutput]:
+    def static_output_type(cls) -> Type[SlowNodeOutput]:
         return SlowNodeOutput
 
     @override
@@ -107,14 +108,14 @@ class SlowPassthroughNode(
 
     type: Literal["SlowPassthroughNode"] = "SlowPassthroughNode"  # pyright: ignore[reportIncompatibleVariableOverride]
 
+    @classmethod
     @override
-    async def input_type(
-        self, context: ValidationContext
-    ) -> Type[SlowPassthroughNodeInput]:
+    def static_input_type(cls) -> Type[SlowPassthroughNodeInput]:
         return SlowPassthroughNodeInput
 
+    @classmethod
     @override
-    async def output_type(self, context: ValidationContext) -> Type[SlowNodeOutput]:
+    def static_output_type(cls) -> Type[SlowNodeOutput]:
         return SlowNodeOutput
 
     @override

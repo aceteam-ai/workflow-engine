@@ -14,7 +14,6 @@ from ..core import (
     NodeTypeInfo,
     Params,
     StringValue,
-    ValidationContext,
 )
 
 
@@ -36,8 +35,14 @@ class ConstantBooleanNode(Node[Empty, ConstantBoolean, ConstantBoolean]):
 
     type: Literal["ConstantBoolean"] = "ConstantBoolean"  # pyright: ignore[reportIncompatibleVariableOverride]
 
+    @classmethod
     @override
-    async def output_type(self, context: ValidationContext) -> Type[ConstantBoolean]:
+    def static_input_type(cls) -> Type[Empty]:
+        return Empty
+
+    @classmethod
+    @override
+    def static_output_type(cls) -> Type[ConstantBoolean]:
         return ConstantBoolean
 
     @override
@@ -73,8 +78,14 @@ class ConstantIntegerNode(Node[Empty, ConstantInteger, ConstantInteger]):
 
     type: Literal["ConstantInteger"] = "ConstantInteger"  # pyright: ignore[reportIncompatibleVariableOverride]
 
+    @classmethod
     @override
-    async def output_type(self, context: ValidationContext) -> Type[ConstantInteger]:
+    def static_input_type(cls) -> Type[Empty]:
+        return Empty
+
+    @classmethod
+    @override
+    def static_output_type(cls) -> Type[ConstantInteger]:
         return ConstantInteger
 
     @override
@@ -108,8 +119,14 @@ class ConstantStringNode(Node[Empty, ConstantString, ConstantString]):
 
     type: Literal["ConstantString"] = "ConstantString"  # pyright: ignore[reportIncompatibleVariableOverride]
 
+    @classmethod
     @override
-    async def output_type(self, context: ValidationContext) -> Type[ConstantString]:
+    def static_input_type(cls) -> Type[Empty]:
+        return Empty
+
+    @classmethod
+    @override
+    def static_output_type(cls) -> Type[ConstantString]:
         return ConstantString
 
     @override

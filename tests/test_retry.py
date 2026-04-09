@@ -18,7 +18,6 @@ from workflow_engine import (
     Params,
     ShouldRetry,
     StringValue,
-    ValidationContext,
     Workflow,
     WorkflowEngine,
     WorkflowExecutionResultStatus,
@@ -56,12 +55,14 @@ class RetryableNode(Node[RetryableInput, RetryableOutput, RetryableParams]):
     type: Literal["Retryable"] = "Retryable"  # pyright: ignore[reportIncompatibleVariableOverride]
     _attempt_counts: ClassVar[dict[str, int]] = {}
 
+    @classmethod
     @override
-    async def input_type(self, context: ValidationContext) -> Type[RetryableInput]:
+    def static_input_type(cls) -> Type[RetryableInput]:
         return RetryableInput
 
+    @classmethod
     @override
-    async def output_type(self, context: ValidationContext) -> Type[RetryableOutput]:
+    def static_output_type(cls) -> Type[RetryableOutput]:
         return RetryableOutput
 
     @override
@@ -102,12 +103,14 @@ class RetryableNode2(Node[RetryableInput, RetryableOutput, RetryableParams]):
     type: Literal["Retryable2"] = "Retryable2"  # pyright: ignore[reportIncompatibleVariableOverride]
     _attempt_counts: ClassVar[dict[str, int]] = {}
 
+    @classmethod
     @override
-    async def input_type(self, context: ValidationContext) -> Type[RetryableInput]:
+    def static_input_type(cls) -> Type[RetryableInput]:
         return RetryableInput
 
+    @classmethod
     @override
-    async def output_type(self, context: ValidationContext) -> Type[RetryableOutput]:
+    def static_output_type(cls) -> Type[RetryableOutput]:
         return RetryableOutput
 
     @override
@@ -151,15 +154,16 @@ class CustomRetryNode(Node[RetryableInput, RetryableOutput, RetryableParams]):
     type: Literal["CustomRetry"] = "CustomRetry"  # pyright: ignore[reportIncompatibleVariableOverride]
     _attempt_counts: ClassVar[dict[str, int]] = {}
 
+    @classmethod
     @override
-    async def input_type(self, context: ValidationContext) -> Type[RetryableInput]:
+    def static_input_type(cls) -> Type[RetryableInput]:
         return RetryableInput
 
+    @classmethod
     @override
-    async def output_type(self, context: ValidationContext) -> Type[RetryableOutput]:
+    def static_output_type(cls) -> Type[RetryableOutput]:
         return RetryableOutput
 
-    @override
     async def run(
         self,
         *,

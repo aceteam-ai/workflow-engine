@@ -12,7 +12,6 @@ from workflow_engine import (
     ExecutionContext,
     NodeRegistry,
     StringValue,
-    ValidationContext,
     WorkflowEngine,
 )
 from workflow_engine.core import Empty, Node, NodeTypeInfo, Params
@@ -47,12 +46,14 @@ class MigratableNode(Node[Empty, MigratableOutput, MigratableParams]):
 
     type: Literal["MigratableNode"] = "MigratableNode"  # pyright: ignore[reportIncompatibleVariableOverride]
 
+    @classmethod
     @override
-    async def input_type(self, context: ValidationContext) -> Type[Empty]:
+    def static_input_type(cls) -> Type[Empty]:
         return Empty
 
+    @classmethod
     @override
-    async def output_type(self, context: ValidationContext) -> Type[MigratableOutput]:
+    def static_output_type(cls) -> Type[MigratableOutput]:
         return MigratableOutput
 
     @override

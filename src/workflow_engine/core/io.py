@@ -42,7 +42,7 @@ class InputNode(Node[Data, Data, SchemaParams]):
     _cached_data_cls: Type[Data] | None = PrivateAttr(default=None)
 
     @override
-    async def input_type(self, context: "ValidationContext") -> Type[Data]:
+    async def dynamic_input_type(self, context: "ValidationContext") -> Type[Data]:
         if self._cached_data_cls is None:
             self._cached_data_cls = self.params.fields.to_data_schema(
                 "InputData"
@@ -50,7 +50,7 @@ class InputNode(Node[Data, Data, SchemaParams]):
         return self._cached_data_cls
 
     @override
-    async def output_type(self, context: "ValidationContext") -> Type[Data]:
+    async def dynamic_output_type(self, context: "ValidationContext") -> Type[Data]:
         return await self.input_type(context)
 
     @override
@@ -105,7 +105,7 @@ class OutputNode(Node[Data, Data, SchemaParams]):
     _cached_data_cls: Type[Data] | None = PrivateAttr(default=None)
 
     @override
-    async def input_type(self, context: "ValidationContext") -> Type[Data]:
+    async def dynamic_input_type(self, context: "ValidationContext") -> Type[Data]:
         if self._cached_data_cls is None:
             self._cached_data_cls = self.params.fields.to_data_schema(
                 "OutputData"
@@ -113,7 +113,7 @@ class OutputNode(Node[Data, Data, SchemaParams]):
         return self._cached_data_cls
 
     @override
-    async def output_type(self, context: "ValidationContext") -> Type[Data]:
+    async def dynamic_output_type(self, context: "ValidationContext") -> Type[Data]:
         return await self.input_type(context)
 
     @override
