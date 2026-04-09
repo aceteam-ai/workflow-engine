@@ -15,9 +15,11 @@ from ..core import (
     NodeException,
     ShouldRetry,
     ShouldYield,
+    StakeholderLevel,
     ValidatedWorkflow,
     Workflow,
     WorkflowErrors,
+    WorkflowException,
     WorkflowExecutionResult,
 )
 from .rate_limit import RateLimitRegistry
@@ -35,7 +37,7 @@ class NodeResult(NamedTuple):
     """Result of a single node execution."""
 
     node_id: str
-    result: DataMapping | Workflow | Exception
+    result: DataMapping | Workflow | WorkflowException
     input: DataMapping  # Original input to the node
     should_retry: ShouldRetry | None = None  # Set if this is a retryable failure
     should_yield: ShouldYield | None = None  # Set if the node yielded
@@ -110,143 +112,9 @@ class ParallelExecutionAlgorithm(ExecutionAlgorithm):
         node_yields: dict[str, str] = {}
 
         try:
-            # Initial dispatch - start all initially ready nodes
-            ready_nodes = {workflow.input_node.id: input}
-            for node_id, node_input in ready_nodes.items():
-                task = asyncio.create_task(
-                    self._execute_node(
-                        context, workflow, node_id, node_input, semaphore, retry_tracker
-                    )
-                )
-                running_tasks[task] = node_id
-
-            # Main event loop - process completions eagerly
-            while running_tasks or pending_retry:
-                # Check if any pending retries are now ready
-                for node_id in list(pending_retry.keys()):
-                    state = retry_tracker.get_state(node_id)
-                    if state.is_ready():
-                        node_input = pending_retry.pop(node_id)
-                        task = asyncio.create_task(
-                            self._execute_node(
-                                context,
-                                workflow,
-                                node_id,
-                                node_input,
-                                semaphore,
-                                retry_tracker,
-                            )
-                        )
-                        running_tasks[task] = node_id
-
-                # If no tasks are running but retries are pending, wait for shortest backoff
-                if not running_tasks and pending_retry:
-                    wait_time = retry_tracker.min_wait_time()
-                    if wait_time and wait_time.total_seconds() > 0:
-                        await asyncio.sleep(wait_time.total_seconds())
-                    continue
-
-                if not running_tasks:
-                    break
-
-                done, _ = await asyncio.wait(
-                    running_tasks.keys(),
-                    return_when=asyncio.FIRST_COMPLETED,
-                )
-
-                # Process completed tasks
-                expansions_pending: list[tuple[str, Workflow]] = []
-
-                for task in done:
-                    node_id = running_tasks.pop(task)
-
-                    try:
-                        node_result = task.result()
-                    except Exception as e:
-                        if self.error_handling == ErrorHandlingMode.FAIL_FAST:
-                            await self._cancel_all(running_tasks)
-                            raise
-                        errors.add(e)
-                        failed_nodes.add(node_id)
-                        continue
-
-                    node = workflow.nodes_by_id[node_id]
-                    input_type = workflow.node_input_types[node_id]
-                    output_type = workflow.node_output_types[node_id]
-
-                    # Handle yielded nodes
-                    if node_result.should_yield is not None:
-                        node_yields[node_id] = node_result.should_yield.message
-                        await context.on_node_yield(
-                            node=node,
-                            input_type=input_type,
-                            output_type=output_type,
-                            input=node_result.input,
-                            exception=node_result.should_yield,
-                        )
-                        continue
-
-                    # Handle retryable failures
-                    if node_result.should_retry is not None:
-                        should_retry_error = node_result.should_retry
-                        node = workflow.nodes_by_id[node_id]
-                        node_max_retries = self._get_node_max_retries(node)
-                        node_input = node_result.input
-
-                        if retry_tracker.should_retry(node_id, node_max_retries):
-                            retry_tracker.record_retry(node_id, should_retry_error)
-                            pending_retry[node_id] = node_input
-
-                            # Call the on_node_retry hook
-                            state = retry_tracker.get_state(node_id)
-                            await context.on_node_retry(
-                                node=node,
-                                input_type=input_type,
-                                output_type=output_type,
-                                input=node_input,
-                                exception=should_retry_error,
-                                attempt=state.attempt,
-                            )
-                            continue
-
-                        # Max retries exceeded - treat as failure
-                        if self.error_handling == ErrorHandlingMode.FAIL_FAST:
-                            await self._cancel_all(running_tasks)
-                            raise should_retry_error
-                        errors.add(should_retry_error)
-                        failed_nodes.add(node_id)
-                        continue
-
-                    if isinstance(node_result.result, Workflow):
-                        expansions_pending.append((node_id, node_result.result))
-                    elif isinstance(node_result.result, Exception):
-                        # Handle exception stored in NodeResult
-                        if self.error_handling == ErrorHandlingMode.FAIL_FAST:
-                            await self._cancel_all(running_tasks)
-                            raise node_result.result
-                        errors.add(node_result.result)
-                        failed_nodes.add(node_id)
-                    else:
-                        node_outputs[node_id] = node_result.result
-
-                # Process expansions sequentially (workflow is immutable)
-                for node_id, subgraph in expansions_pending:
-                    workflow = workflow.expand_node(node_id, subgraph)
-
-                # EAGERLY dispatch newly ready nodes
-                in_flight = set(running_tasks.values())
-                pending_set = set(pending_retry.keys())
-                ready_nodes = {
-                    nid: inp
-                    for nid, inp in workflow.get_ready_nodes(
-                        node_outputs=node_outputs,
-                    ).items()
-                    if nid not in failed_nodes
-                    and nid not in in_flight
-                    and nid not in pending_set
-                    and nid not in node_yields
-                }
-
+            try:
+                # Initial dispatch - start all initially ready nodes
+                ready_nodes = {workflow.input_node.id: input}
                 for node_id, node_input in ready_nodes.items():
                     task = asyncio.create_task(
                         self._execute_node(
@@ -260,43 +128,193 @@ class ParallelExecutionAlgorithm(ExecutionAlgorithm):
                     )
                     running_tasks[task] = node_id
 
-            # Short-circuit before attempting full output if errors were
-            # collected in CONTINUE mode, to avoid masking real errors with
-            # spurious "missing output" exceptions from yielded/failed nodes.
-            if errors.any():
-                partial_output = await workflow.get_output(
+                # Main event loop - process completions eagerly
+                while running_tasks or pending_retry:
+                    # Check if any pending retries are now ready
+                    for node_id in list(pending_retry.keys()):
+                        state = retry_tracker.get_state(node_id)
+                        if state.is_ready():
+                            node_input = pending_retry.pop(node_id)
+                            task = asyncio.create_task(
+                                self._execute_node(
+                                    context,
+                                    workflow,
+                                    node_id,
+                                    node_input,
+                                    semaphore,
+                                    retry_tracker,
+                                )
+                            )
+                            running_tasks[task] = node_id
+
+                    # If no tasks are running but retries are pending, wait for shortest backoff
+                    if not running_tasks and pending_retry:
+                        wait_time = retry_tracker.min_wait_time()
+                        if wait_time and wait_time.total_seconds() > 0:
+                            await asyncio.sleep(wait_time.total_seconds())
+                        continue
+
+                    if not running_tasks:
+                        break
+
+                    done, _ = await asyncio.wait(
+                        running_tasks.keys(),
+                        return_when=asyncio.FIRST_COMPLETED,
+                    )
+
+                    # Process completed tasks
+                    expansions_pending: list[tuple[str, Workflow]] = []
+
+                    for task in done:
+                        node_id = running_tasks.pop(task)
+                        node = workflow.nodes_by_id[node_id]
+
+                        try:
+                            node_result = task.result()
+                        except WorkflowException as e:
+                            if self.error_handling == ErrorHandlingMode.FAIL_FAST:
+                                await self._cancel_all(running_tasks)
+                                raise
+                            errors.add(e)
+                            failed_nodes.add(node_id)
+                            continue
+
+                        node = workflow.nodes_by_id[node_id]
+                        input_type = workflow.node_input_types[node_id]
+                        output_type = workflow.node_output_types[node_id]
+
+                        # Handle yielded nodes
+                        if node_result.should_yield is not None:
+                            node_yields[node_id] = node_result.should_yield.message
+                            await context.on_node_yield(
+                                node=node,
+                                input_type=input_type,
+                                output_type=output_type,
+                                input=node_result.input,
+                                exception=node_result.should_yield,
+                            )
+                            continue
+
+                        # Handle retryable failures
+                        if node_result.should_retry is not None:
+                            should_retry_error = node_result.should_retry
+                            node = workflow.nodes_by_id[node_id]
+                            node_max_retries = self._get_node_max_retries(node)
+                            node_input = node_result.input
+
+                            if retry_tracker.should_retry(node_id, node_max_retries):
+                                retry_tracker.record_retry(node_id, should_retry_error)
+                                pending_retry[node_id] = node_input
+
+                                # Call the on_node_retry hook
+                                state = retry_tracker.get_state(node_id)
+                                await context.on_node_retry(
+                                    node=node,
+                                    input_type=input_type,
+                                    output_type=output_type,
+                                    input=node_input,
+                                    exception=should_retry_error,
+                                    attempt=state.attempt,
+                                )
+                                continue
+
+                            # Max retries exceeded - treat as failure
+                            if self.error_handling == ErrorHandlingMode.FAIL_FAST:
+                                await self._cancel_all(running_tasks)
+                                raise should_retry_error
+
+                            # Otherwise, retry
+                            errors.add(should_retry_error)
+                            failed_nodes.add(node_id)
+                            continue
+
+                        if isinstance(node_result.result, Workflow):
+                            expansions_pending.append((node_id, node_result.result))
+                        elif isinstance(node_result.result, Exception):
+                            # Handle exception stored in NodeResult
+                            if self.error_handling == ErrorHandlingMode.FAIL_FAST:
+                                await self._cancel_all(running_tasks)
+                                raise node_result.result
+                            errors.add(node_result.result)
+                            failed_nodes.add(node_id)
+                        else:
+                            node_outputs[node_id] = node_result.result
+
+                    # Process expansions sequentially (workflow is immutable)
+                    for node_id, subgraph in expansions_pending:
+                        workflow = workflow.expand_node(node_id, subgraph)
+
+                    # EAGERLY dispatch newly ready nodes
+                    in_flight = set(running_tasks.values())
+                    pending_set = set(pending_retry.keys())
+                    ready_nodes = {
+                        nid: inp
+                        for nid, inp in workflow.get_ready_nodes(
+                            node_outputs=node_outputs,
+                        ).items()
+                        if nid not in failed_nodes
+                        and nid not in in_flight
+                        and nid not in pending_set
+                        and nid not in node_yields
+                    }
+
+                    for node_id, node_input in ready_nodes.items():
+                        task = asyncio.create_task(
+                            self._execute_node(
+                                context,
+                                workflow,
+                                node_id,
+                                node_input,
+                                semaphore,
+                                retry_tracker,
+                            )
+                        )
+                        running_tasks[task] = node_id
+
+                # Short-circuit before attempting full output if errors were
+                # collected in CONTINUE mode, to avoid masking real errors with
+                # spurious "missing output" exceptions from yielded/failed nodes.
+                if errors.any():
+                    partial_output = await workflow.get_output(
+                        context=context,
+                        node_outputs=node_outputs,
+                        partial=True,
+                    )
+                    result = await context.on_workflow_error(
+                        workflow=workflow,
+                        input=input,
+                        errors=errors,
+                        partial_output=partial_output,
+                        node_yields=node_yields,
+                    )
+                    return result
+
+                if len(node_yields) > 0:
+                    partial_output = await workflow.get_output(
+                        context=context,
+                        node_outputs=node_outputs,
+                        partial=True,
+                    )
+                    result = await context.on_workflow_yield(
+                        workflow=workflow,
+                        input=input,
+                        partial_output=partial_output,
+                        node_yields=node_yields,
+                    )
+                    return result
+
+                output = await workflow.get_output(
                     context=context,
                     node_outputs=node_outputs,
-                    partial=True,
                 )
-                result = await context.on_workflow_error(
-                    workflow=workflow,
-                    input=input,
-                    errors=errors,
-                    partial_output=partial_output,
-                    node_yields=node_yields,
-                )
-                return result
-
-            if len(node_yields) > 0:
-                partial_output = await workflow.get_output(
-                    context=context,
-                    node_outputs=node_outputs,
-                    partial=True,
-                )
-                result = await context.on_workflow_yield(
-                    workflow=workflow,
-                    input=input,
-                    partial_output=partial_output,
-                    node_yields=node_yields,
-                )
-                return result
-
-            output = await workflow.get_output(
-                context=context,
-                node_outputs=node_outputs,
-            )
-        except Exception as e:
+            except Exception as e:
+                if not isinstance(e, WorkflowException):
+                    raise WorkflowException(
+                        f"Unhandled exception in workflow: {e}",
+                        level=StakeholderLevel.OPERATOR,
+                    ) from e
+                raise
+        except WorkflowException as e:
             errors.add(e)
             partial_output = await workflow.get_output(
                 context=context,
@@ -370,16 +388,23 @@ class ParallelExecutionAlgorithm(ExecutionAlgorithm):
                 node_id, result=node_input, input=node_input, should_yield=e
             )
 
-        except NodeException as e:
-            # Check if the underlying cause is ShouldRetry
-            if isinstance(e.__cause__, ShouldRetry):
-                return NodeResult(
-                    node_id,
-                    result=node_input,
-                    input=node_input,
-                    should_retry=e.__cause__,
-                )
-            raise
+        except ShouldRetry as e:
+            return NodeResult(
+                node_id,
+                result=node_input,
+                input=node_input,
+                should_retry=e,
+            )
+
+        except Exception as e:
+            if isinstance(e, WorkflowException):
+                raise
+            else:
+                raise NodeException(
+                    node,
+                    f"Unhandled exception in node {node_id}: {e}",
+                    level=StakeholderLevel.OPERATOR,
+                ) from e
 
         finally:
             if limiter is not None:

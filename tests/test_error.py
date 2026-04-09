@@ -5,12 +5,13 @@ import pytest
 from workflow_engine import (
     Edge,
     StringValue,
-    UserException,
     Workflow,
     WorkflowEngine,
+    WorkflowException,
 )
 from workflow_engine.contexts import InMemoryExecutionContext
 from workflow_engine.core.io import InputNode, OutputNode
+from workflow_engine.core.stakeholder import StakeholderLevel
 from workflow_engine.nodes import ConstantStringNode, ErrorNode
 
 
@@ -67,7 +68,13 @@ async def test_workflow_error_handling(workflow: Workflow):
     error_node = workflow.nodes_by_id["error"]
     # Verify the error was captured correctly
     assert len(result.errors.workflow_errors) == 0
-    assert result.errors.node_errors == {error_node.id: ["RuntimeError: test"]}
+    assert set(result.errors.node_errors.keys()) == {error_node.id}
+    assert len(result.errors.node_errors[error_node.id]) == 1
+    error = result.errors.node_errors[error_node.id][0]
+    assert error.message == "RuntimeError: test"
+    assert error.level == StakeholderLevel.USER
+    assert error.node_id == error_node.id
+    assert error.cause is None
 
     # Verify the output still contains the constant value
     assert result.output == {"text": StringValue("test")}
@@ -77,5 +84,5 @@ async def test_workflow_error_handling(workflow: Workflow):
     call_args = mock_on_node_error.call_args
     assert call_args.kwargs["node"] is error_node
     exception = call_args.kwargs["exception"]
-    assert isinstance(exception, UserException)
+    assert isinstance(exception, WorkflowException)
     assert exception.message == "RuntimeError: test"

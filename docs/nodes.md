@@ -143,7 +143,7 @@ Appends text to a file, with an optional suffix.
 
 ### Error
 
-Always raises a `UserException`. Useful for testing error handling or for explicit failure conditions.
+Always raises a `WorkflowException`. Useful for testing error handling or for explicit failure conditions.
 
 | Field                      | Type          |
 | -------------------------- | ------------- |

@@ -33,7 +33,8 @@ from ..utils.semver import (
     SEMANTIC_VERSION_PATTERN,
     parse_semantic_version,
 )
-from .error import NodeException, ShouldYield, UserException
+from .error import NodeException, ShouldYield, WorkflowException
+from .stakeholder import StakeholderLevel
 from .values import (
     Data,
     DataMapping,
@@ -373,11 +374,17 @@ class Node(ImmutableBaseModel, Generic[Input_contra, Output, Params_co]):
             if key not in input_fields:
                 if allow_extra_input:
                     continue
-                raise UserException(f"Unknown input field '{key}' for node {self.id}")
+                raise NodeException(
+                    self,
+                    f"Unknown input field '{key}' for node {self.id}",
+                    level=StakeholderLevel.BUILDER,
+                )
             input_field_type, _ = input_fields[key]
             if not value.can_cast_to(input_field_type):
-                raise UserException(
-                    f"Input {value} for node {self.id} is invalid: {value} is not assignable to {input_field_type}"
+                raise NodeException(
+                    self,
+                    f"Input {value} for node {self.id} is invalid: {value} is not assignable to {input_field_type}",
+                    level=StakeholderLevel.USER,
                 )
 
         # Cast all inputs in parallel
@@ -400,9 +407,11 @@ class Node(ImmutableBaseModel, Generic[Input_contra, Output, Params_co]):
         try:
             return input_type.model_validate(casted_input)
         except ValidationError as e:
-            raise UserException(
-                f"Input {casted_input} for node {self.id} is invalid: {e}"
-            )
+            raise NodeException(
+                self,
+                f"Input {casted_input} for node {self.id} is invalid: {e}",
+                level=StakeholderLevel.USER,
+            ) from e
 
     # @abstractmethod
     async def run(
@@ -434,80 +443,118 @@ class Node(ImmutableBaseModel, Generic[Input_contra, Output, Params_co]):
         """
         casted_input: DataMapping | None = None
         try:
-            logger.info("Starting node %s", self.id)
             try:
-                input_obj = await self._cast_input(input, context, input_type)
-            except ValidationError as e:
-                raise UserException(f"Input {input} for node {self.id} is invalid: {e}")
-            casted_input = get_data_dict(input_obj)
-            output = await context.on_node_start(
-                node=self,
-                input_type=input_type,
-                output_type=output_type,
-                input=casted_input,
-            )
-
-            from .workflow import (
-                ValidatedWorkflow,
-                Workflow,
-            )  # lazy to avoid circular import
-
-            if output is None:
-                output = await self.run(
-                    context=context,
+                logger.info("Starting node %s", self.id)
+                try:
+                    input_obj = await self._cast_input(input, context, input_type)
+                except ValidationError as e:
+                    raise NodeException(
+                        self,
+                        f"Input {input} for node {self.id} is invalid: {e}",
+                        level=StakeholderLevel.USER,
+                    ) from e
+                casted_input = get_data_dict(input_obj)
+                output = await context.on_node_start(
+                    node=self,
                     input_type=input_type,
                     output_type=output_type,
-                    input=input_obj,
+                    input=casted_input,
                 )
-                if not isinstance(output, Workflow):
-                    output = get_data_dict(output)
 
-            if isinstance(output, Workflow):
-                if not isinstance(output, ValidatedWorkflow):
-                    workflow = await output.validate(context.validation_context)
+                from .workflow import (
+                    ValidatedWorkflow,
+                    Workflow,
+                )  # lazy to avoid circular import
+
+                if output is None:
+                    output = await self.run(
+                        context=context,
+                        input_type=input_type,
+                        output_type=output_type,
+                        input=input_obj,
+                    )
+                    if not isinstance(output, Workflow):
+                        output = get_data_dict(output)
+
+                if isinstance(output, Workflow):
+                    if not isinstance(output, ValidatedWorkflow):
+                        workflow = await output.validate(context.validation_context)
+                    else:
+                        workflow = output
+                    output = await context.on_node_expand(
+                        node=self,
+                        input_type=input_type,
+                        output_type=output_type,
+                        input=casted_input,
+                        workflow=workflow,
+                    )
+                    # TODO: once that workflow eventually finishes running, its
+                    # output should be the output of this node, and we should call
+                    # context.on_node_finish.
                 else:
-                    workflow = output
-                output = await context.on_node_expand(
-                    node=self,
-                    input_type=input_type,
-                    output_type=output_type,
-                    input=casted_input,
-                    workflow=workflow,
-                )
-                # TODO: once that workflow eventually finishes running, its
-                # output should be the output of this node, and we should call
-                # context.on_node_finish.
-            else:
-                output = await context.on_node_finish(
-                    node=self,
-                    input_type=input_type,
-                    output_type=output_type,
-                    input=casted_input,
-                    output=output,
-                )
-            logger.info("Finished node %s", self.id)
-            return output
-        except ShouldYield:
-            raise
-        except Exception as e:
+                    output = await context.on_node_finish(
+                        node=self,
+                        input_type=input_type,
+                        output_type=output_type,
+                        input=casted_input,
+                        output=output,
+                    )
+                logger.info("Finished node %s", self.id)
+                return output
+            except ShouldYield:
+                raise
+            except Exception as e:
+                # other errors pass through as NodeExceptions
+                if isinstance(e, WorkflowException):
+                    raise
+                else:
+                    raise NodeException(
+                        self,
+                        f"Unhandled exception in node {self.id}: {e}",
+                        level=StakeholderLevel.OPERATOR,
+                    ) from e
+        except WorkflowException as e:
             # In subclasses, you don't have to worry about logging the error,
             # since it'll be logged here.
             logger.exception("Error in node %s", self.id)
-            e = await context.on_node_error(
+
+            # Automatically set or confirm the node ID on WorkflowExceptions
+            if e.node_id is None:
+                e.node_id = self.id
+            else:
+                if e.node_id != self.id:
+                    # operator-level exception, because the only way such a mismatch can occur is if the node implementation did something illegal
+                    raise NodeException(
+                        self,
+                        f"Node '{self.id}' caught a WorkflowException with mismatched ID '{e.node_id}'.",
+                        level=StakeholderLevel.OPERATOR,
+                    ) from e
+
+            context_e = await context.on_node_error(
                 node=self,
                 input_type=input_type,
                 output_type=output_type,
                 input=casted_input if casted_input is not None else input,
                 exception=e,
             )
-            if isinstance(e, Mapping):
+            if isinstance(context_e, Mapping):
                 logger.exception(
-                    "Error absorbed by context and replaced with output %s", e
+                    "Error absorbed by context and replaced with output %s", context_e
                 )
-                return e
-            else:
-                assert isinstance(e, Exception)
-                raise NodeException(self.id) from e
+                return context_e
+            if not isinstance(context_e, Exception):
+                raise NodeException(
+                    self,
+                    f"Context returned an unexpected type: {type(context_e)}",
+                    level=StakeholderLevel.OPERATOR,
+                ) from e
+            if not isinstance(context_e, WorkflowException):
+                raise NodeException(
+                    self,
+                    f"Unhandled exception in node {self.id}: {context_e}",
+                    level=StakeholderLevel.OPERATOR,
+                ) from context_e
+            raise context_e
 
 
 def _migrate_node_data(

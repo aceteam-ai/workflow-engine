@@ -12,8 +12,9 @@ from ..core import (
     Node,
     NodeTypeInfo,
     Params,
+    StakeholderLevel,
     StringValue,
-    UserException,
+    WorkflowException,
 )
 
 
@@ -63,7 +64,9 @@ class ErrorNode(Node[ErrorInput, Empty, ErrorParams]):
         output_type: Type[Empty],
         input: ErrorInput,
     ) -> Empty:
-        raise UserException(f"{self.params.error_name}: {input.info}")
+        raise WorkflowException(
+            f"{self.params.error_name}: {input.info}", level=StakeholderLevel.USER
+        )
 
     @classmethod
     def from_name(cls, id: str, name: str) -> "ErrorNode":

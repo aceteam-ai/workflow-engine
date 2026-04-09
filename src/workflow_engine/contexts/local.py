@@ -13,9 +13,10 @@ from ..core import (
     ExecutionContext,
     FileValue,
     Node,
-    UserException,
+    StakeholderLevel,
     ValidatedWorkflow,
     WorkflowErrors,
+    WorkflowException,
     WorkflowExecutionResult,
 )
 from ..core.values import dump_data_mapping, get_data_dict, serialize_data_mapping
@@ -96,12 +97,18 @@ class LocalContext(ExecutionContext):
     ) -> bytes:
         path = self.get_file_path(file.path)
         if not os.path.exists(path):
-            raise UserException(f"File {file.path} not found")
+            raise WorkflowException(
+                f"File {file.path} not found",
+                level=StakeholderLevel.USER,
+            )
         try:
             with open(path, "rb") as f:
                 return f.read()
         except Exception as e:
-            raise UserException(f"Failed to read file {file.path}") from e
+            raise WorkflowException(
+                f"Failed to read file {file.path}",
+                level=StakeholderLevel.USER,
+            ) from e
 
     @override
     async def write(
@@ -115,7 +122,10 @@ class LocalContext(ExecutionContext):
             with open(path, "wb") as f:
                 f.write(content)
         except Exception as e:
-            raise UserException(f"Failed to write file {file.path}") from e
+            raise WorkflowException(
+                f"Failed to write file {file.path}",
+                level=StakeholderLevel.USER,
+            ) from e
         return file
 
     @override

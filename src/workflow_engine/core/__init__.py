@@ -4,10 +4,12 @@ from .edge import Edge
 from .engine import WorkflowEngine
 from .error import (
     NodeException,
+    NodeExpansionException,
     ShouldRetry,
     ShouldYield,
-    UserException,
+    WorkflowError,
     WorkflowErrors,
+    WorkflowException,
 )
 from .execution import (
     ExecutionAlgorithm,
@@ -32,6 +34,7 @@ from .node import (
     NodeTypeInfo,
     Params,
 )
+from .stakeholder import StakeholderLevel
 from .values import (
     JSON,
     BooleanValue,
@@ -86,17 +89,21 @@ __all__ = [
     "MigrationValidationError",
     "Node",
     "NodeException",
+    "NodeExpansionException",
     "NodeRegistry",
     "NodeTypeInfo",
     "NullValue",
     "OutputNode",
     "Params",
     "SequenceValue",
+    "StakeholderLevel",
     "ShouldRetry",
     "ShouldYield",
     "StringMapValue",
     "StringValue",
-    "UserException",
+    "WorkflowException",
+    "WorkflowError",
+    "WorkflowErrors",
     "Value",
     "ValueRegistry",
     "ValueSchema",

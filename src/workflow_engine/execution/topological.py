@@ -11,11 +11,13 @@ from ..core import (
     DataMapping,
     ExecutionAlgorithm,
     ExecutionContext,
+    StakeholderLevel,
     ValidatedWorkflow,
     WorkflowErrors,
+    WorkflowException,
     WorkflowExecutionResult,
 )
-from ..core.error import NodeException, ShouldRetry, ShouldYield
+from ..core.error import ShouldRetry, ShouldYield
 from .rate_limit import RateLimitRegistry
 from .retry import RetryTracker
 
@@ -72,67 +74,65 @@ class TopologicalExecutionAlgorithm(ExecutionAlgorithm):
         node_yields: dict[str, str] = {}
 
         try:
-            ready_nodes = {workflow.input_node.id: input}
+            try:
+                ready_nodes = {workflow.input_node.id: input}
 
-            while len(ready_nodes) > 0 or len(pending_retry) > 0:
-                # Check if any pending retries are now ready
-                for node_id in list(pending_retry.keys()):
-                    state = retry_tracker.get_state(node_id)
-                    if state.is_ready():
-                        ready_nodes[node_id] = pending_retry.pop(node_id)
+                while len(ready_nodes) > 0 or len(pending_retry) > 0:
+                    # Check if any pending retries are now ready
+                    for node_id in list(pending_retry.keys()):
+                        state = retry_tracker.get_state(node_id)
+                        if state.is_ready():
+                            ready_nodes[node_id] = pending_retry.pop(node_id)
 
-                # If no nodes are ready, wait for the shortest backoff
-                if not ready_nodes and pending_retry:
-                    wait_time = retry_tracker.min_wait_time()
-                    if wait_time and wait_time.total_seconds() > 0:
-                        await asyncio.sleep(wait_time.total_seconds())
-                    continue
+                    # If no nodes are ready, wait for the shortest backoff
+                    if not ready_nodes and pending_retry:
+                        wait_time = retry_tracker.min_wait_time()
+                        if wait_time and wait_time.total_seconds() > 0:
+                            await asyncio.sleep(wait_time.total_seconds())
+                        continue
 
-                if len(ready_nodes) == 0:
-                    break
+                    if len(ready_nodes) == 0:
+                        break
 
-                node_id, node_input = ready_nodes.popitem()
-                node = workflow.nodes_by_id[node_id]
-                input_type = workflow.node_input_types[node_id]
-                output_type = workflow.node_output_types[node_id]
+                    node_id, node_input = ready_nodes.popitem()
+                    node = workflow.nodes_by_id[node_id]
+                    input_type = workflow.node_input_types[node_id]
+                    output_type = workflow.node_output_types[node_id]
 
-                # Acquire rate limiter if configured for this node type
-                limiter = self.rate_limits.get_limiter(node.type)
-                if limiter is not None:
-                    await limiter.acquire()
+                    # Acquire rate limiter if configured for this node type
+                    limiter = self.rate_limits.get_limiter(node.type)
+                    if limiter is not None:
+                        await limiter.acquire()
 
-                try:
-                    node_result = await node(
-                        context=context,
-                        input_type=input_type,
-                        output_type=output_type,
-                        input=node_input,
-                    )
+                    try:
+                        node_result = await node(
+                            context=context,
+                            input_type=input_type,
+                            output_type=output_type,
+                            input=node_input,
+                        )
 
-                    if isinstance(node_result, ValidatedWorkflow):
-                        workflow = workflow.expand_node(node_id, node_result)
-                    else:
-                        node_outputs[node.id] = node_result
+                        if isinstance(node_result, ValidatedWorkflow):
+                            workflow = workflow.expand_node(node_id, node_result)
+                        else:
+                            node_outputs[node.id] = node_result
 
-                except ShouldYield as e:
-                    node_yields[node_id] = e.message
-                    await context.on_node_yield(
-                        node=node,
-                        input_type=input_type,
-                        output_type=output_type,
-                        input=node_input,
-                        exception=e,
-                    )
-                    continue
+                    except ShouldYield as e:
+                        node_yields[node_id] = e.message
+                        await context.on_node_yield(
+                            node=node,
+                            input_type=input_type,
+                            output_type=output_type,
+                            input=node_input,
+                            exception=e,
+                        )
+                        continue
 
-                except NodeException as e:
-                    # Check if the underlying cause is ShouldRetry
-                    if isinstance(e.__cause__, ShouldRetry):
-                        should_retry_error = e.__cause__
+                    except ShouldRetry as e:
                         node_max_retries = self._get_node_max_retries(node)
 
                         if retry_tracker.should_retry(node_id, node_max_retries):
-                            retry_tracker.record_retry(node_id, should_retry_error)
+                            retry_tracker.record_retry(node_id, e)
                             pending_retry[node_id] = node_input
 
                             # Call the on_node_retry hook
@@ -142,48 +142,57 @@ class TopologicalExecutionAlgorithm(ExecutionAlgorithm):
                                 input_type=input_type,
                                 output_type=output_type,
                                 input=node_input,
-                                exception=should_retry_error,
+                                exception=e,
                                 attempt=state.attempt,
                             )
 
                             # Continue to next node without re-raising
                             continue
 
-                    # Max retries exceeded or non-retryable error
-                    raise
+                        # Max retries exceeded: surface as a workflow error
+                        raise
 
-                finally:
-                    if limiter is not None:
-                        limiter.release()
+                    finally:
+                        if limiter is not None:
+                            limiter.release()
 
-                ready_nodes = {
-                    node_id: node_input
-                    for node_id, node_input in workflow.get_ready_nodes(
+                    ready_nodes = {
+                        node_id: node_input
+                        for node_id, node_input in workflow.get_ready_nodes(
+                            node_outputs=node_outputs,
+                            partial_results=ready_nodes,
+                        ).items()
+                        if node_id not in node_yields
+                    }
+
+                if len(node_yields) > 0:
+                    partial_output = await workflow.get_output(
+                        context=context,
                         node_outputs=node_outputs,
-                        partial_results=ready_nodes,
-                    ).items()
-                    if node_id not in node_yields
-                }
+                        partial=True,
+                    )
+                    result = await context.on_workflow_yield(
+                        workflow=workflow,
+                        input=input,
+                        partial_output=partial_output,
+                        node_yields=node_yields,
+                    )
+                    return result
 
-            if len(node_yields) > 0:
-                partial_output = await workflow.get_output(
+                output = await workflow.get_output(
                     context=context,
                     node_outputs=node_outputs,
-                    partial=True,
                 )
-                result = await context.on_workflow_yield(
-                    workflow=workflow,
-                    input=input,
-                    partial_output=partial_output,
-                    node_yields=node_yields,
-                )
-                return result
-
-            output = await workflow.get_output(
-                context=context,
-                node_outputs=node_outputs,
-            )
-        except Exception as e:
+            except Exception as e:
+                # other errors pass through as WorkflowExceptions
+                if isinstance(e, WorkflowException):
+                    raise
+                else:
+                    raise WorkflowException(
+                        f"Unhandled exception in workflow: {e}",
+                        level=StakeholderLevel.OPERATOR,
+                    ) from e
+        except WorkflowException as e:
             errors.add(e)
             partial_output = await workflow.get_output(
                 context=context,

@@ -1,77 +1,109 @@
 # workflow_engine/core/error.py
+from __future__ import annotations
 
 from collections import defaultdict
-from datetime import timedelta
-from typing import TYPE_CHECKING
+from datetime import datetime, timedelta, timezone
+from traceback import format_exception
+from typing import TYPE_CHECKING, Sequence
 
 from pydantic import Field
 
 from ..utils.immutable import ImmutableBaseModel
+from .stakeholder import StakeholderLevel
 
 if TYPE_CHECKING:
+    from .node import Node
     from .workflow import Workflow
 
 
-class UserException(RuntimeError):
+class WorkflowError(ImmutableBaseModel):
     """
-    Any exception that can be reported to the user.
-
-    The node ID does not need to be included in contexts where it can be
-    inferred (when the exception is raised from a node, or from a function
-    called by a node).
-
-    Usual usage:
-    ```
-    try:
-        do_something_dangerous()
-    except AnticipatedException as e:
-        raise UserException("prepared message") from e
-    ```
+    A serialized workflow exception.
     """
 
-    def __init__(self, message: str):
+    message: str
+    timestamp: float
+    level: StakeholderLevel
+    node_id: str | None = Field(default=None)
+    cause: WorkflowError | str | None = Field(default=None)
+    traceback: Sequence[str]
+
+
+class WorkflowException(RuntimeError):
+    """
+    An exception that occurred within a workflow.
+    All exceptions leaving a node or workflow stack frame are wrapped in this
+    class or one of its subclasses.
+
+    The level of the exception determines who can see the error message.
+    Stack traces always remain visible to engineers and operators only.
+    """
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        level: StakeholderLevel,
+        node_id: str | None = None,
+    ):
         super().__init__(message)
+        self.timestamp = datetime.now(timezone.utc).timestamp()
+        self.level = level
         self.message = message
-
-
-class NodeException(RuntimeError):
-    """
-    An exception that occured during the execution of a node.
-    """
-
-    def __init__(self, node_id: str):
-        super().__init__()
         self.node_id = node_id
 
-    @property
-    def message(self) -> str | None:
-        if isinstance(self.__cause__, UserException):
-            return self.__cause__.message
-        return None
+    def dump(self) -> WorkflowError:
+        return WorkflowError(
+            message=self.message,
+            timestamp=self.timestamp,
+            level=self.level,
+            node_id=self.node_id,
+            cause=(
+                None
+                if self.__cause__ is None
+                else self.__cause__.dump()
+                if isinstance(self.__cause__, WorkflowException)
+                else str(self.__cause__)
+            ),
+            traceback=format_exception(self),
+        )
 
 
-class NodeExpansionException(UserException):
+class NodeException(WorkflowException):
+    """
+    An exception that occurred during the execution of a node.
+    """
+
+    def __init__(
+        self,
+        node: "Node",
+        message: str,
+        *,
+        level: StakeholderLevel,
+    ):
+        super().__init__(message, level=level, node_id=node.id)
+        self.node = node
+
+
+class NodeExpansionException(NodeException):
     """
     An error that occurred while expanding a node into a workflow.
     """
 
-    def __init__(self, node_id: str, workflow: "Workflow"):
-        super().__init__(f"Error expanding node {node_id} into the workflow {workflow}")
-        self.node_id = node_id
+    def __init__(
+        self,
+        node: "Node",
+        workflow: "Workflow",
+    ):
+        super().__init__(
+            node,
+            f"Error expanding node {node.id} into the workflow {workflow}",
+            level=StakeholderLevel.USER,
+        )
         self.workflow = workflow
 
-    @property
-    def message(self) -> str | None:
-        base_message = (
-            f"Error expanding node {self.node_id} into the workflow {self.workflow}"
-        )
-        if isinstance(self.__cause__, UserException):
-            return f"{base_message}, due to {self.__cause__}."
-        else:
-            return base_message
 
-
-class ShouldRetry(UserException):
+class ShouldRetry(NodeException):
     """
     An exception that indicates a temporary failure that should be retried.
 
@@ -79,22 +111,20 @@ class ShouldRetry(UserException):
     transient error (e.g., rate limit, network timeout) and should be retried
     after a backoff period.
 
-    Usage:
-        try:
-            response = await api_call()
-        except RateLimitError as e:
-            raise ShouldRetry(
-                message="Rate limited by API",
-                backoff=timedelta(seconds=e.retry_after),
-            )
+    Retrying a node that raised ShouldRetry is always a courtesy of the
+    execution algorithm.
+    If refused, the error passes up uncaught as a regular NodeException.
     """
 
     def __init__(
         self,
+        node: "Node",
         message: str,
+        *,
+        level: StakeholderLevel,
         backoff: timedelta = timedelta(seconds=1),
     ):
-        super().__init__(message)
+        super().__init__(node, message, level=level)
         self.backoff = backoff
 
 
@@ -127,34 +157,27 @@ class ShouldYield(Exception):
 
 class WorkflowErrors(ImmutableBaseModel):
     """
-    An error object that accumulates the errors that occurred during the
+    An error object that accumulates the error messages that occurred during the
     execution of a workflow.
 
-    None represents an error that is not user-visible.
+    None represents an error that is not visible to the engine operator.
 
     workflow_errors contains errors which cannot be associated with a node.
     node_errors contains errors which can be associated with a node.
     """
 
-    workflow_errors: list[str | None] = Field(default_factory=list)
-    node_errors: dict[str, list[str | None]] = Field(
+    workflow_errors: list[WorkflowError] = Field(default_factory=list)
+    node_errors: dict[str, list[WorkflowError]] = Field(
         default_factory=lambda: defaultdict(list)
     )
 
-    def add(self, exception: Exception):
-        if isinstance(exception, NodeException):
-            node_id = exception.node_id
-            message = exception.message
-        else:
-            node_id = None
-            if isinstance(exception, UserException):
-                message = exception.message
-            else:
-                message = None
+    def add(self, exception: WorkflowException):
+        serialized_exception = exception.dump()
+        node_id = serialized_exception.node_id
         if node_id is None:
-            self.workflow_errors.append(message)
+            self.workflow_errors.append(serialized_exception)
         else:
-            self.node_errors[node_id].append(message)
+            self.node_errors[node_id].append(serialized_exception)
 
     @property
     def count(self) -> int:
@@ -171,6 +194,6 @@ __all__ = [
     "NodeExpansionException",
     "ShouldRetry",
     "ShouldYield",
-    "UserException",
+    "WorkflowError",
     "WorkflowErrors",
 ]
