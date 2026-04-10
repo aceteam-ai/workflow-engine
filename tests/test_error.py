@@ -10,6 +10,7 @@ from workflow_engine import (
     WorkflowException,
 )
 from workflow_engine.contexts import InMemoryExecutionContext
+from workflow_engine.core import WorkflowError
 from workflow_engine.core.io import InputNode, OutputNode
 from workflow_engine.core.stakeholder import StakeholderLevel
 from workflow_engine.nodes import ConstantStringNode, ErrorNode
@@ -71,6 +72,7 @@ async def test_workflow_error_handling(workflow: Workflow):
     assert set(result.errors.node_errors.keys()) == {error_node.id}
     assert len(result.errors.node_errors[error_node.id]) == 1
     error = result.errors.node_errors[error_node.id][0]
+    assert isinstance(error, WorkflowError)
     assert error.message == "RuntimeError: test"
     assert error.level == StakeholderLevel.USER
     assert error.node_id == error_node.id

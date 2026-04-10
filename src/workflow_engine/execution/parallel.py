@@ -18,7 +18,7 @@ from ..core import (
     StakeholderLevel,
     ValidatedWorkflow,
     Workflow,
-    WorkflowErrors,
+    WorkflowErrorsBuilder,
     WorkflowException,
     WorkflowExecutionResult,
 )
@@ -103,7 +103,7 @@ class ParallelExecutionAlgorithm(ExecutionAlgorithm):
         node_outputs: dict[str, DataMapping] = {}
         failed_nodes: set[str] = set()  # Track nodes that failed to avoid re-executing
         running_tasks: dict[asyncio.Task[NodeResult], str] = {}  # task -> node_id
-        errors = WorkflowErrors()
+        errors = WorkflowErrorsBuilder()
         retry_tracker = RetryTracker(default_max_retries=self.max_retries)
 
         # Track nodes that are waiting for retry (node_id -> input)
@@ -283,7 +283,7 @@ class ParallelExecutionAlgorithm(ExecutionAlgorithm):
                     result = await context.on_workflow_error(
                         workflow=workflow,
                         input=input,
-                        errors=errors,
+                        errors=errors.build(),
                         partial_output=partial_output,
                         node_yields=node_yields,
                     )
@@ -324,7 +324,7 @@ class ParallelExecutionAlgorithm(ExecutionAlgorithm):
             result = await context.on_workflow_error(
                 workflow=workflow,
                 input=input,
-                errors=errors,
+                errors=errors.build(),
                 partial_output=partial_output,
                 node_yields=node_yields,
             )

@@ -2,9 +2,10 @@
 from __future__ import annotations
 
 from collections import defaultdict
+from collections.abc import Mapping, Sequence
 from datetime import datetime, timedelta, timezone
 from traceback import format_exception
-from typing import TYPE_CHECKING, Sequence
+from typing import TYPE_CHECKING, Self
 
 from pydantic import Field
 
@@ -26,7 +27,16 @@ class WorkflowError(ImmutableBaseModel):
     level: StakeholderLevel
     node_id: str | None = Field(default=None)
     cause: WorkflowError | str | None = Field(default=None)
-    traceback: Sequence[str]
+    traceback: Sequence[str] | None = Field(default=None)
+
+    def filter(self, level: StakeholderLevel) -> Self | None:
+        # remove errors that require a lower level of visibility to be seen
+        if self.level < level:
+            return None
+        # erase the traceback from all errors for stakeholders above operator level
+        if level > StakeholderLevel.OPERATOR and self.traceback is not None:
+            return self.model_update(traceback=None)
+        return self
 
 
 class WorkflowException(RuntimeError):
@@ -157,27 +167,19 @@ class ShouldYield(Exception):
 
 class WorkflowErrors(ImmutableBaseModel):
     """
-    An error object that accumulates the error messages that occurred during the
+    An error object that accumulates the errors that occurred during the
     execution of a workflow.
 
-    None represents an error that is not visible to the engine operator.
+    None represents an error that is not visible due to filtering.
 
     workflow_errors contains errors which cannot be associated with a node.
     node_errors contains errors which can be associated with a node.
     """
 
-    workflow_errors: list[WorkflowError] = Field(default_factory=list)
-    node_errors: dict[str, list[WorkflowError]] = Field(
-        default_factory=lambda: defaultdict(list)
+    workflow_errors: Sequence[WorkflowError | None] = Field(default=())
+    node_errors: Mapping[str, Sequence[WorkflowError | None]] = Field(
+        default_factory=dict
     )
-
-    def add(self, exception: WorkflowException):
-        serialized_exception = exception.dump()
-        node_id = serialized_exception.node_id
-        if node_id is None:
-            self.workflow_errors.append(serialized_exception)
-        else:
-            self.node_errors[node_id].append(serialized_exception)
 
     @property
     def count(self) -> int:
@@ -188,12 +190,108 @@ class WorkflowErrors(ImmutableBaseModel):
     def any(self) -> bool:
         return self.count > 0
 
+    def filter(self, level: StakeholderLevel) -> Self:
+        return self.model_copy(
+            update={
+                "workflow_errors": tuple(
+                    error.filter(level) if isinstance(error, WorkflowError) else error
+                    for error in self.workflow_errors
+                ),
+                "node_errors": {
+                    node_id: tuple(
+                        error.filter(level)
+                        if isinstance(error, WorkflowError)
+                        else error
+                        for error in errors
+                    )
+                    for node_id, errors in self.node_errors.items()
+                },
+            },
+        )
+
+
+class LegacyWorkflowErrors(ImmutableBaseModel):
+    """
+    A legacy version of WorkflowErrors that is backwards-compatible with
+    <=2.0.0rc7 error objects (str | None).
+    """
+
+    workflow_errors: Sequence[WorkflowError | str | None] = Field(default=())
+    node_errors: Mapping[str, Sequence[WorkflowError | str | None]] = Field(
+        default_factory=dict
+    )
+
+    @property
+    def count(self) -> int:
+        return len(self.workflow_errors) + sum(
+            len(errors) for errors in self.node_errors.values()
+        )
+
+    def any(self) -> bool:
+        return self.count > 0
+
+    def filter(self, level: StakeholderLevel) -> Self:
+        return self.model_copy(
+            update={
+                "workflow_errors": tuple(
+                    error.filter(level) if isinstance(error, WorkflowError) else error
+                    for error in self.workflow_errors
+                ),
+                "node_errors": {
+                    node_id: tuple(
+                        error.filter(level)
+                        if isinstance(error, WorkflowError)
+                        else error
+                        for error in errors
+                    )
+                    for node_id, errors in self.node_errors.items()
+                },
+            },
+        )
+
+
+class WorkflowErrorsBuilder:
+    """
+    A mutable builder for WorkflowErrors.
+    """
+
+    def __init__(self):
+        self._workflow_errors: list[WorkflowError] = []
+        self._node_errors: dict[str, list[WorkflowError]] = defaultdict(list)
+        self._count = 0
+
+    def add(self, exception: WorkflowException):
+        serialized_exception = exception.dump()
+        node_id = serialized_exception.node_id
+        if node_id is None:
+            self._workflow_errors.append(serialized_exception)
+        else:
+            self._node_errors[node_id].append(serialized_exception)
+        self._count += 1
+
+    def build(self) -> WorkflowErrors:
+        return WorkflowErrors(
+            workflow_errors=tuple(self._workflow_errors),
+            node_errors={
+                node_id: tuple(errors) for node_id, errors in self._node_errors.items()
+            },
+        )
+
+    @property
+    def count(self) -> int:
+        return self._count
+
+    def any(self) -> bool:
+        return self.count > 0
+
 
 __all__ = [
+    "LegacyWorkflowErrors",
     "NodeException",
     "NodeExpansionException",
     "ShouldRetry",
     "ShouldYield",
     "WorkflowError",
     "WorkflowErrors",
+    "WorkflowErrorsBuilder",
 ]

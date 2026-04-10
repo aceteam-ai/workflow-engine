@@ -13,7 +13,7 @@ from ..core import (
     ExecutionContext,
     StakeholderLevel,
     ValidatedWorkflow,
-    WorkflowErrors,
+    WorkflowErrorsBuilder,
     WorkflowException,
     WorkflowExecutionResult,
 )
@@ -65,7 +65,7 @@ class TopologicalExecutionAlgorithm(ExecutionAlgorithm):
             return result
 
         node_outputs: dict[str, DataMapping] = {}
-        errors = WorkflowErrors()
+        errors = WorkflowErrorsBuilder()
         retry_tracker = RetryTracker(default_max_retries=self.max_retries)
 
         # Track nodes that are waiting for retry (node_id -> input)
@@ -202,7 +202,7 @@ class TopologicalExecutionAlgorithm(ExecutionAlgorithm):
             result = await context.on_workflow_error(
                 workflow=workflow,
                 input=input,
-                errors=errors,
+                errors=errors.build(),
                 partial_output=partial_output,
                 node_yields=node_yields,
             )
