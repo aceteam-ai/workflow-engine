@@ -10,10 +10,12 @@ import networkx as nx
 from overrides import override
 from pydantic import ConfigDict, Field, ValidationError, model_validator
 
+from workflow_engine.core.stakeholder import StakeholderLevel
+
 from ..utils.asynchronous import gather
 from ..utils.immutable import ImmutableBaseModel
 from .edge import Edge
-from .error import NodeExpansionException, UserException
+from .error import NodeException, NodeExpansionException, WorkflowException
 from .io import InputNode, OutputNode
 from .node import Node, get_id_with_namespace
 from .values import (
@@ -280,9 +282,11 @@ class ValidatedWorkflow(Workflow):
             try:
                 ready_nodes[node.id] = node_input_dict
             except ValidationError as e:
-                raise UserException(
+                raise NodeException(
+                    node,
                     f"Input {node_input_dict} for node {node.id} is invalid: {e}",
-                )
+                    level=StakeholderLevel.USER,
+                ) from e
         return ready_nodes
 
     async def get_output(
@@ -307,7 +311,7 @@ class ValidatedWorkflow(Workflow):
             DataMapping with all outputs cast to their expected types
 
         Raises:
-            UserException: If a required output is missing or cannot be cast
+            WorkflowException: If a required output is missing or cannot be cast
         """
         # First pass: Validate all outputs exist and can be cast
         outputs_to_cast: list[tuple[str, Value, ValueType]] = []
@@ -318,8 +322,9 @@ class ValidatedWorkflow(Workflow):
             if edge.source_id not in node_outputs:
                 if partial:
                     continue
-                raise UserException(
+                raise WorkflowException(
                     f"Cannot get output from node {edge.source_id}.",
+                    level=StakeholderLevel.USER,
                 )
             node_output = node_outputs[edge.source_id]
             try:
@@ -327,12 +332,13 @@ class ValidatedWorkflow(Workflow):
                     data=node_output,
                     path=edge.source_key_path,
                 )
-            except KeyError:
+            except KeyError as e:
                 if partial:
                     continue
-                raise UserException(
+                raise WorkflowException(
                     f"Cannot get output from node {edge.source_id} at path {edge.source_key_path_string}.",
-                )
+                    level=StakeholderLevel.USER,
+                ) from e
 
             expected_type = resolve_path(
                 data_type=self.output_type,
@@ -341,9 +347,10 @@ class ValidatedWorkflow(Workflow):
 
             # Validate that the output can be cast to the expected type
             if not output_field.can_cast_to(expected_type):
-                raise UserException(
+                raise WorkflowException(
                     f"Output '{edge.target_key}' from {edge.source_id}.{edge.source_key_path_string} "
-                    f"cannot be cast: {output_field} is not assignable to {expected_type}"
+                    f"cannot be cast: {output_field} is not assignable to {expected_type}",
+                    level=StakeholderLevel.BUILDER,
                 )
 
             outputs_to_cast.append((edge.target_key, output_field, expected_type))
@@ -394,13 +401,17 @@ class ValidatedWorkflow(Workflow):
             A new Workflow with the node replaced by the subgraph
 
         Raises:
-            ValueError: If the node_id doesn't exist or if the replacement would
-                        create an invalid graph
+            WorkflowException: If the node_id doesn't exist
+            NodeExpansionException: If the expansion fails for any other reason
         """
-        try:
-            if node_id not in self.nodes_by_id:
-                raise ValueError(f"Node {node_id} not found in workflow")
+        if node_id not in self.nodes_by_id:
+            raise WorkflowException(
+                f"Node '{node_id}' is a target for expansion, but is not found in the workflow.",
+                level=StakeholderLevel.ENGINEER,
+            )
+        node = self.nodes_by_id[node_id]
 
+        try:
             subgraph = subgraph.with_namespace(namespace=node_id)
 
             # Collect all edges that need to be modified
@@ -450,7 +461,7 @@ class ValidatedWorkflow(Workflow):
                 node_output_types=new_node_output_types,
             )
         except Exception as e:
-            raise NodeExpansionException(node_id, workflow=subgraph) from e
+            raise NodeExpansionException(node, workflow=subgraph) from e
 
 
 class WorkflowValue(Value[Workflow]):

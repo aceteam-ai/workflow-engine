@@ -186,7 +186,7 @@ To cut a new release:
 
 ### Error Handling
 
-- `UserException`: User-visible errors with messages
+- `WorkflowException`: Error messages annotated with visibility level
 - `NodeException`: Errors during node execution (includes node ID)
 - `NodeExpansionException`: Errors during dynamic node replacement
 - `WorkflowErrors`: Accumulates errors by node

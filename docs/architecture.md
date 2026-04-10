@@ -1,5 +1,16 @@
 # Architecture
 
+## Scope
+
+`workflow-engine` sits at the lowest level of abstraction in a toolchain with 4 levels of stakeholders.
+The developers of `workflow-engine` itself are the **engineers**.
+Developers who use `workflow-engine` to define their own types of nodes are called **operators**.
+An operator may provide an interface to let **builders** build workflows with their node types, and to let builders run their workflows.
+A builder may publish their workflow to let **users** run it.
+
+Because of these different levels, the engine has the difficult task of catering to conflicting interests, such as with error handling.
+We follow the principle that _error messages should be visible to only those who have the power to do something about them_.
+
 ## Module Structure
 
 ```text

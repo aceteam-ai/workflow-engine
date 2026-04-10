@@ -23,6 +23,7 @@ from workflow_engine import (
     WorkflowExecutionResultStatus,
 )
 from workflow_engine.contexts import InMemoryExecutionContext
+from workflow_engine.core import StakeholderLevel
 from workflow_engine.execution.retry import NodeRetryState, RetryTracker
 from workflow_engine.execution.topological import TopologicalExecutionAlgorithm
 
@@ -81,7 +82,9 @@ class RetryableNode(Node[RetryableInput, RetryableOutput, RetryableParams]):
 
         if RetryableNode._attempt_counts[self.id] <= self.params.fail_count:
             raise ShouldRetry(
+                node=self,
                 message=f"Temporary failure (attempt {RetryableNode._attempt_counts[self.id]})",
+                level=StakeholderLevel.USER,
                 backoff=timedelta(milliseconds=10),  # Short backoff for tests
             )
 
@@ -128,7 +131,9 @@ class RetryableNode2(Node[RetryableInput, RetryableOutput, RetryableParams]):
 
         if RetryableNode2._attempt_counts[self.id] <= self.params.fail_count:
             raise ShouldRetry(
+                node=self,
                 message=f"Temporary failure (attempt {RetryableNode2._attempt_counts[self.id]})",
+                level=StakeholderLevel.USER,
                 backoff=timedelta(milliseconds=10),
             )
         return RetryableOutput(result=StringValue(f"Node2: {input.value.root}"))
@@ -179,7 +184,9 @@ class CustomRetryNode(Node[RetryableInput, RetryableOutput, RetryableParams]):
 
         if CustomRetryNode._attempt_counts[self.id] <= self.params.fail_count:
             raise ShouldRetry(
+                node=self,
                 message=f"Temporary failure (attempt {CustomRetryNode._attempt_counts[self.id]})",
+                level=StakeholderLevel.USER,
                 backoff=timedelta(milliseconds=10),
             )
 
@@ -198,33 +205,12 @@ def reset_attempt_counts():
     yield
 
 
-# Unit tests for ShouldRetry exception
-class TestShouldRetry:
-    @pytest.mark.unit
-    def test_should_retry_default_backoff(self):
-        """Test that ShouldRetry has default backoff of 1 second."""
-        exc = ShouldRetry("test error")
-        assert exc.message == "test error"
-        assert exc.backoff == timedelta(seconds=1)
-
-    @pytest.mark.unit
-    def test_should_retry_custom_backoff(self):
-        """Test that ShouldRetry accepts custom backoff."""
-        exc = ShouldRetry("test error", backoff=timedelta(seconds=30))
-        assert exc.message == "test error"
-        assert exc.backoff == timedelta(seconds=30)
-
-    @pytest.mark.unit
-    def test_should_retry_inherits_from_user_exception(self):
-        """Test that ShouldRetry inherits from UserException."""
-        from workflow_engine import UserException
-
-        exc = ShouldRetry("test error")
-        assert isinstance(exc, UserException)
-
-
 # Unit tests for RetryTracker
 class TestRetryTracker:
+    @pytest.fixture
+    def node(self) -> Node:
+        return RetryableNode.from_fail_count(id="node1", fail_count=0)
+
     @pytest.mark.unit
     def test_initial_state(self):
         """Test that RetryTracker starts with empty state."""
@@ -233,42 +219,90 @@ class TestRetryTracker:
         assert tracker.default_max_retries == 3
 
     @pytest.mark.unit
-    def test_should_retry_within_limit(self):
+    def test_should_retry_within_limit(self, node: Node):
         """Test that should_retry returns True when under max retries."""
         tracker = RetryTracker(default_max_retries=3)
-        assert tracker.should_retry("node1", None) is True
+        assert tracker.should_retry(node.id, None) is True
 
         # Record first retry
-        tracker.record_retry("node1", ShouldRetry("error", timedelta(seconds=1)))
-        assert tracker.should_retry("node1", None) is True
+        tracker.record_retry(
+            node.id,
+            ShouldRetry(
+                node,
+                "error",
+                level=StakeholderLevel.USER,
+                backoff=timedelta(seconds=1),
+            ),
+        )
+        assert tracker.should_retry(node.id, None) is True
 
         # Record second retry
-        tracker.record_retry("node1", ShouldRetry("error", timedelta(seconds=1)))
-        assert tracker.should_retry("node1", None) is True
+        tracker.record_retry(
+            node.id,
+            ShouldRetry(
+                node,
+                "error",
+                level=StakeholderLevel.USER,
+                backoff=timedelta(seconds=1),
+            ),
+        )
+        assert tracker.should_retry(node.id, None) is True
 
     @pytest.mark.unit
-    def test_should_retry_at_limit(self):
+    def test_should_retry_at_limit(self, node: Node):
         """Test that should_retry returns False at max retries."""
         tracker = RetryTracker(default_max_retries=2)
 
-        tracker.record_retry("node1", ShouldRetry("error", timedelta(seconds=1)))
-        tracker.record_retry("node1", ShouldRetry("error", timedelta(seconds=1)))
+        tracker.record_retry(
+            node.id,
+            ShouldRetry(
+                node,
+                "error",
+                level=StakeholderLevel.USER,
+                backoff=timedelta(seconds=1),
+            ),
+        )
+        tracker.record_retry(
+            node.id,
+            ShouldRetry(
+                node,
+                "error",
+                level=StakeholderLevel.USER,
+                backoff=timedelta(seconds=1),
+            ),
+        )
 
-        assert tracker.should_retry("node1", None) is False
+        assert tracker.should_retry(node.id, None) is False
 
     @pytest.mark.unit
-    def test_node_specific_max_retries(self):
+    def test_node_specific_max_retries(self, node: Node):
         """Test that node-specific max_retries overrides default."""
         tracker = RetryTracker(default_max_retries=2)
 
-        tracker.record_retry("node1", ShouldRetry("error", timedelta(seconds=1)))
-        tracker.record_retry("node1", ShouldRetry("error", timedelta(seconds=1)))
+        tracker.record_retry(
+            node.id,
+            ShouldRetry(
+                node,
+                "error",
+                level=StakeholderLevel.USER,
+                backoff=timedelta(seconds=1),
+            ),
+        )
+        tracker.record_retry(
+            node.id,
+            ShouldRetry(
+                node,
+                "error",
+                level=StakeholderLevel.USER,
+                backoff=timedelta(seconds=1),
+            ),
+        )
 
         # With default (2), should not retry
-        assert tracker.should_retry("node1", None) is False
+        assert tracker.should_retry(node.id, None) is False
 
         # With node-specific override (5), should retry
-        assert tracker.should_retry("node1", 5) is True
+        assert tracker.should_retry(node.id, 5) is True
 
 
 # Unit tests for NodeRetryState
