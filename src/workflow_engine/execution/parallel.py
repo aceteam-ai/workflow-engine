@@ -222,11 +222,10 @@ class ParallelExecutionAlgorithm(ExecutionAlgorithm):
                             if self.error_handling == ErrorHandlingMode.FAIL_FAST:
                                 await self._cancel_all(running_tasks)
                                 raise should_retry_error
-
-                            # Otherwise, retry
-                            errors.add(should_retry_error)
-                            failed_nodes.add(node_id)
-                            continue
+                            else:
+                                errors.add(should_retry_error)
+                                failed_nodes.add(node_id)
+                                continue
 
                         if isinstance(node_result.result, Workflow):
                             expansions_pending.append((node_id, node_result.result))
