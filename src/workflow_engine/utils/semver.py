@@ -19,8 +19,8 @@ def parse_semantic_version(version: str) -> tuple[int, int, int]:
 
 
 __all__ = [
-    "parse_semantic_version",
     "LATEST_SEMANTIC_VERSION",
-    "SEMANTIC_VERSION_PATTERN",
     "SEMANTIC_VERSION_OR_LATEST_PATTERN",
+    "SEMANTIC_VERSION_PATTERN",
+    "parse_semantic_version",
 ]

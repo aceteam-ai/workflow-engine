@@ -117,6 +117,6 @@ class RateLimitRegistry:
 
 __all__ = [
     "RateLimitConfig",
-    "RateLimiter",
     "RateLimitRegistry",
+    "RateLimiter",
 ]

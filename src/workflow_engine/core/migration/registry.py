@@ -124,7 +124,7 @@ class MigrationRegistry:
             current, path = queue.popleft()
 
             for next_version, migration_cls in adj.get(current, []):
-                new_path = path + [migration_cls]
+                new_path = [*path, migration_cls]
 
                 if next_version == to_version:
                     return new_path

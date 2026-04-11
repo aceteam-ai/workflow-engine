@@ -9,8 +9,8 @@ __all__ = [
     "NodeRetryState",
     "ParallelExecutionAlgorithm",
     "RateLimitConfig",
-    "RateLimiter",
     "RateLimitRegistry",
+    "RateLimiter",
     "RetryTracker",
     "TopologicalExecutionAlgorithm",
 ]
