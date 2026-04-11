@@ -567,8 +567,8 @@ ValueRegistry.DEFAULT = ValueRegistry.builder(lazy=True)
 __all__ = [
     "Caster",
     "GenericCaster",
-    "get_origin_and_args",
     "Value",
     "ValueRegistry",
     "ValueType",
+    "get_origin_and_args",
 ]

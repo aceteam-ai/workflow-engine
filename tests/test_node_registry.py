@@ -339,7 +339,7 @@ class TestLazyNodeRegistry:
         # Build should raise error
         with pytest.raises(
             ValueError,
-            match='Node type "TestA" .* is already registered to a different class',
+            match=r'Node type "TestA" .* is already registered to a different class',
         ):
             registry.build()
 

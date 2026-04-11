@@ -62,6 +62,7 @@ from .values import (
 from .workflow import ValidatedWorkflow, Workflow, WorkflowValue
 
 __all__ = [
+    "JSON",
     "BooleanValue",
     "Caster",
     "Data",
@@ -77,10 +78,7 @@ __all__ = [
     "FloatValue",
     "InputNode",
     "IntegerValue",
-    "JSON",
     "JSONValue",
-    "migration_registry",
-    "migration_runner",
     "Migration",
     "MigrationError",
     "MigrationNotFoundError",
@@ -118,4 +116,6 @@ __all__ = [
     "WorkflowExecutionResult",
     "WorkflowExecutionResultStatus",
     "WorkflowValue",
+    "migration_registry",
+    "migration_runner",
 ]

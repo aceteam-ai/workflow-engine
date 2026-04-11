@@ -550,7 +550,10 @@ async def test_json_value_to_sequence(context):
     assert len(empty_seq) == 0
 
     # Failed casts - string should not be treated as sequence
-    with pytest.raises(ValueError, match="Expected sequence.*strings are not valid"):
+    with pytest.raises(
+        ValueError,
+        match=r"Expected sequence.*strings are not valid",
+    ):
         await JSONValue("hello").cast_to(SequenceValue[JSONValue], context=context)
 
     # Failed casts - mapping should not cast to sequence

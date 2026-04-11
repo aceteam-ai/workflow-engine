@@ -68,7 +68,7 @@ build-backend = "hatchling.build"
 packages = ["src/workflow_engine"]
 
 [tool.ruff.lint]
-extend-select = ["I"]
+extend-select = ["I", "RUF"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["workflow_engine"]

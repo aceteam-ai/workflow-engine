@@ -191,6 +191,6 @@ class IfElseNode(Node[ConditionalInput, Data, IfElseParams]):
 
 __all__ = [
     "ConditionalInput",
-    "IfNode",
     "IfElseNode",
+    "IfNode",
 ]
