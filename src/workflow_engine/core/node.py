@@ -374,14 +374,14 @@ class Node(ImmutableBaseModel, Generic[Input_contra, Output, Params_co]):
                 if allow_extra_input:
                     continue
                 raise NodeException.for_builder(
-                    self,
                     f"Unknown input field '{key}' for node {self.id}",
+                    node=self,
                 )
             input_field_type, _ = input_fields[key]
             if not value.can_cast_to(input_field_type):
                 raise NodeException.for_user(
-                    self,
                     f"Input {value} for node {self.id} is invalid: {value} is not assignable to {input_field_type}",
+                    node=self,
                 )
 
         # Cast all inputs in parallel
@@ -405,8 +405,8 @@ class Node(ImmutableBaseModel, Generic[Input_contra, Output, Params_co]):
             return input_type.model_validate(casted_input)
         except ValidationError as e:
             raise NodeException.for_user(
-                self,
                 f"Input {casted_input} for node {self.id} is invalid: {e}",
+                node=self,
             ) from e
 
     # @abstractmethod
@@ -445,8 +445,8 @@ class Node(ImmutableBaseModel, Generic[Input_contra, Output, Params_co]):
                     input_obj = await self._cast_input(input, context, input_type)
                 except ValidationError as e:
                     raise NodeException.for_user(
-                        self,
                         f"Input {input} for node {self.id} is invalid: {e}",
+                        node=self,
                     ) from e
                 casted_input = get_data_dict(input_obj)
                 output = await context.on_node_start(
@@ -504,8 +504,8 @@ class Node(ImmutableBaseModel, Generic[Input_contra, Output, Params_co]):
                     raise
                 else:
                     raise NodeException.for_operator(
-                        self,
                         f"Unhandled exception in node {self.id}: {e}",
+                        node=self,
                     ) from e
         except WorkflowException as e:
             # In subclasses, you don't have to worry about logging the error,
@@ -519,8 +519,8 @@ class Node(ImmutableBaseModel, Generic[Input_contra, Output, Params_co]):
                 if e.node_id != self.id:
                     # operator-level exception, because the only way such a mismatch can occur is if the node implementation did something illegal
                     raise NodeException.for_operator(
-                        self,
                         f"Node '{self.id}' caught a WorkflowException with mismatched ID '{e.node_id}'.",
+                        node=self,
                     ) from e
 
             context_e = await context.on_node_error(
@@ -537,13 +537,13 @@ class Node(ImmutableBaseModel, Generic[Input_contra, Output, Params_co]):
                 return context_e
             if not isinstance(context_e, Exception):
                 raise NodeException.for_operator(
-                    self,
                     f"Context returned an unexpected type: {type(context_e)}",
+                    node=self,
                 ) from e
             if not isinstance(context_e, WorkflowException):
                 raise NodeException.for_operator(
-                    self,
                     f"Unhandled exception in node {self.id}: {context_e}",
+                    node=self,
                 ) from context_e
             raise context_e
 

@@ -146,9 +146,9 @@ class NodeException(WorkflowException):
 
     def __init__(
         self,
-        node: "Node",
         message: str,
         *,
+        node: "Node",
         level: StakeholderLevel,
     ):
         super().__init__(message, level=level, node_id=node.id)
@@ -157,15 +157,14 @@ class NodeException(WorkflowException):
     @classmethod
     def for_user(  # pyright: ignore[reportIncompatibleMethodOverride]
         cls,
-        node: "Node",
         message: str,
         *,
-        node_id: str | None = None,
+        node: "Node",
         **kwargs,
     ) -> Self:
         return cls(
-            node,
             message,
+            node=node,
             level=StakeholderLevel.USER,
             **kwargs,
         )
@@ -173,13 +172,14 @@ class NodeException(WorkflowException):
     @classmethod
     def for_builder(  # pyright: ignore[reportIncompatibleMethodOverride]
         cls,
-        node: "Node",
         message: str,
+        *,
+        node: "Node",
         **kwargs,
     ) -> Self:
         return cls(
-            node,
             message,
+            node=node,
             level=StakeholderLevel.BUILDER,
             **kwargs,
         )
@@ -187,13 +187,14 @@ class NodeException(WorkflowException):
     @classmethod
     def for_operator(  # pyright: ignore[reportIncompatibleMethodOverride]
         cls,
-        node: "Node",
         message: str,
+        *,
+        node: "Node",
         **kwargs,
     ) -> Self:
         return cls(
-            node,
             message,
+            node=node,
             level=StakeholderLevel.OPERATOR,
             **kwargs,
         )
@@ -201,13 +202,14 @@ class NodeException(WorkflowException):
     @classmethod
     def for_engineer(  # pyright: ignore[reportIncompatibleMethodOverride]
         cls,
-        node: "Node",
         message: str,
+        *,
+        node: "Node",
         **kwargs,
     ) -> Self:
         return cls(
-            node,
             message,
+            node=node,
             level=StakeholderLevel.ENGINEER,
             **kwargs,
         )
@@ -220,12 +222,13 @@ class NodeExpansionException(NodeException):
 
     def __init__(
         self,
+        *,
         node: "Node",
         workflow: "Workflow",
     ):
         super().__init__(
-            node,
             f"Error expanding node {node.id} into the workflow {workflow}",
+            node=node,
             level=StakeholderLevel.USER,
         )
         self.workflow = workflow
@@ -246,13 +249,13 @@ class ShouldRetry(NodeException):
 
     def __init__(
         self,
-        node: "Node",
         message: str,
         *,
+        node: "Node",
         level: StakeholderLevel,
         backoff: timedelta = timedelta(seconds=1),
     ):
-        super().__init__(node, message, level=level)
+        super().__init__(message, node=node, level=level)
         self.backoff = backoff
 
 

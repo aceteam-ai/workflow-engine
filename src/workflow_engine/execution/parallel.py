@@ -398,8 +398,8 @@ class ParallelExecutionAlgorithm(ExecutionAlgorithm):
                 raise
             else:
                 raise NodeException.for_operator(
-                    node,
                     f"Unhandled exception in node {node_id}: {e}",
+                    node=node,
                 ) from e
 
         finally:

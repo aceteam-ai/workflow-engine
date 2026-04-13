@@ -281,8 +281,8 @@ class ValidatedWorkflow(Workflow):
                 ready_nodes[node.id] = node_input_dict
             except ValidationError as e:
                 raise NodeException.for_user(
-                    node,
                     f"Input {node_input_dict} for node {node.id} is invalid: {e}",
+                    node=node,
                 ) from e
         return ready_nodes
 
@@ -454,7 +454,7 @@ class ValidatedWorkflow(Workflow):
                 node_output_types=new_node_output_types,
             )
         except Exception as e:
-            raise NodeExpansionException(node, workflow=subgraph) from e
+            raise NodeExpansionException(node=node, workflow=subgraph) from e
 
 
 class WorkflowValue(Value[Workflow]):
