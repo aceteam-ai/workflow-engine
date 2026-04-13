@@ -15,7 +15,6 @@ from ..core import (
     NodeException,
     ShouldRetry,
     ShouldYield,
-    StakeholderLevel,
     ValidatedWorkflow,
     Workflow,
     WorkflowErrorsBuilder,
@@ -308,9 +307,8 @@ class ParallelExecutionAlgorithm(ExecutionAlgorithm):
                 )
             except Exception as e:
                 if not isinstance(e, WorkflowException):
-                    raise WorkflowException(
+                    raise WorkflowException.for_operator(
                         f"Unhandled exception in workflow: {e}",
-                        level=StakeholderLevel.OPERATOR,
                     ) from e
                 raise
         except WorkflowException as e:
@@ -399,10 +397,9 @@ class ParallelExecutionAlgorithm(ExecutionAlgorithm):
             if isinstance(e, WorkflowException):
                 raise
             else:
-                raise NodeException(
-                    node,
+                raise NodeException.for_operator(
                     f"Unhandled exception in node {node_id}: {e}",
-                    level=StakeholderLevel.OPERATOR,
+                    node=node,
                 ) from e
 
         finally:

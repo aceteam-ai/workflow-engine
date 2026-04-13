@@ -11,7 +11,6 @@ from ..core import (
     File,
     JSONValue,
     SequenceValue,
-    StakeholderLevel,
     StringMapValue,
     Value,
     WorkflowException,
@@ -48,9 +47,8 @@ class CSVFileValue(TextFileValue):
 async def json_to_csv(value: JSONValue, context: ExecutionContext) -> CSVFileValue:
     data = value.root
     if not isinstance(data, (Mapping, Sequence)):
-        raise WorkflowException(
+        raise WorkflowException.for_user(
             "JSON value must be a mapping or sequence to be cast to CSV",
-            level=StakeholderLevel.USER,
         )
 
     if isinstance(data, Mapping):
@@ -64,9 +62,8 @@ async def json_to_csv(value: JSONValue, context: ExecutionContext) -> CSVFileVal
         elif isinstance(row, Mapping):
             rows.append(row)
         else:
-            raise WorkflowException(
+            raise WorkflowException.for_user(
                 f"Object {row} is not a mapping or sequence, need mappings or sequences to write to CSV",
-                level=StakeholderLevel.USER,
             )
 
     data_hash = md5(str(rows).encode()).hexdigest()
@@ -123,9 +120,8 @@ def sequence_to_csv(
             if isinstance(row, Sequence):
                 row = {str(i): v for i, v in enumerate(row)}
             if not isinstance(row, Mapping):
-                raise WorkflowException(
+                raise WorkflowException.for_user(
                     f"Object {obj} is not a mapping, need mappings to write to CSV",
-                    level=StakeholderLevel.USER,
                 )
             rows.append(row)
 

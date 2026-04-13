@@ -23,7 +23,6 @@ from workflow_engine import (
     WorkflowExecutionResultStatus,
 )
 from workflow_engine.contexts import InMemoryExecutionContext
-from workflow_engine.core import StakeholderLevel
 from workflow_engine.execution.retry import NodeRetryState, RetryTracker
 from workflow_engine.execution.topological import TopologicalExecutionAlgorithm
 
@@ -81,10 +80,9 @@ class RetryableNode(Node[RetryableInput, RetryableOutput, RetryableParams]):
         RetryableNode._attempt_counts[self.id] += 1
 
         if RetryableNode._attempt_counts[self.id] <= self.params.fail_count:
-            raise ShouldRetry(
+            raise ShouldRetry.for_user(
+                f"Temporary failure (attempt {RetryableNode._attempt_counts[self.id]})",
                 node=self,
-                message=f"Temporary failure (attempt {RetryableNode._attempt_counts[self.id]})",
-                level=StakeholderLevel.USER,
                 backoff=timedelta(milliseconds=10),  # Short backoff for tests
             )
 
@@ -130,10 +128,9 @@ class RetryableNode2(Node[RetryableInput, RetryableOutput, RetryableParams]):
         RetryableNode2._attempt_counts[self.id] += 1
 
         if RetryableNode2._attempt_counts[self.id] <= self.params.fail_count:
-            raise ShouldRetry(
+            raise ShouldRetry.for_user(
+                f"Temporary failure (attempt {RetryableNode2._attempt_counts[self.id]})",
                 node=self,
-                message=f"Temporary failure (attempt {RetryableNode2._attempt_counts[self.id]})",
-                level=StakeholderLevel.USER,
                 backoff=timedelta(milliseconds=10),
             )
         return RetryableOutput(result=StringValue(f"Node2: {input.value.root}"))
@@ -183,10 +180,9 @@ class CustomRetryNode(Node[RetryableInput, RetryableOutput, RetryableParams]):
         CustomRetryNode._attempt_counts[self.id] += 1
 
         if CustomRetryNode._attempt_counts[self.id] <= self.params.fail_count:
-            raise ShouldRetry(
+            raise ShouldRetry.for_user(
+                f"Temporary failure (attempt {CustomRetryNode._attempt_counts[self.id]})",
                 node=self,
-                message=f"Temporary failure (attempt {CustomRetryNode._attempt_counts[self.id]})",
-                level=StakeholderLevel.USER,
                 backoff=timedelta(milliseconds=10),
             )
 
@@ -227,10 +223,9 @@ class TestRetryTracker:
         # Record first retry
         tracker.record_retry(
             node.id,
-            ShouldRetry(
-                node,
+            ShouldRetry.for_user(
                 "error",
-                level=StakeholderLevel.USER,
+                node=node,
                 backoff=timedelta(seconds=1),
             ),
         )
@@ -239,10 +234,9 @@ class TestRetryTracker:
         # Record second retry
         tracker.record_retry(
             node.id,
-            ShouldRetry(
-                node,
+            ShouldRetry.for_user(
                 "error",
-                level=StakeholderLevel.USER,
+                node=node,
                 backoff=timedelta(seconds=1),
             ),
         )
@@ -255,19 +249,17 @@ class TestRetryTracker:
 
         tracker.record_retry(
             node.id,
-            ShouldRetry(
-                node,
+            ShouldRetry.for_user(
                 "error",
-                level=StakeholderLevel.USER,
+                node=node,
                 backoff=timedelta(seconds=1),
             ),
         )
         tracker.record_retry(
             node.id,
-            ShouldRetry(
-                node,
+            ShouldRetry.for_user(
                 "error",
-                level=StakeholderLevel.USER,
+                node=node,
                 backoff=timedelta(seconds=1),
             ),
         )
@@ -281,19 +273,17 @@ class TestRetryTracker:
 
         tracker.record_retry(
             node.id,
-            ShouldRetry(
-                node,
+            ShouldRetry.for_user(
                 "error",
-                level=StakeholderLevel.USER,
+                node=node,
                 backoff=timedelta(seconds=1),
             ),
         )
         tracker.record_retry(
             node.id,
-            ShouldRetry(
-                node,
+            ShouldRetry.for_user(
                 "error",
-                level=StakeholderLevel.USER,
+                node=node,
                 backoff=timedelta(seconds=1),
             ),
         )
