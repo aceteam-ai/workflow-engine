@@ -13,7 +13,6 @@ from ..core import (
     ExecutionContext,
     FileValue,
     Node,
-    StakeholderLevel,
     ValidatedWorkflow,
     WorkflowErrors,
     WorkflowException,
@@ -97,17 +96,15 @@ class LocalContext(ExecutionContext):
     ) -> bytes:
         path = self.get_file_path(file.path)
         if not os.path.exists(path):
-            raise WorkflowException(
+            raise WorkflowException.for_user(
                 f"File {file.path} not found",
-                level=StakeholderLevel.USER,
             )
         try:
             with open(path, "rb") as f:
                 return f.read()
         except Exception as e:
-            raise WorkflowException(
+            raise WorkflowException.for_user(
                 f"Failed to read file {file.path}",
-                level=StakeholderLevel.USER,
             ) from e
 
     @override
@@ -122,9 +119,8 @@ class LocalContext(ExecutionContext):
             with open(path, "wb") as f:
                 f.write(content)
         except Exception as e:
-            raise WorkflowException(
+            raise WorkflowException.for_user(
                 f"Failed to write file {file.path}",
-                level=StakeholderLevel.USER,
             ) from e
         return file
 

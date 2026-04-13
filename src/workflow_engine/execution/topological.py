@@ -11,7 +11,6 @@ from ..core import (
     DataMapping,
     ExecutionAlgorithm,
     ExecutionContext,
-    StakeholderLevel,
     ValidatedWorkflow,
     WorkflowErrorsBuilder,
     WorkflowException,
@@ -188,9 +187,8 @@ class TopologicalExecutionAlgorithm(ExecutionAlgorithm):
                 if isinstance(e, WorkflowException):
                     raise
                 else:
-                    raise WorkflowException(
+                    raise WorkflowException.for_operator(
                         f"Unhandled exception in workflow: {e}",
-                        level=StakeholderLevel.OPERATOR,
                     ) from e
         except WorkflowException as e:
             errors.add(e)

@@ -10,8 +10,6 @@ import networkx as nx
 from overrides import override
 from pydantic import ConfigDict, Field, ValidationError, model_validator
 
-from workflow_engine.core.stakeholder import StakeholderLevel
-
 from ..utils.asynchronous import gather
 from ..utils.immutable import ImmutableBaseModel
 from .edge import Edge
@@ -282,10 +280,9 @@ class ValidatedWorkflow(Workflow):
             try:
                 ready_nodes[node.id] = node_input_dict
             except ValidationError as e:
-                raise NodeException(
+                raise NodeException.for_user(
                     node,
                     f"Input {node_input_dict} for node {node.id} is invalid: {e}",
-                    level=StakeholderLevel.USER,
                 ) from e
         return ready_nodes
 
@@ -322,9 +319,8 @@ class ValidatedWorkflow(Workflow):
             if edge.source_id not in node_outputs:
                 if partial:
                     continue
-                raise WorkflowException(
+                raise WorkflowException.for_user(
                     f"Cannot get output from node {edge.source_id}.",
-                    level=StakeholderLevel.USER,
                 )
             node_output = node_outputs[edge.source_id]
             try:
@@ -335,9 +331,8 @@ class ValidatedWorkflow(Workflow):
             except KeyError as e:
                 if partial:
                     continue
-                raise WorkflowException(
+                raise WorkflowException.for_user(
                     f"Cannot get output from node {edge.source_id} at path {edge.source_key_path_string}.",
-                    level=StakeholderLevel.USER,
                 ) from e
 
             expected_type = resolve_path(
@@ -347,10 +342,9 @@ class ValidatedWorkflow(Workflow):
 
             # Validate that the output can be cast to the expected type
             if not output_field.can_cast_to(expected_type):
-                raise WorkflowException(
+                raise WorkflowException.for_builder(
                     f"Output '{edge.target_key}' from {edge.source_id}.{edge.source_key_path_string} "
                     f"cannot be cast: {output_field} is not assignable to {expected_type}",
-                    level=StakeholderLevel.BUILDER,
                 )
 
             outputs_to_cast.append((edge.target_key, output_field, expected_type))
@@ -405,9 +399,8 @@ class ValidatedWorkflow(Workflow):
             NodeExpansionException: If the expansion fails for any other reason
         """
         if node_id not in self.nodes_by_id:
-            raise WorkflowException(
+            raise WorkflowException.for_engineer(
                 f"Node '{node_id}' is a target for expansion, but is not found in the workflow.",
-                level=StakeholderLevel.ENGINEER,
             )
         node = self.nodes_by_id[node_id]
 

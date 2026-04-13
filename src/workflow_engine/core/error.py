@@ -78,6 +78,66 @@ class WorkflowException(RuntimeError):
             traceback=format_exception(self),
         )
 
+    @classmethod
+    def for_user(
+        cls,
+        message: str,
+        *,
+        node_id: str | None = None,
+        **kwargs,
+    ) -> Self:
+        return cls(
+            message,
+            level=StakeholderLevel.USER,
+            node_id=node_id,
+            **kwargs,
+        )
+
+    @classmethod
+    def for_builder(
+        cls,
+        message: str,
+        *,
+        node_id: str | None = None,
+        **kwargs,
+    ) -> Self:
+        return cls(
+            message,
+            level=StakeholderLevel.BUILDER,
+            node_id=node_id,
+            **kwargs,
+        )
+
+    @classmethod
+    def for_operator(
+        cls,
+        message: str,
+        *,
+        node_id: str | None = None,
+        **kwargs,
+    ) -> Self:
+        return cls(
+            message,
+            level=StakeholderLevel.OPERATOR,
+            node_id=node_id,
+            **kwargs,
+        )
+
+    @classmethod
+    def for_engineer(
+        cls,
+        message: str,
+        *,
+        node_id: str | None = None,
+        **kwargs,
+    ) -> Self:
+        return cls(
+            message,
+            level=StakeholderLevel.ENGINEER,
+            node_id=node_id,
+            **kwargs,
+        )
+
 
 class NodeException(WorkflowException):
     """
@@ -93,6 +153,64 @@ class NodeException(WorkflowException):
     ):
         super().__init__(message, level=level, node_id=node.id)
         self.node = node
+
+    @classmethod
+    def for_user(  # pyright: ignore[reportIncompatibleMethodOverride]
+        cls,
+        node: "Node",
+        message: str,
+        *,
+        node_id: str | None = None,
+        **kwargs,
+    ) -> Self:
+        return cls(
+            node,
+            message,
+            level=StakeholderLevel.USER,
+            **kwargs,
+        )
+
+    @classmethod
+    def for_builder(  # pyright: ignore[reportIncompatibleMethodOverride]
+        cls,
+        node: "Node",
+        message: str,
+        **kwargs,
+    ) -> Self:
+        return cls(
+            node,
+            message,
+            level=StakeholderLevel.BUILDER,
+            **kwargs,
+        )
+
+    @classmethod
+    def for_operator(  # pyright: ignore[reportIncompatibleMethodOverride]
+        cls,
+        node: "Node",
+        message: str,
+        **kwargs,
+    ) -> Self:
+        return cls(
+            node,
+            message,
+            level=StakeholderLevel.OPERATOR,
+            **kwargs,
+        )
+
+    @classmethod
+    def for_engineer(  # pyright: ignore[reportIncompatibleMethodOverride]
+        cls,
+        node: "Node",
+        message: str,
+        **kwargs,
+    ) -> Self:
+        return cls(
+            node,
+            message,
+            level=StakeholderLevel.ENGINEER,
+            **kwargs,
+        )
 
 
 class NodeExpansionException(NodeException):

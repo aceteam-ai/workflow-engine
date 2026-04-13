@@ -34,7 +34,6 @@ from ..utils.semver import (
     parse_semantic_version,
 )
 from .error import NodeException, ShouldYield, WorkflowException
-from .stakeholder import StakeholderLevel
 from .values import (
     Data,
     DataMapping,
@@ -374,17 +373,15 @@ class Node(ImmutableBaseModel, Generic[Input_contra, Output, Params_co]):
             if key not in input_fields:
                 if allow_extra_input:
                     continue
-                raise NodeException(
+                raise NodeException.for_builder(
                     self,
                     f"Unknown input field '{key}' for node {self.id}",
-                    level=StakeholderLevel.BUILDER,
                 )
             input_field_type, _ = input_fields[key]
             if not value.can_cast_to(input_field_type):
-                raise NodeException(
+                raise NodeException.for_user(
                     self,
                     f"Input {value} for node {self.id} is invalid: {value} is not assignable to {input_field_type}",
-                    level=StakeholderLevel.USER,
                 )
 
         # Cast all inputs in parallel
@@ -407,10 +404,9 @@ class Node(ImmutableBaseModel, Generic[Input_contra, Output, Params_co]):
         try:
             return input_type.model_validate(casted_input)
         except ValidationError as e:
-            raise NodeException(
+            raise NodeException.for_user(
                 self,
                 f"Input {casted_input} for node {self.id} is invalid: {e}",
-                level=StakeholderLevel.USER,
             ) from e
 
     # @abstractmethod
@@ -448,10 +444,9 @@ class Node(ImmutableBaseModel, Generic[Input_contra, Output, Params_co]):
                 try:
                     input_obj = await self._cast_input(input, context, input_type)
                 except ValidationError as e:
-                    raise NodeException(
+                    raise NodeException.for_user(
                         self,
                         f"Input {input} for node {self.id} is invalid: {e}",
-                        level=StakeholderLevel.USER,
                     ) from e
                 casted_input = get_data_dict(input_obj)
                 output = await context.on_node_start(
@@ -508,10 +503,9 @@ class Node(ImmutableBaseModel, Generic[Input_contra, Output, Params_co]):
                 if isinstance(e, WorkflowException):
                     raise
                 else:
-                    raise NodeException(
+                    raise NodeException.for_operator(
                         self,
                         f"Unhandled exception in node {self.id}: {e}",
-                        level=StakeholderLevel.OPERATOR,
                     ) from e
         except WorkflowException as e:
             # In subclasses, you don't have to worry about logging the error,
@@ -524,10 +518,9 @@ class Node(ImmutableBaseModel, Generic[Input_contra, Output, Params_co]):
             else:
                 if e.node_id != self.id:
                     # operator-level exception, because the only way such a mismatch can occur is if the node implementation did something illegal
-                    raise NodeException(
+                    raise NodeException.for_operator(
                         self,
                         f"Node '{self.id}' caught a WorkflowException with mismatched ID '{e.node_id}'.",
-                        level=StakeholderLevel.OPERATOR,
                     ) from e
 
             context_e = await context.on_node_error(
@@ -543,16 +536,14 @@ class Node(ImmutableBaseModel, Generic[Input_contra, Output, Params_co]):
                 )
                 return context_e
             if not isinstance(context_e, Exception):
-                raise NodeException(
+                raise NodeException.for_operator(
                     self,
                     f"Context returned an unexpected type: {type(context_e)}",
-                    level=StakeholderLevel.OPERATOR,
                 ) from e
             if not isinstance(context_e, WorkflowException):
-                raise NodeException(
+                raise NodeException.for_operator(
                     self,
                     f"Unhandled exception in node {self.id}: {context_e}",
-                    level=StakeholderLevel.OPERATOR,
                 ) from context_e
             raise context_e
 
