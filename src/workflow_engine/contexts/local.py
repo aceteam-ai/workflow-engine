@@ -157,8 +157,8 @@ class LocalContext(ExecutionContext):
         input_type: type[Data],
         output_type: type[Data],
         input: DataMapping,
-        exception: Exception,
-    ) -> Exception | DataMapping:
+        exception: WorkflowException,
+    ) -> WorkflowException | DataMapping:
         self._idempotent_write(
             path=self.node_error_path(node.id),
             data=json.dumps(exception),

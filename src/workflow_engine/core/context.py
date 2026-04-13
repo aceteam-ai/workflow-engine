@@ -5,7 +5,7 @@ from typing import TypeVar
 
 from overrides import EnforceOverrides
 
-from .error import ShouldRetry, ShouldYield, WorkflowErrors
+from .error import ShouldRetry, ShouldYield, WorkflowErrors, WorkflowException
 from .execution import WorkflowExecutionResult
 from .node import Node, NodeRegistry
 from .values import Data, DataMapping, FileValue, ValueRegistry
@@ -99,11 +99,11 @@ class ExecutionContext(ABC, EnforceOverrides):
         input_type: type[Data],
         output_type: type[Data],
         input: DataMapping,
-        exception: Exception,
-    ) -> Exception | DataMapping:
+        exception: WorkflowException,
+    ) -> WorkflowException | DataMapping:
         """
         A hook that is called when a node raises an error.
-        The context can modify the error by returning a different Exception, or
+        The context can modify the error by returning a different exception, or
         it can silence the error by returning an output.
         """
         return exception
