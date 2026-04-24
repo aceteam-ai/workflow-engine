@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING, Self
 
 from pydantic import Field
 
-from ..utils.immutable import ImmutableBaseModel
+from ..utils.model import ImmutableBaseModel
 from .stakeholder import StakeholderLevel
 
 if TYPE_CHECKING:

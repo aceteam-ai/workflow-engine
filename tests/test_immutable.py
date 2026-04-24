@@ -3,7 +3,7 @@ from typing import ClassVar
 import pytest
 from pydantic import ConfigDict, ValidationError
 
-from workflow_engine.utils.immutable import (
+from workflow_engine.utils.model import (
     ImmutableBaseModel,
     ImmutableRootModel,
 )

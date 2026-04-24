@@ -26,7 +26,7 @@ from pydantic import ConfigDict, Field, ValidationError, model_validator
 from typing_extensions import overload
 
 from ..utils.asynchronous import gather
-from ..utils.immutable import ImmutableBaseModel
+from ..utils.model import ImmutableBaseModel
 from ..utils.semver import (
     LATEST_SEMANTIC_VERSION,
     SEMANTIC_VERSION_OR_LATEST_PATTERN,

@@ -1,11 +1,12 @@
 # workflow_engine/core/values/extraction.py
 
-from pydantic import BaseModel, Field
+from pydantic import Field
 
+from ...utils.model import ImmutableBaseModel
 from .model import ModelValue
 
 
-class Entity(BaseModel):
+class Entity(ImmutableBaseModel):
     """An extracted entity from a document."""
 
     id: str
@@ -14,7 +15,7 @@ class Entity(BaseModel):
     confidence: float | None = Field(default=None, ge=0.0, le=1.0)
 
 
-class Relation(BaseModel):
+class Relation(ImmutableBaseModel):
     """A relation between two entities."""
 
     id: str
@@ -24,7 +25,7 @@ class Relation(BaseModel):
     confidence: float | None = Field(default=None, ge=0.0, le=1.0)
 
 
-class ExtractionResult(BaseModel):
+class ExtractionResult(ImmutableBaseModel):
     """Result of an entity/relation extraction from a document."""
 
     document_id: str

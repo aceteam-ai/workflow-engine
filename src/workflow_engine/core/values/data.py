@@ -8,8 +8,8 @@ from pydantic import ConfigDict, create_model
 from pydantic.fields import FieldInfo
 
 from ...utils.asynchronous import gather
-from ...utils.immutable import ImmutableBaseModel
 from ...utils.iter import only
+from ...utils.model import ImmutableBaseModel
 from .mapping import StringMapValue
 from .value import Caster, Value, ValueType, get_origin_and_args
 

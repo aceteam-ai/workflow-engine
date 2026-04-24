@@ -11,7 +11,7 @@ from overrides import override
 from pydantic import ConfigDict, Field, ValidationError, model_validator
 
 from ..utils.asynchronous import gather
-from ..utils.immutable import ImmutableBaseModel
+from ..utils.model import ImmutableBaseModel
 from .edge import Edge
 from .error import NodeException, NodeExpansionException, WorkflowException
 from .io import InputNode, OutputNode

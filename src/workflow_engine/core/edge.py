@@ -6,7 +6,7 @@ from typing import Self
 
 from pydantic import model_validator
 
-from ..utils.immutable import ImmutableBaseModel
+from ..utils.model import ImmutableBaseModel
 from .node import Node
 from .values import Data, resolve_path
 

@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING, Any, ClassVar, Self
 
 from pydantic import ConfigDict, Field
 
-from ...utils.immutable import ImmutableBaseModel
+from ...utils.model import ImmutableBaseModel
 from .value import Value
 
 if TYPE_CHECKING:

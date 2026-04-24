@@ -24,7 +24,7 @@ from pydantic.fields import FieldInfo
 from pydantic_core import PydanticUndefined
 
 from ...utils.hash import json_digest
-from ...utils.immutable import ImmutableBaseModel
+from ...utils.model import ImmutableBaseModel
 from .data import Data, DataValue, build_data_type
 from .mapping import StringMapValue
 from .primitives import (
