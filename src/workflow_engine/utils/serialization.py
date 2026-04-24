@@ -31,13 +31,19 @@ def dumps_yaml(data: Any) -> str:
 class PydanticYamlMixin:
     @classmethod
     def model_validate_yaml(cls, stream: TextIO | str) -> Self:
-        assert issubclass(cls, BaseModel)
+        if not issubclass(cls, BaseModel):
+            raise TypeError(
+                f"{cls.__name__}.model_validate_yaml() requires cls to inherit from BaseModel"
+            )
         if isinstance(stream, str):
             return cls.model_validate(loads_yaml(stream))
         return cls.model_validate(load_yaml(stream))
 
     def model_dump_yaml(self) -> str:
-        assert isinstance(self, BaseModel)
+        if not isinstance(self, BaseModel):
+            raise TypeError(
+                f"{self.__class__.__name__}.model_dump_yaml() requires self to be a BaseModel instance"
+            )
         return dumps_yaml(self.model_dump(mode="json"))
 
 
