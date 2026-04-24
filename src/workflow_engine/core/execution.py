@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING, Mapping, Self
 from overrides import EnforceOverrides
 from pydantic import Field
 
-from ..utils.immutable import ImmutableBaseModel
+from ..utils.model import ImmutableBaseModel
 from .error import WorkflowErrors
 from .values import DataMapping
 from .workflow import ValidatedWorkflow

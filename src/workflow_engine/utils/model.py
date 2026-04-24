@@ -1,7 +1,22 @@
 from collections.abc import MutableMapping
 from typing import Any, Generic, Self, TypeVar
 
-from pydantic import BaseModel, ConfigDict, RootModel
+from pydantic import BaseModel as PydanticBaseModel
+from pydantic import ConfigDict
+from pydantic import RootModel as PydanticRootModel
+
+from .serialization import PydanticYamlMixin
+
+T = TypeVar("T")
+
+
+class BaseModel(PydanticBaseModel, PydanticYamlMixin):
+    pass
+
+
+class RootModel(PydanticRootModel[T], PydanticYamlMixin, Generic[T]):
+    pass
+
 
 _immutable_model_config = ConfigDict(
     frozen=True,
@@ -65,7 +80,17 @@ class ImmutableRootModel(RootModel[T], _ImmutableMixin, Generic[T]):
     pass
 
 
+class MutableBaseModel(BaseModel):
+    pass
+
+
+class MutableRootModel(RootModel[T], Generic[T]):
+    pass
+
+
 __all__ = [
     "ImmutableBaseModel",
     "ImmutableRootModel",
+    "MutableBaseModel",
+    "MutableRootModel",
 ]

@@ -9,7 +9,7 @@ import asyncio
 import time
 from datetime import timedelta
 
-from ..utils.immutable import ImmutableBaseModel
+from ..utils.model import ImmutableBaseModel
 
 
 class RateLimitConfig(ImmutableBaseModel):

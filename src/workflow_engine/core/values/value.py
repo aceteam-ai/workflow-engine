@@ -24,7 +24,7 @@ from overrides import override
 from pydantic import PrivateAttr
 
 from ...utils.asynchronous import is_coroutine
-from ...utils.immutable import ImmutableRootModel
+from ...utils.model import ImmutableRootModel
 
 if TYPE_CHECKING:
     from ..context import ExecutionContext
