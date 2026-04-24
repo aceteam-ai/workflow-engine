@@ -5,8 +5,8 @@ from yaml import dump as yaml_dump
 from yaml import load as yaml_load
 
 try:
-    from yaml import CDumper as YamlDumper
-    from yaml import CLoader as YamlLoader
+    from yaml import CSafeDumper as YamlDumper
+    from yaml import CSafeLoader as YamlLoader
 except ImportError:
     from yaml import SafeDumper as YamlDumper
     from yaml import SafeLoader as YamlLoader
