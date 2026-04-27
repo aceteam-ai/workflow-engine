@@ -1,12 +1,14 @@
 from collections.abc import Mapping
-from tomllib import loads as toml_loads
+from tomllib import load as load_toml
+from tomllib import loads as loads_toml
 from typing import Any, Self, TextIO
 
 from pydantic import BaseModel
 from pydantic.config import ExtraValues
-from tomli_w import dumps as toml_dumps
-from yaml import dump as yaml_dump
-from yaml import load as yaml_load
+from tomli_w import dump as dump_toml
+from tomli_w import dumps as dumps_toml
+from yaml import dump as _yaml_dump
+from yaml import load as _yaml_load
 
 try:
     from yaml import CSafeDumper as YamlDumper
@@ -35,7 +37,7 @@ class PydanticTomlMixin:
             )
         if not isinstance(toml_data, str):
             toml_data = toml_data.read()
-        obj = toml_loads(toml_data)
+        obj = loads_toml(toml_data)
         return cls.model_validate(
             obj,
             strict=strict,
@@ -56,23 +58,23 @@ class PydanticTomlMixin:
             raise TypeError(
                 f"Expected the serialized object to be a Mapping, got {type(obj)}"
             )
-        return toml_dumps(obj)
+        return dumps_toml(obj)
 
 
 def load_yaml(stream: TextIO) -> Any:
-    return yaml_load(stream, Loader=YamlLoader)
+    return _yaml_load(stream, Loader=YamlLoader)
 
 
 def loads_yaml(s: str) -> Any:
-    return yaml_load(s, Loader=YamlLoader)
+    return _yaml_load(s, Loader=YamlLoader)
 
 
 def dump_yaml(data: Any, stream: TextIO) -> None:
-    yaml_dump(data, stream, Dumper=YamlDumper)
+    _yaml_dump(data, stream, Dumper=YamlDumper)
 
 
 def dumps_yaml(data: Any) -> str:
-    return yaml_dump(data, Dumper=YamlDumper)
+    return _yaml_dump(data, Dumper=YamlDumper)
 
 
 class PydanticYamlMixin:
@@ -115,9 +117,14 @@ class PydanticYamlMixin:
 
 
 __all__ = [
+    "PydanticTomlMixin",
     "PydanticYamlMixin",
+    "dump_toml",
     "dump_yaml",
+    "dumps_toml",
     "dumps_yaml",
+    "load_toml",
     "load_yaml",
+    "loads_toml",
     "loads_yaml",
 ]
