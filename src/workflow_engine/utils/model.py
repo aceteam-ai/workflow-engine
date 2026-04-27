@@ -5,16 +5,25 @@ from pydantic import BaseModel as PydanticBaseModel
 from pydantic import ConfigDict
 from pydantic import RootModel as PydanticRootModel
 
-from .serialization import PydanticYamlMixin
+from .serialization import PydanticTomlMixin, PydanticYamlMixin
 
 T = TypeVar("T")
 
 
-class BaseModel(PydanticBaseModel, PydanticYamlMixin):
+class BaseModel(
+    PydanticBaseModel,
+    PydanticTomlMixin,
+    PydanticYamlMixin,
+):
     pass
 
 
-class RootModel(PydanticRootModel[T], PydanticYamlMixin, Generic[T]):
+class RootModel(
+    PydanticRootModel[T],
+    PydanticTomlMixin,
+    PydanticYamlMixin,
+    Generic[T],
+):
     pass
 
 
