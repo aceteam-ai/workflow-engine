@@ -1,6 +1,10 @@
+from collections.abc import Mapping
+from tomllib import loads as toml_loads
 from typing import Any, Self, TextIO
 
 from pydantic import BaseModel
+from pydantic.config import ExtraValues
+from tomli_w import dumps as toml_dumps
 from yaml import dump as yaml_dump
 from yaml import load as yaml_load
 
@@ -10,6 +14,49 @@ try:
 except ImportError:
     from yaml import SafeDumper as YamlDumper
     from yaml import SafeLoader as YamlLoader
+
+
+class PydanticTomlMixin:
+    @classmethod
+    def model_validate_toml(
+        cls,
+        toml_data: TextIO | str,
+        *,
+        strict: bool | None = None,
+        extra: ExtraValues | None = None,
+        from_attributes: bool | None = None,
+        context: Any | None = None,
+        by_alias: bool | None = None,
+        by_name: bool | None = None,
+    ) -> Self:
+        if not issubclass(cls, BaseModel):
+            raise TypeError(
+                f"{cls.__name__}.model_validate_toml() requires cls to inherit from BaseModel"
+            )
+        if not isinstance(toml_data, str):
+            toml_data = toml_data.read()
+        obj = toml_loads(toml_data)
+        return cls.model_validate(
+            obj,
+            strict=strict,
+            extra=extra,
+            from_attributes=from_attributes,
+            context=context,
+            by_alias=by_alias,
+            by_name=by_name,
+        )
+
+    def model_dump_toml(self) -> str:
+        if not isinstance(self, BaseModel):
+            raise TypeError(
+                f"{self.__class__.__name__}.model_dump_toml() requires self to be a BaseModel instance"
+            )
+        obj = self.model_dump(mode="json")
+        if not isinstance(obj, Mapping):
+            raise TypeError(
+                f"Expected the serialized object to be a Mapping, got {type(obj)}"
+            )
+        return toml_dumps(obj)
 
 
 def load_yaml(stream: TextIO) -> Any:
@@ -30,14 +77,34 @@ def dumps_yaml(data: Any) -> str:
 
 class PydanticYamlMixin:
     @classmethod
-    def model_validate_yaml(cls, stream: TextIO | str) -> Self:
+    def model_validate_yaml(
+        cls,
+        yaml_data: TextIO | str,
+        *,
+        strict: bool | None = None,
+        extra: ExtraValues | None = None,
+        from_attributes: bool | None = None,
+        context: Any | None = None,
+        by_alias: bool | None = None,
+        by_name: bool | None = None,
+    ) -> Self:
         if not issubclass(cls, BaseModel):
             raise TypeError(
                 f"{cls.__name__}.model_validate_yaml() requires cls to inherit from BaseModel"
             )
-        if isinstance(stream, str):
-            return cls.model_validate(loads_yaml(stream))
-        return cls.model_validate(load_yaml(stream))
+        if isinstance(yaml_data, str):
+            obj = loads_yaml(yaml_data)
+        else:
+            obj = load_yaml(yaml_data)
+        return cls.model_validate(
+            obj,
+            strict=strict,
+            extra=extra,
+            from_attributes=from_attributes,
+            context=context,
+            by_alias=by_alias,
+            by_name=by_name,
+        )
 
     def model_dump_yaml(self) -> str:
         if not isinstance(self, BaseModel):

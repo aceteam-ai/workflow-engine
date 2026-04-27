@@ -6,6 +6,7 @@ from pydantic import BaseModel
 from workflow_engine.utils.model import BaseModel as WEBaseModel
 from workflow_engine.utils.model import RootModel as WERootModel
 from workflow_engine.utils.serialization import (
+    PydanticTomlMixin,
     PydanticYamlMixin,
     dumps_yaml,
     load_yaml,
@@ -19,6 +20,10 @@ class Sample(WEBaseModel):
 
 
 class SampleRoot(WERootModel[list[int]]):
+    pass
+
+
+class SampleDictRoot(WERootModel[dict[str, int]]):
     pass
 
 
@@ -83,4 +88,66 @@ def test_model_validate_yaml_validation_error():
 
 def test_pydantic_yaml_mixin_is_inherited():
     assert issubclass(Sample, PydanticYamlMixin)
+    assert issubclass(Sample, BaseModel)
+
+
+def test_model_validate_toml_from_string():
+    model = Sample.model_validate_toml('name = "alice"\nage = 30\n')
+    assert model == Sample(name="alice", age=30)
+
+
+def test_model_validate_toml_from_stream():
+    model = Sample.model_validate_toml(io.StringIO('name = "bob"\nage = 25\n'))
+    assert model == Sample(name="bob", age=25)
+
+
+def test_model_dump_toml_roundtrip():
+    original = Sample(name="carol", age=42)
+    dumped = original.model_dump_toml()
+    assert Sample.model_validate_toml(dumped) == original
+
+
+def test_model_validate_toml_dict_root_model():
+    model = SampleDictRoot.model_validate_toml("a = 1\nb = 2\n")
+    assert model.root == {"a": 1, "b": 2}
+
+
+def test_model_dump_toml_dict_root_model_roundtrip():
+    original = SampleDictRoot(root={"x": 1, "y": 2})
+    assert SampleDictRoot.model_validate_toml(original.model_dump_toml()) == original
+
+
+def test_model_validate_toml_requires_base_model():
+    class NotAModel(PydanticTomlMixin):
+        pass
+
+    with pytest.raises(TypeError, match="requires cls to inherit from BaseModel"):
+        NotAModel.model_validate_toml('foo = "bar"')
+
+
+def test_model_dump_toml_requires_base_model_instance():
+    class NotAModel(PydanticTomlMixin):
+        pass
+
+    with pytest.raises(TypeError, match="requires self to be a BaseModel instance"):
+        NotAModel().model_dump_toml()
+
+
+def test_model_validate_toml_validation_error():
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError):
+        Sample.model_validate_toml('name = "dave"\nage = "not_a_number"\n')
+
+
+def test_model_dump_toml_non_mapping_raises():
+    original = SampleRoot(root=[1, 2, 3])
+    with pytest.raises(
+        TypeError, match="Expected the serialized object to be a Mapping"
+    ):
+        original.model_dump_toml()
+
+
+def test_pydantic_toml_mixin_is_inherited():
+    assert issubclass(Sample, PydanticTomlMixin)
     assert issubclass(Sample, BaseModel)
