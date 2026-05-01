@@ -2,10 +2,9 @@
 from __future__ import annotations
 
 import logging
-import re
 import warnings
 from abc import ABC, abstractmethod
-from collections.abc import Collection, Mapping
+from collections.abc import Mapping
 from functools import cached_property
 from typing import (
     TYPE_CHECKING,
@@ -18,7 +17,6 @@ from typing import (
     Self,
     TypeVar,
     Unpack,
-    get_origin,
 )
 
 from overrides import final, override
@@ -76,9 +74,6 @@ class Empty(Params):
     """
 
     pass
-
-
-generic_pattern = re.compile(r"^[a-zA-Z]\w+\[.*\]$")
 
 
 class NodeTypeInfo(ImmutableBaseModel):
@@ -186,39 +181,30 @@ class Node(ImmutableBaseModel, Generic[Input_contra, Output, Params_co]):
 
     # --------------------------------------------------------------------------
     # SUBCLASS DISPATCH
-    # This trick to adds all defined Node subclasses to a defualt NodeRegistry.
-    # Once in the registry, we can look up the value of the .type field's
-    # annotation to determine the corresponding class.
-    # Classes without a .type field annotation, like the Node class itself, are
-    # registered as base classes which can be dispatched to any of their
-    # subclasses.
-    # annotation on the .type field to determine corresponding class.
-    # However, this is brittle to the construction of multiple conflicting Node
-    # subclasses with the same type name, which can happen when using multiple
-    # packages that all share workflow_engine as a dependency.
-    # To overcome this, the defualt NodeRegistry is lazy and does not construct
-    # its internal mappings until it is actually used.
-    # You can always substitute your own manually constructed NodeRegistry to
-    # avoid these issues -- in fact, that is the recommended approach even if
-    # you do not have collisions.
+    # Each concrete Node subclass registers itself on the default lazy registry
+    # when the class body is executed. The registry key defaults to ``TYPE_INFO.name``
+    # when present, otherwise the class name with an optional ``Node`` suffix
+    # removed; the abstract base ``Node`` class registers under the name ``"Node"``.
+    #
+    # This is brittle when multiple packages define different classes for the
+    # same type name; prefer supplying your own NodeRegistry in that case.
+    #
+    # The default registry stays lazy until first use so import order does not
+    # eagerly build the mapping.
 
     @classmethod
-    def _concrete_type_name(cls) -> str | None:
-        while generic_pattern.match(cls.__name__) is not None:
-            assert cls.__base__ is not None
-            cls = cls.__base__
-        type_annotation = cls.__annotations__.get("type", None)
-        if type_annotation is None or get_origin(type_annotation) is not Literal:
-            return None
-        else:
-            (type_name,) = type_annotation.__args__
-            assert isinstance(type_name, str), type_name
-            return type_name
+    def _concrete_type_name(cls) -> str:
+        if cls is Node:
+            return "Node"
+        type_info = getattr(cls, "TYPE_INFO", None)
+        if type_info is not None:
+            return type_info.name
+        return cls.__name__.removesuffix("Node")
 
     def __init_subclass__(cls, **kwargs: Unpack[ConfigDict]):
         super().__init_subclass__(**kwargs)  # type: ignore
 
-        NodeRegistry.DEFAULT.register_node_class(cls)
+        NodeRegistry.DEFAULT.register(cls)
 
     # --------------------------------------------------------------------------
     # NAMING
@@ -620,48 +606,30 @@ def _migrate_node_data(
 
 class NodeRegistry(ABC):
     """
-    An immutable registry of two types of registrations:
-    - Node types: A mapping from names to node classes.
-    - Base node classes: A class that should be polymorphically replaced with a
-      subtype from this registry. Obviously, `Node` itself is a base node class,
-      but you may encounter more.
+    An immutable registry of concrete node classes by their names.
     """
 
     DEFAULT: ClassVar[LazyNodeRegistry]
 
     @abstractmethod
-    def get_node_class(self, name: str) -> type[Node]:
+    def get(self, name: str) -> type[Node] | None:
         """
-        Get a node class by name and version.
-        """
-        raise NotImplementedError()
-
-    @abstractmethod
-    def is_base_node_class(self, base_node_cls: type[Node]) -> bool:
-        """
-        Check if a class is a base node class.
+        Get a node class by name, or None if the name is not registered.
         """
         raise NotImplementedError()
 
     @abstractmethod
-    def all_concrete_node_classes(self) -> Iterable[tuple[str, type[Node]]]:
+    def items(self) -> Iterable[tuple[str, type[Node]]]:
         """
-        Return all registered concrete node classes, excluding base node classes.
-        """
-        raise NotImplementedError()
-
-    @abstractmethod
-    def all_base_node_classes(self) -> Iterable[type[Node]]:
-        """
-        Return all registered base node classes.
+        Return all registered node classes as (registry name, class) pairs.
         """
         raise NotImplementedError()
 
-    def load_node(self, node: Node) -> Node:
+    def load(self, node: Node) -> Node:
         """
         Load an untyped node into its concrete typed form.
 
-        If the node is already a concrete type (not a base class), returns it unchanged.
+        If the node is already a concrete type, returns it unchanged.
         Otherwise, looks up the concrete type, applies migrations, and returns a typed instance.
 
         Args:
@@ -673,10 +641,7 @@ class NodeRegistry(ABC):
         Raises:
             ValueError: If the node type is not registered
         """
-        if not self.is_base_node_class(node.__class__):
-            return node
-
-        cls = self.get_node_class(node.type)
+        cls = self.get(node.type)
         if cls is None:
             raise ValueError(f'Node type "{node.type}" is not registered')
 
@@ -684,6 +649,10 @@ class NodeRegistry(ABC):
             warnings.warn(
                 f"Node {node.id} will be reloaded as an instance of {cls.__name__}, which is not a subclass of its current class {node.__class__.__name__}. This is not a bug, just unusual."
             )
+
+        if isinstance(node, cls):
+            # no transformation needed; node is already an instance of the class
+            return node
 
         data = node.model_dump()
         # Attempt migration before dispatching to subclass
@@ -713,32 +682,76 @@ class NodeRegistry(ABC):
         Extend the registry with a new builder.
         """
         builder = NodeRegistry.builder(lazy=lazy)
-        for _, cls in self.all_concrete_node_classes():
-            builder.register_node_class(cls)
-        for cls in self.all_base_node_classes():
-            builder.register_node_class(cls)
+        for _, cls in self.items():
+            builder.register(cls)
         return builder
 
 
 class NodeRegistryBuilder(ABC):
     """
-    An immutable builder for a mapping from node types to node
+    A mutable builder for a mapping from node types to node
     classes, allowing us to replace base node classes with their subtypes by
     looking up their identifiers.
     """
 
     @abstractmethod
-    def register_node_class(self, node_cls: type[Node]) -> Self:
-        pass
-
-    @abstractmethod
-    def remove_node_class(
+    def register(
         self,
         node_cls: type[Node],
+        name: str | None = None,
+    ) -> Self:
+        """
+        Register a node class by name.
+        If name is provided, use it as the registry key.
+        Otherwise, use ``node_cls._concrete_type_name()``.
+        """
+        raise NotImplementedError()
+
+    @abstractmethod
+    def get(self, name: str) -> type[Node] | None:
+        """
+        Returns the node class registered for the given name, or None if not found.
+        """
+        raise NotImplementedError()
+
+    @abstractmethod
+    def _pop(
+        self,
+        name: str,
+    ) -> type[Node]:
+        """
+        Remove a registered Node class by name and return it.
+        Raises KeyError if the node class is not registered.
+        """
+        raise NotImplementedError()
+
+    def unregister(
+        self,
+        name: str,
         *,
+        expect: type[Node] | None = None,
         missing_ok: bool = False,
     ) -> Self:
-        pass
+        """
+        Given a registry name, remove the corresponding node class.
+
+        If ``expect`` is provided, the registered class must be that exact type.
+        """
+        target = self.get(name)
+        if target is None:
+            if not missing_ok:
+                raise ValueError(f'Node type "{name}" is not registered')
+            return self
+        if expect is not None and target is not expect:
+            raise ValueError(
+                f'Node type "{name}" is registered to {target.__name__}, expected {expect.__name__}'
+            )
+        popped = self._pop(name)
+        if popped is not target:
+            raise RuntimeError(
+                f'Node type "{name}" was registered to a different class ({popped.__name__}) while we were trying to remove it.'
+            )
+        return self
 
     @abstractmethod
     def build(self) -> NodeRegistry:
@@ -755,80 +768,56 @@ class ImmutableNodeRegistry(NodeRegistry):
         self,
         *,
         node_classes: Mapping[str, type[Node]],
-        base_node_classes: Collection[type[Node]],
     ):
         self._node_classes = dict(node_classes)
-        self._base_node_classes = tuple(base_node_classes)
 
     @override
-    def get_node_class(self, name: str) -> type[Node]:
-        return self._node_classes[name]
+    def get(self, name: str) -> type[Node] | None:
+        return self._node_classes.get(name)
 
     @override
-    def is_base_node_class(self, base_node_cls: type[Node]) -> bool:
-        return base_node_cls in self._base_node_classes
-
-    @override
-    def all_base_node_classes(self) -> Iterable[type[Node]]:
-        return self._base_node_classes
-
-    @override
-    def all_concrete_node_classes(self) -> Iterable[tuple[str, type[Node]]]:
+    def items(self) -> Iterable[tuple[str, type[Node]]]:
         return self._node_classes.items()
 
 
 class EagerNodeRegistryBuilder(NodeRegistryBuilder):
     def __init__(self):
         self._node_classes: dict[str, type[Node]] = {}
-        self._base_node_classes: list[type[Node]] = []
 
     @override
-    def register_node_class(self, node_cls: type[Node]) -> Self:
-        name = node_cls._concrete_type_name()
-        if name is not None and name in self._node_classes:
-            raise ValueError(f'Node type "{name}" is already registered')
-        if name is None:
-            self._base_node_classes.append(node_cls)
-        else:
-            self._node_classes[name] = node_cls
-        return self
-
-    @override
-    def remove_node_class(
-        self, node_cls: type[Node], *, missing_ok: bool = False
+    def register(
+        self,
+        node_cls: type[Node],
+        name: str | None = None,
     ) -> Self:
-        name = node_cls._concrete_type_name()
-        if name is None:
-            if node_cls not in self._base_node_classes:
-                if not missing_ok:
-                    raise ValueError(
-                        f'Base node class "{node_cls.__name__}" is not registered'
-                    )
-            else:
-                self._base_node_classes.remove(node_cls)
-        else:
-            if name not in self._node_classes:
-                if not missing_ok:
-                    raise ValueError(f'Node type "{name}" is not registered')
-            else:
-                del self._node_classes[name]
+        key = node_cls._concrete_type_name() if name is None else name
+        if key in self._node_classes:
+            raise ValueError(f'Node type "{key}" is already registered')
+        self._node_classes[key] = node_cls
         return self
+
+    @override
+    def get(self, name: str) -> type[Node] | None:
+        return self._node_classes.get(name)
+
+    @override
+    def _pop(self, name: str) -> type[Node]:
+        return self._node_classes.pop(name)
 
     @override
     def build(self) -> NodeRegistry:
         return ImmutableNodeRegistry(
             node_classes=self._node_classes,
-            base_node_classes=self._base_node_classes,
         )
 
 
-class LazyNodeRegistry(NodeRegistry, NodeRegistryBuilder):
+class LazyNodeRegistry(NodeRegistryBuilder, NodeRegistry):
     """
     A LazyNodeRegistry is both a NodeRegistry and a NodeRegistryBuilder with a
     2-part lifecycle:
-    1. Registration phase: acts as a NodeRegistryBuilder until .build() is
-       called.
-    2. Registry phase: acts as a NodeRegistry.
+    1. Registration phase: acts as a NodeRegistryBuilder until ``build()`` is
+       called or the registry is read via ``get``, ``items``, or ``load``.
+    2. Registry phase: exposes an immutable mapping built from registrations.
 
     Validations are deferred until the registry is frozen; this allows for a
     LazyNodeRegistry to exist as long as it is not used, making it suitable for
@@ -836,30 +825,51 @@ class LazyNodeRegistry(NodeRegistry, NodeRegistryBuilder):
     """
 
     def __init__(self):
-        self._registrations: list[type[Node]] = []
-        self._removals: dict[type[Node], bool] = {}  # cls -> missing_ok
+        self._registrations: list[tuple[str, type[Node]]] = []
+        self._removals: dict[
+            str, tuple[type[Node] | None, bool]
+        ] = {}  # name -> expected, missing_ok
         self._frozen: bool = False
 
         # initialized after freeze
         self._node_classes: Mapping[str, type[Node]]
-        self._base_node_classes: Collection[type[Node]]
 
     # REGISTRATION PHASE
 
     @override
-    def register_node_class(self, node_cls: type[Node]) -> Self:
+    def register(
+        self,
+        node_cls: type[Node],
+        name: str | None = None,
+    ) -> Self:
         if self._frozen:
             raise ValueError("Node registry is frozen, cannot register new node types.")
-        self._registrations.append(node_cls)
+        key = node_cls._concrete_type_name() if name is None else name
+        self._registrations.append((key, node_cls))
         return self
 
     @override
-    def remove_node_class(
-        self, node_cls: type[Node], *, missing_ok: bool = False
+    def _pop(self, name: str) -> type[Node]:
+        if self._frozen:
+            raise ValueError("Cannot remove types from a frozen node registry.")
+        for i in range(len(self._registrations) - 1, -1, -1):
+            reg_name, cls = self._registrations[i]
+            if reg_name == name:
+                self._registrations.pop(i)
+                return cls
+        raise KeyError(name)
+
+    @override
+    def unregister(
+        self,
+        name: str,
+        *,
+        expect: type[Node] | None = None,
+        missing_ok: bool = False,
     ) -> Self:
         if self._frozen:
             raise ValueError("Node registry is frozen, cannot remove node types.")
-        self._removals[node_cls] = missing_ok
+        self._removals[name] = (expect, missing_ok)
         return self
 
     @override
@@ -868,84 +878,56 @@ class LazyNodeRegistry(NodeRegistry, NodeRegistryBuilder):
             return self
 
         self._frozen = True
-        _node_classes = {}
-        _base_node_classes = []
-        for node_cls in self._registrations:
-            name = node_cls._concrete_type_name()
-            if name is None:
-                if node_cls not in _base_node_classes:
-                    _base_node_classes.append(node_cls)
-                else:
+        _node_classes: dict[str, type[Node]] = {}
+        for name, node_cls in self._registrations:
+            if name in _node_classes:
+                conflict = _node_classes[name]
+                if node_cls is conflict:
                     logger.warning(
-                        "Node base class %s is already registered, skipping registration",
+                        "Node type %s is already registered to class %s, skipping registration",
+                        name,
                         node_cls.__name__,
                     )
-            else:
-                if name in _node_classes:
-                    conflict = _node_classes[name]
-                    if node_cls is conflict:
-                        logger.warning(
-                            "Node type %s is already registered to class %s, skipping registration",
-                            name,
-                            node_cls.__name__,
-                        )
-                    else:
-                        raise ValueError(
-                            f'Node type "{name}" (class {node_cls.__name__}) is already registered to a different class ({conflict.__name__})'
-                        )
                 else:
-                    _node_classes[name] = node_cls
+                    raise ValueError(
+                        f'Node type "{name}" (class {node_cls.__name__}) is already registered to a different class ({conflict.__name__})'
+                    )
+            else:
+                _node_classes[name] = node_cls
 
-        for node_cls, missing_ok in self._removals.items():
-            name = node_cls._concrete_type_name()
-            if name is None:
-                if node_cls not in _base_node_classes:
-                    if not missing_ok:
-                        raise ValueError(
-                            f'Base node class "{node_cls.__name__}" is not registered'
-                        )
-                else:
-                    _base_node_classes.remove(node_cls)
-            else:
-                if name not in _node_classes:
-                    if not missing_ok:
-                        raise ValueError(f'Node type "{name}" is not registered')
-                else:
-                    del _node_classes[name]
+        for name, (expect, missing_ok) in self._removals.items():
+            if name not in _node_classes:
+                if not missing_ok:
+                    raise ValueError(f'Node type "{name}" is not registered')
+                continue
+            registered = _node_classes[name]
+            if expect is not None and registered is not expect:
+                raise ValueError(
+                    f'Node type "{name}" is registered to {registered.__name__}, expected {expect.__name__}'
+                )
+            del _node_classes[name]
 
         del self._registrations  # just to be extra sure
         del self._removals
         self._node_classes = _node_classes
-        self._base_node_classes = tuple(_base_node_classes)
 
         return self
 
     # USE PHASE
 
     @override
-    def get_node_class(self, name: str) -> type[Node]:
+    def get(self, name: str) -> type[Node] | None:
         self.build()
-        if name not in self._node_classes:
-            raise ValueError(f'Node type "{name}" is not registered')
-        return self._node_classes[name]
+        return self._node_classes.get(name)
 
     @override
-    def is_base_node_class(self, base_node_cls: type[Node]) -> bool:
+    def items(self) -> Iterable[tuple[str, type[Node]]]:
         self.build()
-        return base_node_cls in self._base_node_classes
-
-    @override
-    def all_concrete_node_classes(self) -> Iterable[tuple[str, type[Node]]]:
         return self._node_classes.items()
 
-    @override
-    def all_base_node_classes(self) -> Iterable[type[Node]]:
-        return self._base_node_classes
 
-
-# Register Node itself as a base node class, which can be dispatched to any of
-# its subclasses.
-NodeRegistry.DEFAULT = NodeRegistry.builder(lazy=True).register_node_class(Node)
+# Register the abstract Node class under "Node" for polymorphic deserialization.
+NodeRegistry.DEFAULT = NodeRegistry.builder(lazy=True).register(Node)
 
 
 __all__ = [

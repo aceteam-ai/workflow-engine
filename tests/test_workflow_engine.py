@@ -137,8 +137,8 @@ class TestWorkflowEngine:
         # Set up registry
         node_registry = (
             NodeRegistry.builder(lazy=True)
-            .register_node_class(Node)
-            .register_node_class(SampleAddNode)
+            .register(Node)
+            .register(SampleAddNode)
             .build()
         )
 
@@ -175,8 +175,8 @@ class TestWorkflowEngine:
         """Test that loading a workflow with typed nodes returns equivalent workflow."""
         node_registry = (
             NodeRegistry.builder(lazy=True)
-            .register_node_class(Node)
-            .register_node_class(SampleAddNode)
+            .register(Node)
+            .register(SampleAddNode)
             .build()
         )
 
@@ -213,9 +213,9 @@ class TestWorkflowEngine:
         """Test loading a workflow with multiple untyped nodes."""
         node_registry = (
             NodeRegistry.builder(lazy=True)
-            .register_node_class(Node)
-            .register_node_class(SampleAddNode)
-            .register_node_class(SampleMultiplyNode)
+            .register(Node)
+            .register(SampleAddNode)
+            .register(SampleMultiplyNode)
             .build()
         )
 
@@ -249,9 +249,7 @@ class TestWorkflowEngine:
 
     async def test_load_workflow_with_unregistered_node_type_raises_error(self):
         """Test that loading a workflow with unregistered node type raises ValueError."""
-        node_registry = (
-            NodeRegistry.builder(lazy=True).register_node_class(Node).build()
-        )
+        node_registry = NodeRegistry.builder(lazy=True).register(Node).build()
 
         value_registry = ValueRegistry.builder(lazy=True)
 
@@ -286,9 +284,9 @@ class TestWorkflowEngine:
         # Engine A with both SampleAddNode and SampleMultiplyNode
         node_registry_a = (
             NodeRegistry.builder(lazy=True)
-            .register_node_class(Node)
-            .register_node_class(SampleAddNode)
-            .register_node_class(SampleMultiplyNode)
+            .register(Node)
+            .register(SampleAddNode)
+            .register(SampleMultiplyNode)
             .build()
         )
 
@@ -300,8 +298,8 @@ class TestWorkflowEngine:
         # Engine B with only SampleAddNode
         node_registry_b = (
             NodeRegistry.builder(lazy=True)
-            .register_node_class(Node)
-            .register_node_class(SampleAddNode)
+            .register(Node)
+            .register(SampleAddNode)
             .build()
         )
 
@@ -352,8 +350,8 @@ class TestWorkflowEngine:
         """Test that loading preserves edges and other workflow structure."""
         node_registry = (
             NodeRegistry.builder(lazy=True)
-            .register_node_class(Node)
-            .register_node_class(SampleAddNode)
+            .register(Node)
+            .register(SampleAddNode)
             .build()
         )
 
@@ -396,8 +394,8 @@ class TestWorkflowEngineMultiTenancy:
         # Tenant A has only SampleAddNode
         tenant_a_registry = (
             NodeRegistry.builder(lazy=True)
-            .register_node_class(Node)
-            .register_node_class(SampleAddNode)
+            .register(Node)
+            .register(SampleAddNode)
             .build()
         )
 
@@ -408,8 +406,8 @@ class TestWorkflowEngineMultiTenancy:
         # Tenant B has only SampleMultiplyNode
         tenant_b_registry = (
             NodeRegistry.builder(lazy=True)
-            .register_node_class(Node)
-            .register_node_class(SampleMultiplyNode)
+            .register(Node)
+            .register(SampleMultiplyNode)
             .build()
         )
 
@@ -442,12 +440,12 @@ class TestWorkflowEngineMultiTenancy:
         """Test that the same workflow JSON can be loaded by different engines."""
         # Create two engines with different registries
         registry_1 = NodeRegistry.builder(lazy=True)
-        registry_1.register_node_class(SampleAddNode)
-        registry_1.register_node_class(Node)
+        registry_1.register(SampleAddNode)
+        registry_1.register(Node)
 
         registry_2 = NodeRegistry.builder(lazy=True)
-        registry_2.register_node_class(SampleAddNode)
-        registry_2.register_node_class(Node)
+        registry_2.register(SampleAddNode)
+        registry_2.register(Node)
 
         engine_1 = WorkflowEngine(
             node_registry=registry_1,
@@ -751,8 +749,8 @@ class TestWorkflowEngineExecution:
         # Create tenant-specific registry with only SampleAddNode
         tenant_registry = (
             NodeRegistry.builder(lazy=True)
-            .register_node_class(Node)
-            .register_node_class(SampleAddNode)
+            .register(Node)
+            .register(SampleAddNode)
             .build()
         )
 

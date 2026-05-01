@@ -1,13 +1,13 @@
 import asyncio
 from collections.abc import Iterable, Sequence, Sized
-from typing import Awaitable, Callable, TypeVar
+from typing import Awaitable, TypeVar
 
 from .iter import only
 
 T = TypeVar("T")
 
 
-def is_coroutine(fn: Callable):
+def is_coroutine(fn):
     # NOTE (PR 92): asyncio.iscoroutine is faster than inspect.iscoroutine
     return asyncio.iscoroutine(fn)
 

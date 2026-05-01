@@ -136,7 +136,7 @@ class Workflow(ImmutableBaseModel):
 
         Walks the workflow graph and:
         1. Looks up concrete node types in node_registry
-        2. Applies migrations via the registry's load_node method
+        2. Applies migrations via the registry's ``load`` method
         3. Validates node inputs and edge types
         4. Returns a new Workflow with typed nodes
 
@@ -151,7 +151,7 @@ class Workflow(ImmutableBaseModel):
             TypeError: If edge types are incompatible
         """
         typed_inner_nodes = await gather(
-            asyncio.to_thread(context.node_registry.load_node, node)
+            asyncio.to_thread(context.node_registry.load, node)
             for node in self.inner_nodes
         )
         typed_nodes = (self.input_node, *typed_inner_nodes, self.output_node)

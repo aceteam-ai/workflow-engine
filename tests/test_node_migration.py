@@ -114,7 +114,7 @@ class TestNodeMigration:
             warnings.simplefilter("always")
             # First deserialize as base Node, then load via registry to get typed node
             untyped_node = Node.model_validate(data)
-            node = NodeRegistry.DEFAULT.load_node(untyped_node)
+            node = NodeRegistry.DEFAULT.load(untyped_node)
 
             # Should not warn
             assert len(w) == 0
@@ -140,7 +140,7 @@ class TestNodeMigration:
             warnings.simplefilter("always")
             # First deserialize as base Node, then load via registry to get typed node
             untyped_node = Node.model_validate(data)
-            node = NodeRegistry.DEFAULT.load_node(untyped_node)
+            node = NodeRegistry.DEFAULT.load(untyped_node)
 
             # Should not warn since migration was successful
             assert len(w) == 0
@@ -165,7 +165,7 @@ class TestNodeMigration:
             warnings.simplefilter("always")
             # First deserialize as base Node, then load via registry to get typed node
             untyped_node = Node.model_validate(data)
-            node = NodeRegistry.DEFAULT.load_node(untyped_node)
+            node = NodeRegistry.DEFAULT.load(untyped_node)
 
             # Should have at least one warning about old version
             version_warnings = [
@@ -275,7 +275,7 @@ class TestNodeMigration:
             warnings.simplefilter("always")
             # First deserialize as base Node, then load via registry to get typed node
             untyped_node = Node.model_validate(data)
-            node = NodeRegistry.DEFAULT.load_node(untyped_node)
+            node = NodeRegistry.DEFAULT.load(untyped_node)
             assert len(w) == 0
 
         assert node.version == "2.0.0"
@@ -296,7 +296,7 @@ class TestNodeMigration:
 
         # First deserialize as base Node, then load via registry to get typed node
         untyped_node = Node.model_validate(data)
-        node = NodeRegistry.DEFAULT.load_node(untyped_node)
+        node = NodeRegistry.DEFAULT.load(untyped_node)
 
         # Extra field should be preserved
         dumped = node.model_dump()
@@ -306,11 +306,11 @@ class TestNodeMigration:
     def test_direct_class_validation_requires_current_schema(self):
         """Test that calling concrete class directly requires current version schema.
 
-        Migration only works when loading via NodeRegistry.load_node(), not
+        Migration only works when loading via NodeRegistry.load(), not
         when calling the concrete class directly. This is by design - direct
         class validation bypasses the registry mechanism where migration occurs.
 
-        Users should use NodeRegistry.load_node() for loading nodes with
+        Users should use NodeRegistry.load() for loading nodes with
         potentially old versions.
         """
         migration_registry.register(MigratableNodeMigration_1_0_0_to_2_0_0)
@@ -329,9 +329,9 @@ class TestNodeMigration:
         with pytest.raises(ValidationError):
             MigratableNode.model_validate(old_data)
 
-        # But NodeRegistry.load_node works with migration
+        # But NodeRegistry.load works with migration
         untyped_node = Node.model_validate(old_data)
-        node = NodeRegistry.DEFAULT.load_node(untyped_node)
+        node = NodeRegistry.DEFAULT.load(untyped_node)
         assert node.version == "2.0.0"
         assert node.params.value.root == "hello"
 
@@ -361,7 +361,7 @@ class TestMigrationEdgeCases:
 
         # First deserialize as base Node, then load via registry to get typed node
         untyped_node = Node.model_validate(data)
-        node = NodeRegistry.DEFAULT.load_node(untyped_node)
+        node = NodeRegistry.DEFAULT.load(untyped_node)
 
         # Should resolve to current version
         assert node.version == "2.0.0"
@@ -382,6 +382,6 @@ class TestMigrationEdgeCases:
         untyped_node = Node.model_validate(data)
 
         with pytest.raises(ValidationError) as exc_info:
-            NodeRegistry.DEFAULT.load_node(untyped_node)
+            NodeRegistry.DEFAULT.load(untyped_node)
 
         assert "newer than the latest version" in str(exc_info.value)

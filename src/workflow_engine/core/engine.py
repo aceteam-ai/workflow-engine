@@ -2,11 +2,14 @@
 from collections.abc import Mapping
 from typing import Any
 
+from typing_extensions import Self
+
+from workflow_engine.core.config import WorkflowEngineConfig
+
 from .context import ExecutionContext, ValidationContext
 from .execution import ExecutionAlgorithm, WorkflowExecutionResult
 from .node import NodeRegistry
-from .values import get_data_dict
-from .values.value import ValueRegistry
+from .values import ValueRegistry, get_data_dict
 from .workflow import ValidatedWorkflow, Workflow
 
 
@@ -52,6 +55,21 @@ class WorkflowEngine:
 
             execution_algorithm = TopologicalExecutionAlgorithm()
         self.execution_algorithm = execution_algorithm
+
+    @classmethod
+    async def from_config(cls, config: WorkflowEngineConfig) -> Self:
+        """
+        Turns a WorkflowEngineConfig into a WorkflowEngine instance.
+        Potentially asynchronous, to enable lazy initialization of the engine.
+        This method lives in the WorkflowEngine class so that subclasses can
+        override how the config is handled.
+        """
+        execution_algorithm = await config.build_execution_algorithm()
+        return cls(
+            node_registry=config.node_registry,
+            value_registry=ValueRegistry.DEFAULT,
+            execution_algorithm=execution_algorithm,
+        )
 
     async def _get_validation_context(self) -> ValidationContext:
         """
