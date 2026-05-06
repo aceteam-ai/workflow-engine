@@ -17,7 +17,6 @@ import pytest
 from overrides import override
 
 from workflow_engine import (
-    Data,
     Edge,
     ExecutionAlgorithm,
     ExecutionContext,
@@ -32,21 +31,13 @@ from workflow_engine import (
 from workflow_engine.contexts import InMemoryExecutionContext
 from workflow_engine.core import NodeTypeInfo
 from workflow_engine.core.io import OutputNode
-from workflow_engine.execution import TopologicalExecutionAlgorithm
-from workflow_engine.execution.parallel import ParallelExecutionAlgorithm
 from workflow_engine.nodes import ConstantStringNode
+
+from .conftest import SimpleInput, SimpleOutput, YieldingNode
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
-
-
-class SimpleInput(Data):
-    value: StringValue
-
-
-class SimpleOutput(Data):
-    result: StringValue
 
 
 class EchoNode(Node[SimpleInput, SimpleOutput, Params]):
@@ -82,42 +73,6 @@ class EchoNode(Node[SimpleInput, SimpleOutput, Params]):
     ) -> SimpleOutput:
         EchoNode.ran.add(self.id)
         return SimpleOutput(result=input.value)
-
-
-class YieldingNode(Node[SimpleInput, SimpleOutput, Params]):
-    """Always yields with a configurable message."""
-
-    TYPE_INFO: ClassVar[NodeTypeInfo] = NodeTypeInfo.from_parameter_type(
-        display_name="YieldTestYielding",
-        description="Yielding node for yield tests.",
-        version="1.0.0",
-        parameter_type=Params,
-    )
-
-    message: str = "yielding"
-    calls: ClassVar[dict[str, int]] = {}
-
-    @classmethod
-    @override
-    def static_input_type(cls) -> Type[SimpleInput]:
-        return SimpleInput
-
-    @classmethod
-    @override
-    def static_output_type(cls) -> Type[SimpleOutput]:
-        return SimpleOutput
-
-    @override
-    async def run(
-        self,
-        *,
-        context: ExecutionContext,
-        input_type: Type[SimpleInput],
-        output_type: Type[SimpleOutput],
-        input: SimpleInput,
-    ) -> SimpleOutput:
-        YieldingNode.calls[self.id] = YieldingNode.calls.get(self.id, 0) + 1
-        raise ShouldYield(self.message)  # type: ignore
 
 
 class ResumableNode(Node[SimpleInput, SimpleOutput, Params]):
@@ -160,19 +115,10 @@ class ResumableNode(Node[SimpleInput, SimpleOutput, Params]):
 
 
 @pytest.fixture(autouse=True)
-def reset_echo_ran():
+def reset_local_node_state():
     EchoNode.ran = set()
-    YieldingNode.calls = {}
     ResumableNode.calls = {}
     yield
-
-
-@pytest.fixture(params=["topological", "parallel"])
-def algorithm(request) -> ExecutionAlgorithm:
-    if request.param == "topological":
-        return TopologicalExecutionAlgorithm()
-    else:
-        return ParallelExecutionAlgorithm()
 
 
 @pytest.fixture
@@ -211,9 +157,6 @@ def _fan_out_workflow(
         inner_nodes.append(node)
         edges += [
             Edge.from_nodes(
-                source=constant, source_key="value", target=node, target_key="value"
-            ),
-            Edge.from_nodes(
                 source=node, source_key="result", target=output_node, target_key=nid
             ),
         ]
@@ -241,14 +184,21 @@ def _fan_out_workflow(
 
 def _chain_workflow(engine: WorkflowEngine, *, yield_first: bool) -> Workflow:
     """
-    A linear chain: constant -> node_a -> node_b -> output.
+    Constant -> node_a -> node_b chain, where one of the nodes is a YieldingNode.
 
-    If yield_first=True, node_a yields and node_b never runs.
-    If yield_first=False, node_a echoes and node_b yields.
+    YieldingNode takes ``Data`` (no required input fields) and outputs a
+    ``SimpleOutput``, so we wire the chain only where there are actual fields
+    to connect.
+
+    If yield_first=True, node_a yields. node_b (echo) waits on node_a's output
+    via node_a.result -> node_b.value, so it never runs.
+    If yield_first=False, node_a (echo) runs from constant.value. node_b yields
+    independently.
     """
     constant = engine.create_node(
         ConstantStringNode, id="constant", params=dict(value="hello")
     )
+    output_node = engine.create_output_node(result=StringValue)
 
     node_a: Node
     node_b: Node
@@ -257,20 +207,7 @@ def _chain_workflow(engine: WorkflowEngine, *, yield_first: bool) -> Workflow:
             YieldingNode, id="node_a", params=Params(), message="node_a yielding"
         )
         node_b = engine.create_node(EchoNode, id="node_b", params=Params())
-    else:
-        node_a = engine.create_node(EchoNode, id="node_a", params=Params())
-        node_b = engine.create_node(
-            YieldingNode, id="node_b", params=Params(), message="node_b yielding"
-        )
-
-    return Workflow(
-        input_node=engine.create_input_node(),
-        output_node=(output_node := engine.create_output_node(result=StringValue)),
-        inner_nodes=[constant, node_a, node_b],
-        edges=[
-            Edge.from_nodes(
-                source=constant, source_key="value", target=node_a, target_key="value"
-            ),
+        edges = [
             Edge.from_nodes(
                 source=node_a, source_key="result", target=node_b, target_key="value"
             ),
@@ -280,7 +217,29 @@ def _chain_workflow(engine: WorkflowEngine, *, yield_first: bool) -> Workflow:
                 target=output_node,
                 target_key="result",
             ),
-        ],
+        ]
+    else:
+        node_a = engine.create_node(EchoNode, id="node_a", params=Params())
+        node_b = engine.create_node(
+            YieldingNode, id="node_b", params=Params(), message="node_b yielding"
+        )
+        edges = [
+            Edge.from_nodes(
+                source=constant, source_key="value", target=node_a, target_key="value"
+            ),
+            Edge.from_nodes(
+                source=node_a,
+                source_key="result",
+                target=output_node,
+                target_key="result",
+            ),
+        ]
+
+    return Workflow(
+        input_node=engine.create_input_node(),
+        output_node=output_node,
+        inner_nodes=[constant, node_a, node_b],
+        edges=edges,
     )
 
 
@@ -510,9 +469,6 @@ class TestResumption:
             edges=[
                 Edge.from_nodes(
                     source=constant, source_key="value", target=r_a, target_key="value"
-                ),
-                Edge.from_nodes(
-                    source=constant, source_key="value", target=r_b, target_key="value"
                 ),
                 Edge.from_nodes(
                     source=r_a, source_key="result", target=output_node, target_key="a"
