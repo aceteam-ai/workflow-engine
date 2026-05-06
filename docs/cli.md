@@ -81,6 +81,15 @@ Commands that emit schemas (`schema check`, `node check`, `workflow check`) retu
 
 Example: `wengine node check Sum` returns an `input_schema` whose `values` property `$ref`s `#/$defs/SequenceValue_FloatValue_`. Looking up that def yields `{"title": "SequenceValue[FloatValue]", "type": "array", "items": {"$ref": "#/$defs/FloatValue"}}` — i.e. an array of `FloatValue`. To construct an input for this node, use the compact form `{"values": [1.0, 2.5, 3.0]}`; the engine will validate it against the expanded schema.
 
+#### Type casting between Values
+
+The engine has a registry of casts between `Value` types. When a workflow runs, the engine **implicitly casts** between non-identical-but-compatible types at edge boundaries — there is no need to insert an intermediate "convert" node. For example, an `IntegerValue` source can flow into a `FloatValue` input, and a `StringValue` source can flow into a `JSONValue` input (assuming the relevant casts are registered). The same casting rules govern `Value`-to-`Value` validation when constructing inputs from the compact `x-value-type` form.
+
+Practical consequences for `workflow edit`:
+
+- `wengine workflow edit possible-edges <handle>` returns the **full transitive cast closure**, not just exact-type matches. If a counterpart appears in the list, the edge is wireable as-is.
+- If `wengine workflow edit add-edge` rejects an edge with `"<src> is not assignable to <tgt>"`, no cast path exists between those types. Either insert an intermediate node that bridges them, or query `possible-edges` from the *target* side to discover which sources are reachable.
+
 ### `wengine schema check <schema>`
 
 Uses the engine's validation powers to validate an aliased JSON schema type (e.g. `{"x-value-type": "JSONValue"}`, `{"type": "array", "items": {"x-value-type": "StringValue"}}`) and return a full schema.
