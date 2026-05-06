@@ -262,7 +262,7 @@ async def node_run(
         context=exec_ctx,
         input_type=in_t,
         output_type=out_t,
-        input={k: getattr(validated_input, k) for k in validated_input.model_fields},
+        input={k: getattr(validated_input, k) for k in in_t.model_fields},
     )
     if hasattr(output, "model_dump_json"):
         click.echo(output.model_dump_json(indent=2))
