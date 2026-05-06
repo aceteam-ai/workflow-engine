@@ -323,6 +323,47 @@ def _save_workflow(path: Path, wf: Workflow) -> None:
         path.write_text(wf.model_dump_json(indent=2) + "\n")
 
 
+async def _prune_incompatible_edges(
+    engine: WorkflowEngine, wf: Workflow
+) -> tuple[Workflow, list[str]]:
+    """Drop edges whose endpoints are no longer type-compatible.
+
+    Returns (possibly-updated workflow, list of human-readable descriptions of
+    dropped edges). The caller is responsible for surfacing the warnings.
+    Edges referencing missing nodes/keys are left in place so the subsequent
+    full validation can produce a clearer error.
+    """
+    # Validate a copy without edges to recover per-node resolved I/O types.
+    # (Going through the engine ensures discriminator dispatch produces the
+    # concrete node subclass — calling node.input_type directly on a freshly
+    # deserialized Node fails with NotImplementedError.)
+    wf_no_edges = wf.model_copy(update={"edges": ()})
+    try:
+        validated = await engine.validate(wf_no_edges)
+    except Exception:
+        return wf, []
+
+    surviving: list[Edge] = []
+    dropped: list[str] = []
+    for edge in wf.edges:
+        src_t = validated.node_output_types.get(edge.source_id)
+        tgt_t = validated.node_input_types.get(edge.target_id)
+        if src_t is None or tgt_t is None:
+            surviving.append(edge)
+            continue
+        try:
+            edge.validate_types(source_type=src_t, target_type=tgt_t)
+            surviving.append(edge)
+        except Exception:
+            dropped.append(
+                f"{edge.source_id}.{'.'.join(edge.source_key_path)} -> "
+                f"{edge.target_id}.{edge.target_key}"
+            )
+    if not dropped:
+        return wf, []
+    return wf.model_copy(update={"edges": tuple(surviving)}), dropped
+
+
 async def _validate_or_die(engine: WorkflowEngine, wf: Workflow):
     """Validate `wf` via `engine`; convert engine errors to ClickException."""
     try:
@@ -538,8 +579,11 @@ async def edit_update_node(
     else:
         new_inner = tuple(new_node if n.id == node_id else n for n in wf.inner_nodes)
         new_wf = wf.model_copy(update={"inner_nodes": new_inner})
+    new_wf, dropped = await _prune_incompatible_edges(engine, new_wf)
     await _validate_or_die(engine, new_wf)
     _save_workflow(path, new_wf)
+    for d in dropped:
+        click.echo(f"warning: dropped now-incompatible edge {d}", err=True)
     click.echo(f"Updated params on node {node_id!r}.")
 
 
@@ -618,8 +662,11 @@ async def edit_update_field(
         )
     current[field_name] = schema_obj
     new_wf = await _apply_fields_change(engine, wf, node_id, current)
+    new_wf, dropped = await _prune_incompatible_edges(engine, new_wf)
     await _validate_or_die(engine, new_wf)
     _save_workflow(path, new_wf)
+    for d in dropped:
+        click.echo(f"warning: dropped now-incompatible edge {d}", err=True)
     click.echo(f"Updated field {handle}.")
 
 

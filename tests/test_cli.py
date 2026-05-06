@@ -924,3 +924,106 @@ class TestWorkflowEdit:
         )
         assert result.exit_code != 0
         assert "input or output" in result.output
+
+    def test_update_field_drops_now_incompatible_edge(
+        self, runner: CliRunner, config_path: Path, populated_workflow: Path
+    ):
+        # Wire a Sum that consumes input.nums (FloatValue array).
+        _run(
+            runner,
+            "workflow",
+            "edit",
+            "add-node",
+            str(populated_workflow),
+            "Sum",
+            "summer",
+            "--config",
+            str(config_path),
+        )
+        _run(
+            runner,
+            "workflow",
+            "edit",
+            "add-edge",
+            str(populated_workflow),
+            "input.nums",
+            "summer.values",
+            "--config",
+            str(config_path),
+        )
+        _run(
+            runner,
+            "workflow",
+            "edit",
+            "add-edge",
+            str(populated_workflow),
+            "summer.sum",
+            "output.total",
+            "--config",
+            str(config_path),
+        )
+        # Now break input.nums type — its edge to summer.values should be dropped.
+        result = runner.invoke(
+            cli,
+            [
+                "workflow",
+                "edit",
+                "update-field",
+                str(populated_workflow),
+                "input.nums",
+                '{"x-value-type": "IntegerValue"}',
+                "--config",
+                str(config_path),
+            ],
+        )
+        assert result.exit_code == 0, result.output
+        # ClickException sends warnings to stderr, but CliRunner combines them by default.
+        # Check via mix_stderr or by reading workflow state.
+        payload = json.loads(populated_workflow.read_text())
+        edge_pairs = {
+            (e["source_id"], e["source_key"], e["target_id"], e["target_key"])
+            for e in payload["edges"]
+        }
+        assert ("input", "nums", "summer", "values") not in edge_pairs
+        assert ("summer", "sum", "output", "total") in edge_pairs
+
+    def test_update_node_drops_now_incompatible_edge(
+        self, runner: CliRunner, config_path: Path, populated_workflow: Path
+    ):
+        # Same as above but use update-node on the input node.
+        _run(
+            runner,
+            "workflow",
+            "edit",
+            "add-node",
+            str(populated_workflow),
+            "Sum",
+            "summer",
+            "--config",
+            str(config_path),
+        )
+        _run(
+            runner,
+            "workflow",
+            "edit",
+            "add-edge",
+            str(populated_workflow),
+            "input.nums",
+            "summer.values",
+            "--config",
+            str(config_path),
+        )
+        # Replace input's fields entirely with an IntegerValue 'nums'.
+        _run(
+            runner,
+            "workflow",
+            "edit",
+            "update-node",
+            str(populated_workflow),
+            "input",
+            '{"fields": {"nums": {"x-value-type": "IntegerValue"}}}',
+            "--config",
+            str(config_path),
+        )
+        payload = json.loads(populated_workflow.read_text())
+        assert payload["edges"] == []

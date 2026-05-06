@@ -117,6 +117,8 @@ Create a blank workflow and store it at `path`. Pass `--force` to overwrite an e
 
 Apply an edit to the workflow stored at `path`. Each edit reloads the file, applies the change, runs full workflow validation, and saves the result back to `path` only if validation succeeds. On failure the file is left untouched.
 
+When a schema-changing edit (`update-node` or `update-field`) makes an existing edge type-incompatible, the edge is dropped automatically and a warning is printed to stderr. This keeps the workflow valid while making the cost of the schema change visible.
+
 #### `wengine workflow edit <path> add-node <name> <id> [params]`
 
 Append a new node of type `<name>` with id `<id>` to `inner_nodes`. `params` is a JSON literal, `@file.json`, or `-` for stdin (defaults to `{}`).
