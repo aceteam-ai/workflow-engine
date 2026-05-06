@@ -121,6 +121,10 @@ Apply an edit to the workflow stored at `path`. Each edit reloads the file, appl
 
 Append a new node of type `<name>` with id `<id>` to `inner_nodes`. `params` is a JSON literal, `@file.json`, or `-` for stdin (defaults to `{}`).
 
+#### `wengine workflow edit <path> update-node <id> <params>`
+
+Replace the params of an existing node, preserving its type and id. Use this to grow or shrink the input/output node's `fields`, or to retune the params of an inner node without removing and re-adding it. Works on input, output, and inner nodes alike.
+
 #### `wengine workflow edit <path> remove-node <id>`
 
 Remove an inner node and any edges that touch it. Refuses to remove the workflow's input or output node.

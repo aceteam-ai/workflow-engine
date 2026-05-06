@@ -494,11 +494,53 @@ async def edit_add_node(
     if node_id in wf.nodes_by_id:
         raise click.ClickException(f"Node id {node_id!r} already exists in workflow.")
     params = _load_input(params_arg)
-    new_node = engine.create_node(name, id=node_id, params=params)
+    try:
+        new_node = engine.create_node(name, id=node_id, params=params)
+    except Exception as e:
+        raise click.ClickException(f"Failed to create node {node_id!r}: {e}") from e
     new_wf = wf.model_copy(update={"inner_nodes": (*wf.inner_nodes, new_node)})
     await _validate_or_die(engine, new_wf)
     _save_workflow(path, new_wf)
     click.echo(f"Added node {node_id!r} ({name}).")
+
+
+@workflow_edit.command("update-node")
+@click.argument("path", type=click.Path(exists=True, dir_okay=False, path_type=Path))
+@click.argument("node_id", metavar="ID")
+@click.argument("params_arg", metavar="PARAMS")
+@config_option
+@coro
+async def edit_update_node(
+    path: Path,
+    node_id: str,
+    params_arg: str,
+    config_path: Path | None,
+):
+    """Replace the params of an existing node (preserving its type and id).
+
+    Use this to grow/shrink the input or output node's `fields`, or to retune
+    the params of an inner node without removing and re-adding it.
+    """
+    engine = await _build_engine(config_path)
+    wf = _load_workflow(path)
+    if node_id not in wf.nodes_by_id:
+        raise click.ClickException(f"Node id {node_id!r} not found.")
+    target_node = wf.nodes_by_id[node_id]
+    new_params = _load_input(params_arg)
+    try:
+        new_node = engine.create_node(target_node.type, id=node_id, params=new_params)
+    except Exception as e:
+        raise click.ClickException(f"Invalid params for node {node_id!r}: {e}") from e
+    if node_id == wf.input_node.id:
+        new_wf = wf.model_copy(update={"input_node": new_node})
+    elif node_id == wf.output_node.id:
+        new_wf = wf.model_copy(update={"output_node": new_node})
+    else:
+        new_inner = tuple(new_node if n.id == node_id else n for n in wf.inner_nodes)
+        new_wf = wf.model_copy(update={"inner_nodes": new_inner})
+    await _validate_or_die(engine, new_wf)
+    _save_workflow(path, new_wf)
+    click.echo(f"Updated params on node {node_id!r}.")
 
 
 @workflow_edit.command("remove-node")

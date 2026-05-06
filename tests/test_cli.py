@@ -686,3 +686,95 @@ class TestWorkflowEdit:
             str(base_dir),
         )
         assert json.loads(out)["output"] == {"total": 60.0}
+
+    def test_update_node_modifies_input_fields(
+        self, runner: CliRunner, config_path: Path, tmp_path: Path
+    ):
+        wf = tmp_path / "wf.json"
+        _run(runner, "workflow", "init", str(wf))
+        _run(
+            runner,
+            "workflow",
+            "edit",
+            "update-node",
+            str(wf),
+            "input",
+            '{"fields": {"x": {"x-value-type": "IntegerValue"}}}',
+            "--config",
+            str(config_path),
+        )
+        payload = json.loads(wf.read_text())
+        assert payload["input_node"]["params"]["fields"] == {
+            "x": {"x-value-type": "IntegerValue"}
+        }
+
+    def test_update_node_unknown_id_errors(
+        self, runner: CliRunner, config_path: Path, populated_workflow: Path
+    ):
+        result = runner.invoke(
+            cli,
+            [
+                "workflow",
+                "edit",
+                "update-node",
+                str(populated_workflow),
+                "ghost",
+                "{}",
+                "--config",
+                str(config_path),
+            ],
+        )
+        assert result.exit_code != 0
+
+    def test_update_node_bad_params_reports_clean_error(
+        self, runner: CliRunner, config_path: Path, populated_workflow: Path
+    ):
+        before = populated_workflow.read_text()
+        result = runner.invoke(
+            cli,
+            [
+                "workflow",
+                "edit",
+                "update-node",
+                str(populated_workflow),
+                "input",
+                '{"fields": "not a dict"}',
+                "--config",
+                str(config_path),
+            ],
+        )
+        assert result.exit_code != 0
+        assert "Traceback" not in result.output
+        # File should be untouched
+        assert populated_workflow.read_text() == before
+
+    def test_update_node_preserves_inner_node_id(
+        self, runner: CliRunner, config_path: Path, populated_workflow: Path
+    ):
+        # Only relevant to test inner-node update path (different from input/output)
+        # Sum has Empty params, so update with {} keeps it valid.
+        _run(
+            runner,
+            "workflow",
+            "edit",
+            "add-node",
+            str(populated_workflow),
+            "Sum",
+            "summer",
+            "--config",
+            str(config_path),
+        )
+        _run(
+            runner,
+            "workflow",
+            "edit",
+            "update-node",
+            str(populated_workflow),
+            "summer",
+            "{}",
+            "--config",
+            str(config_path),
+        )
+        payload = json.loads(populated_workflow.read_text())
+        ids = [n["id"] for n in payload["inner_nodes"]]
+        assert ids == ["summer"]
