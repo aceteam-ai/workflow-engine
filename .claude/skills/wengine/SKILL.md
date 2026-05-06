@@ -87,13 +87,18 @@ Two implications for agents:
 - `wengine workflow edit possible-edges` **already includes castable matches**, not just exact-type matches. If a target appears in the list, the edge is wireable as-is.
 - If `add-edge` rejects an edge with a "not assignable to" error, no cast path exists between those types. You need an intermediate node that bridges them, or a different source field. `possible-edges` from the *target* side will tell you which sources are reachable.
 
-## Reading expanded schemas
+## Reading schemas
 
-`wengine schema check`, `node check`, and `workflow check` emit **fully-expanded** JSON schemas. To decode them:
+`node check`, `workflow check`, and `workflow describe --json` emit a **compact** JSON schema by default. Sub-schemas for concrete `Value` types collapse to `{"x-value-type": "<Name>"}`, generics keep their JSON Schema shape with `x-value-type` on the inner Value, and there are no `$defs` to chase. This is the form to read.
 
-- The top-level `title` is the synthesized class name (e.g. `SumNodeInput`) — descriptive, not addressable.
-- Each property uses `$ref` into `$defs`. Look up the def's **`title`** (e.g. `"SequenceValue[FloatValue]"`) for the canonical Value type — `$defs` keys are mangled and not user-facing.
+Pass `--expanded` to any of those commands to get the full Pydantic schema (`$defs`, `$ref`, structural titles) when you need a strict JSON Schema for an external validator.
+
+`schema check` is the one exception: it always emits the expanded form, because its purpose is to demystify a compact `x-value-type` blob into its concrete shape.
+
+When reading either form:
 - `required` lists mandatory fields; `additionalProperties: false` rejects extras.
+- In the compact form, each property carries its `title`/`description` directly.
+- In the expanded form, follow each property's `$ref` into `$defs` and read the def's `title` (e.g. `"SequenceValue[FloatValue]"`) for the canonical Value type. `$defs` keys are mangled identifiers — read the title, not the key.
 
 To validate a value against a schema: `wengine schema parse <schema> <value>`.
 
@@ -114,7 +119,13 @@ wengine node run Sum '{}' '{"values": [1.5, 2.5, 4.0]}'
 # prints {"sum": 8.0} and writes intermediate files under ./local/<uuid>/
 ```
 
-When exploring, **call `wengine node check <Name>` first** to learn the exact input/output schemas before running.
+#### Discovering nodes and their shapes
+
+Before running, three commands make a node legible:
+
+- `wengine node list` — every registered node with its alias, display name, and description (one row per node). The first column is the alias to use everywhere else.
+- `wengine node info <Name>` — full metadata for one node: display name, description, version, and the **parameter schema** (what goes in the `<params>` argument). Read this *first* whenever you need to construct params.
+- `wengine node check <Name> <params>` — validates the node with concrete params and prints its **resolved input and output schemas** (compact form by default). This is critical for nodes whose I/O shape is dynamic — e.g. variadic `Add`, where setting `num_arguments=3` causes input fields `a`, `b`, `c` to appear. Always run `node check` after settling on params and before constructing inputs.
 
 ### 2. Compose: build a saved workflow
 
