@@ -1,6 +1,6 @@
 # workflow_engine/nodes/error.py
 
-from typing import ClassVar, Literal, Type
+from typing import ClassVar, Self, Type
 
 from overrides import override
 from pydantic import Field
@@ -35,14 +35,11 @@ class ErrorNode(Node[ErrorInput, Empty, ErrorParams]):
     """
 
     TYPE_INFO: ClassVar[NodeTypeInfo] = NodeTypeInfo.from_parameter_type(
-        name="Error",
         display_name="Error",
         description="A node that always raises an error.",
         version="0.4.0",
         parameter_type=ErrorParams,
     )
-
-    type: Literal["Error"] = "Error"  # pyright: ignore[reportIncompatibleVariableOverride]
 
     @classmethod
     @override
@@ -68,8 +65,18 @@ class ErrorNode(Node[ErrorInput, Empty, ErrorParams]):
         )
 
     @classmethod
-    def from_name(cls, id: str, name: str) -> "ErrorNode":
-        return cls(id=id, params=ErrorParams(error_name=StringValue(name)))
+    def from_name(
+        cls,
+        *,
+        id: str,
+        type: str,
+        name: str,
+    ) -> Self:
+        return cls(
+            id=id,
+            type=type,
+            params=ErrorParams(error_name=StringValue(name)),
+        )
 
 
 __all__ = [

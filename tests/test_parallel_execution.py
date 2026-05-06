@@ -1,7 +1,7 @@
 # tests/test_parallel_execution.py
 
 import asyncio
-from typing import ClassVar, Literal, Type
+from typing import ClassVar, Type
 
 import pytest
 from overrides import override
@@ -13,13 +13,12 @@ from workflow_engine import (
     Empty,
     ExecutionContext,
     FloatValue,
-    InputNode,
     IntegerValue,
     Node,
     NodeTypeInfo,
-    OutputNode,
     Params,
     SequenceValue,
+    StringValue,
     Workflow,
     WorkflowEngine,
     WorkflowExecutionResultStatus,
@@ -52,14 +51,11 @@ class SlowNode(Node[Empty, SlowNodeOutput, SlowNodeParams]):
     """A node that sleeps for a configurable duration."""
 
     TYPE_INFO: ClassVar[NodeTypeInfo] = NodeTypeInfo.from_parameter_type(
-        name="SlowNode",
         display_name="Slow Node",
         description="A node that takes time to execute",
         version="1.0.0",
         parameter_type=SlowNodeParams,
     )
-
-    type: Literal["SlowNode"] = "SlowNode"  # pyright: ignore[reportIncompatibleVariableOverride]
 
     @classmethod
     @override
@@ -83,10 +79,6 @@ class SlowNode(Node[Empty, SlowNodeOutput, SlowNodeParams]):
         await asyncio.sleep(self.params.delay_ms.root / 1000)
         return SlowNodeOutput(value=self.params.delay_ms)
 
-    @classmethod
-    def from_delay(cls, id: str, delay_ms: int) -> "SlowNode":
-        return cls(id=id, params=SlowNodeParams(delay_ms=IntegerValue(delay_ms)))
-
 
 # Test node that accepts input (to create dependencies) and delays
 class SlowPassthroughNodeInput(Data):
@@ -99,14 +91,11 @@ class SlowPassthroughNode(
     """A node that accepts input, delays, and outputs the input value."""
 
     TYPE_INFO: ClassVar[NodeTypeInfo] = NodeTypeInfo.from_parameter_type(
-        name="SlowPassthroughNode",
         display_name="Slow Passthrough Node",
         description="A node that accepts input and delays before outputting it",
         version="1.0.0",
         parameter_type=SlowNodeParams,
     )
-
-    type: Literal["SlowPassthroughNode"] = "SlowPassthroughNode"  # pyright: ignore[reportIncompatibleVariableOverride]
 
     @classmethod
     @override
@@ -130,29 +119,35 @@ class SlowPassthroughNode(
         await asyncio.sleep(self.params.delay_ms.root / 1000)
         return SlowNodeOutput(value=input.value)
 
-    @classmethod
-    def from_delay(cls, id: str, delay_ms: int) -> "SlowPassthroughNode":
-        return cls(id=id, params=SlowNodeParams(delay_ms=IntegerValue(delay_ms)))
+
+@pytest.fixture
+def engine() -> WorkflowEngine:
+    return WorkflowEngine(execution_algorithm=ParallelExecutionAlgorithm())
 
 
 @pytest.fixture
-def parallel_workflow() -> Workflow:
-    """Create a workflow with independent nodes that can run in parallel."""
-    input_node = InputNode.empty()
-    output_node = OutputNode.from_fields(
-        a=IntegerValue,
-        b=IntegerValue,
-        c=IntegerValue,
-    )
-
-    node_a = SlowNode.from_delay(id="node_a", delay_ms=100)
-    node_b = SlowNode.from_delay(id="node_b", delay_ms=100)
-    node_c = SlowNode.from_delay(id="node_c", delay_ms=100)
-
+def parallel_workflow(engine: WorkflowEngine) -> Workflow:
+    """A workflow with three independent SlowNodes that can run in parallel."""
     return Workflow(
-        input_node=input_node,
-        output_node=output_node,
-        inner_nodes=[node_a, node_b, node_c],
+        input_node=engine.create_input_node(),
+        output_node=(
+            output_node := engine.create_output_node(
+                a=IntegerValue,
+                b=IntegerValue,
+                c=IntegerValue,
+            )
+        ),
+        inner_nodes=[
+            node_a := engine.create_node(
+                SlowNode, id="node_a", params=dict(delay_ms=100)
+            ),
+            node_b := engine.create_node(
+                SlowNode, id="node_b", params=dict(delay_ms=100)
+            ),
+            node_c := engine.create_node(
+                SlowNode, id="node_c", params=dict(delay_ms=100)
+            ),
+        ],
         edges=[
             Edge.from_nodes(
                 source=node_a,
@@ -184,10 +179,11 @@ async def test_parallel_execution_faster_than_sequential(
     context = InMemoryExecutionContext()
 
     # Sequential execution
-    sequential_algo = TopologicalExecutionAlgorithm()
-    engine = WorkflowEngine(execution_algorithm=sequential_algo)
+    sequential_engine = WorkflowEngine(
+        execution_algorithm=TopologicalExecutionAlgorithm()
+    )
     start = asyncio.get_event_loop().time()
-    sequential_result = await engine.execute(
+    sequential_result = await sequential_engine.execute(
         context=context,
         workflow=parallel_workflow,
         input={},
@@ -196,10 +192,9 @@ async def test_parallel_execution_faster_than_sequential(
     assert sequential_result.status is WorkflowExecutionResultStatus.SUCCESS
 
     # Parallel execution
-    parallel_algo = ParallelExecutionAlgorithm()
-    engine = WorkflowEngine(execution_algorithm=parallel_algo)
+    parallel_engine = WorkflowEngine(execution_algorithm=ParallelExecutionAlgorithm())
     start = asyncio.get_event_loop().time()
-    parallel_result = await engine.execute(
+    parallel_result = await parallel_engine.execute(
         context=context,
         workflow=parallel_workflow,
         input={},
@@ -216,21 +211,16 @@ async def test_parallel_execution_faster_than_sequential(
 
 
 @pytest.mark.asyncio
-async def test_parallel_execution_respects_dependencies():
+async def test_parallel_execution_respects_dependencies(engine: WorkflowEngine):
     """Test that dependent nodes wait for their dependencies."""
-    input_node = InputNode.empty()
-    output_node = OutputNode.from_fields(
-        result=IntegerValue,
-    )
-
-    a = ConstantIntegerNode.from_value(id="a", value=1)
-    b = ConstantIntegerNode.from_value(id="b", value=2)
-    c = AddNode(id="c")  # depends on a and b
-
     workflow = Workflow(
-        input_node=input_node,
-        output_node=output_node,
-        inner_nodes=[a, b, c],
+        input_node=engine.create_input_node(),
+        output_node=(output_node := engine.create_output_node(result=IntegerValue)),
+        inner_nodes=[
+            a := engine.create_node(ConstantIntegerNode, id="a", params=dict(value=1)),
+            b := engine.create_node(ConstantIntegerNode, id="b", params=dict(value=2)),
+            c := engine.create_node(AddNode, id="c"),
+        ],
         edges=[
             Edge.from_nodes(source=a, source_key="value", target=c, target_key="a"),
             Edge.from_nodes(source=b, source_key="value", target=c, target_key="b"),
@@ -241,8 +231,6 @@ async def test_parallel_execution_respects_dependencies():
     )
 
     context = InMemoryExecutionContext()
-    algorithm = ParallelExecutionAlgorithm()
-    engine = WorkflowEngine(execution_algorithm=algorithm)
     result = await engine.execute(
         context=context,
         workflow=workflow,
@@ -254,7 +242,7 @@ async def test_parallel_execution_respects_dependencies():
 
 
 @pytest.mark.asyncio
-async def test_parallel_execution_complex_dependencies():
+async def test_parallel_execution_complex_dependencies(engine: WorkflowEngine):
     r"""Test parallel execution with a more complex dependency graph.
 
     Graph structure:
@@ -268,21 +256,16 @@ async def test_parallel_execution_complex_dependencies():
     Node c runs after a, b complete.
     Node f runs after c, d complete.
     """
-    input_node = InputNode.empty()
-    output_node = OutputNode.from_fields(
-        result=IntegerValue,
-    )
-
-    a = ConstantIntegerNode.from_value(id="a", value=1)
-    b = ConstantIntegerNode.from_value(id="b", value=2)
-    c = AddNode(id="c")
-    d = ConstantIntegerNode.from_value(id="d", value=10)
-    f = AddNode(id="f")
-
     workflow = Workflow(
-        input_node=input_node,
-        output_node=output_node,
-        inner_nodes=[a, b, c, d, f],
+        input_node=engine.create_input_node(),
+        output_node=(output_node := engine.create_output_node(result=IntegerValue)),
+        inner_nodes=[
+            a := engine.create_node(ConstantIntegerNode, id="a", params=dict(value=1)),
+            b := engine.create_node(ConstantIntegerNode, id="b", params=dict(value=2)),
+            c := engine.create_node(AddNode, id="c"),
+            d := engine.create_node(ConstantIntegerNode, id="d", params=dict(value=10)),
+            f := engine.create_node(AddNode, id="f"),
+        ],
         edges=[
             Edge.from_nodes(source=a, source_key="value", target=c, target_key="a"),
             Edge.from_nodes(source=b, source_key="value", target=c, target_key="b"),
@@ -295,9 +278,6 @@ async def test_parallel_execution_complex_dependencies():
     )
 
     context = InMemoryExecutionContext()
-    algorithm = ParallelExecutionAlgorithm()
-    engine = WorkflowEngine(execution_algorithm=algorithm)
-
     result = await engine.execute(
         context=context,
         workflow=workflow,
@@ -312,19 +292,25 @@ async def test_parallel_execution_complex_dependencies():
 @pytest.mark.asyncio
 async def test_parallel_execution_continue_on_error():
     """Test CONTINUE error handling mode collects all errors."""
-    from workflow_engine import StringValue
-
-    input_node = InputNode.empty()
-    output_node = OutputNode.from_fields(value=StringValue)
-
-    ok_node = ConstantStringNode.from_value(id="ok_node", value="test")
-    error1 = ErrorNode.from_name(id="error1", name="Error1")
-    error2 = ErrorNode.from_name(id="error2", name="Error2")
-
+    engine = WorkflowEngine(
+        execution_algorithm=ParallelExecutionAlgorithm(
+            error_handling=ErrorHandlingMode.CONTINUE
+        )
+    )
     workflow = Workflow(
-        input_node=input_node,
-        output_node=output_node,
-        inner_nodes=[ok_node, error1, error2],
+        input_node=engine.create_input_node(),
+        output_node=(output_node := engine.create_output_node(value=StringValue)),
+        inner_nodes=[
+            ok_node := engine.create_node(
+                ConstantStringNode, id="ok_node", params=dict(value="test")
+            ),
+            error1 := engine.create_node(
+                ErrorNode, id="error1", params=dict(error_name="Error1")
+            ),
+            error2 := engine.create_node(
+                ErrorNode, id="error2", params=dict(error_name="Error2")
+            ),
+        ],
         edges=[
             # Both error nodes depend on ok_node, so they run in parallel after it
             Edge.from_nodes(
@@ -343,8 +329,6 @@ async def test_parallel_execution_continue_on_error():
     )
 
     context = InMemoryExecutionContext()
-    algorithm = ParallelExecutionAlgorithm(error_handling=ErrorHandlingMode.CONTINUE)
-    engine = WorkflowEngine(execution_algorithm=algorithm)
     result = await engine.execute(
         context=context,
         workflow=workflow,
@@ -363,20 +347,22 @@ async def test_parallel_execution_continue_on_error():
 @pytest.mark.asyncio
 async def test_parallel_execution_fail_fast():
     """Test FAIL_FAST error handling mode stops on first error."""
-    from workflow_engine import StringValue
-
-    input_node = InputNode.empty()
-    output_node = OutputNode.from_fields(
-        value=StringValue,
+    engine = WorkflowEngine(
+        execution_algorithm=ParallelExecutionAlgorithm(
+            error_handling=ErrorHandlingMode.FAIL_FAST
+        )
     )
-
-    constant = ConstantStringNode.from_value(id="constant", value="test")
-    error = ErrorNode.from_name(id="error", name="TestError")
-
     workflow = Workflow(
-        input_node=input_node,
-        output_node=output_node,
-        inner_nodes=[constant, error],
+        input_node=engine.create_input_node(),
+        output_node=(output_node := engine.create_output_node(value=StringValue)),
+        inner_nodes=[
+            constant := engine.create_node(
+                ConstantStringNode, id="constant", params=dict(value="test")
+            ),
+            error := engine.create_node(
+                ErrorNode, id="error", params=dict(error_name="TestError")
+            ),
+        ],
         edges=[
             Edge.from_nodes(
                 source=constant, source_key="value", target=error, target_key="info"
@@ -391,9 +377,6 @@ async def test_parallel_execution_fail_fast():
     )
 
     context = InMemoryExecutionContext()
-    algorithm = ParallelExecutionAlgorithm(error_handling=ErrorHandlingMode.FAIL_FAST)
-
-    engine = WorkflowEngine(execution_algorithm=algorithm)
     result = await engine.execute(
         context=context,
         workflow=workflow,
@@ -403,22 +386,19 @@ async def test_parallel_execution_fail_fast():
 
 
 @pytest.mark.asyncio
-async def test_parallel_execution_with_node_expansion():
+async def test_parallel_execution_with_node_expansion(engine: WorkflowEngine):
     """Test that node expansion works correctly with parallel execution."""
-    engine = WorkflowEngine(execution_algorithm=ParallelExecutionAlgorithm())
-
-    add_input_node = InputNode.from_fields(
-        a=FloatValue,
-        b=FloatValue,
-    )
-    add_output_node = OutputNode.from_fields(
-        c=FloatValue,
-    )
-    add = AddNode.with_arity(id="add", arity=2)
     add_workflow = Workflow(
-        input_node=add_input_node,
-        output_node=add_output_node,
-        inner_nodes=[add],
+        input_node=(
+            add_input_node := engine.create_input_node(
+                a=FloatValue,
+                b=FloatValue,
+            )
+        ),
+        output_node=(add_output_node := engine.create_output_node(c=FloatValue)),
+        inner_nodes=[
+            add := engine.create_node(AddNode, id="add", params=dict(num_arguments=2)),
+        ],
         edges=[
             Edge.from_nodes(
                 source=add_input_node,
@@ -439,19 +419,23 @@ async def test_parallel_execution_with_node_expansion():
     )
     add_workflow = await engine.validate(add_workflow)
 
-    outer_input_node = InputNode.from_fields(
-        sequence=SequenceValue[DataValue[add_workflow.input_type]],
-    )
-    # add_workflow has single output (c: FloatValue), so ForEach outputs SequenceValue[FloatValue]
-    outer_output_node = OutputNode.from_fields(
-        results=SequenceValue[FloatValue],
-    )
-    foreach = ForEachNode.from_workflow(id="foreach", workflow=add_workflow)
-
     workflow = Workflow(
-        input_node=outer_input_node,
-        output_node=outer_output_node,
-        inner_nodes=[foreach],
+        input_node=(
+            outer_input_node := engine.create_input_node(
+                sequence=SequenceValue[DataValue[add_workflow.input_type]],
+            )
+        ),
+        # add_workflow has single output (c: FloatValue), so ForEach outputs SequenceValue[FloatValue]
+        output_node=(
+            outer_output_node := engine.create_output_node(
+                results=SequenceValue[FloatValue],
+            )
+        ),
+        inner_nodes=[
+            foreach := engine.create_node(
+                ForEachNode, id="foreach", params=dict(workflow=add_workflow)
+            ),
+        ],
         edges=[
             Edge.from_nodes(
                 source=outer_input_node,
@@ -469,7 +453,6 @@ async def test_parallel_execution_with_node_expansion():
     )
 
     context = InMemoryExecutionContext()
-    engine = WorkflowEngine(execution_algorithm=ParallelExecutionAlgorithm())
     result = await engine.execute(
         context=context,
         workflow=workflow,
@@ -500,21 +483,27 @@ async def test_parallel_execution_with_node_expansion():
 @pytest.mark.asyncio
 async def test_parallel_execution_max_concurrency():
     """Test that max_concurrency limits parallel execution."""
-    # Create 5 slow nodes that each take 50ms
-    slow_nodes = [SlowNode.from_delay(id=f"node_{i}", delay_ms=50) for i in range(5)]
-
-    input_node = InputNode.empty()
-    output_node = OutputNode.from_fields(
-        out_0=IntegerValue,
-        out_1=IntegerValue,
-        out_2=IntegerValue,
-        out_3=IntegerValue,
-        out_4=IntegerValue,
+    # With max_concurrency=2, 5 nodes taking 50ms each should take at least 150ms
+    # (3 batches: 2+2+1)
+    engine = WorkflowEngine(
+        execution_algorithm=ParallelExecutionAlgorithm(max_concurrency=2)
     )
+    slow_nodes = [
+        engine.create_node(SlowNode, id=f"node_{i}", params=dict(delay_ms=50))
+        for i in range(5)
+    ]
 
     workflow = Workflow(
-        input_node=input_node,
-        output_node=output_node,
+        input_node=engine.create_input_node(),
+        output_node=(
+            output_node := engine.create_output_node(
+                out_0=IntegerValue,
+                out_1=IntegerValue,
+                out_2=IntegerValue,
+                out_3=IntegerValue,
+                out_4=IntegerValue,
+            )
+        ),
         inner_nodes=slow_nodes,
         edges=[
             Edge.from_nodes(
@@ -528,12 +517,6 @@ async def test_parallel_execution_max_concurrency():
     )
 
     context = InMemoryExecutionContext()
-
-    # With max_concurrency=2, 5 nodes taking 50ms each should take at least 150ms
-    # (3 batches: 2+2+1)
-    algorithm = ParallelExecutionAlgorithm(max_concurrency=2)
-    engine = WorkflowEngine(execution_algorithm=algorithm)
-
     start = asyncio.get_event_loop().time()
     result = await engine.execute(
         context=context,
@@ -548,22 +531,16 @@ async def test_parallel_execution_max_concurrency():
 
 
 @pytest.mark.asyncio
-async def test_parallel_execution_empty_workflow():
+async def test_parallel_execution_empty_workflow(engine: WorkflowEngine):
     """Test that parallel execution handles empty workflows."""
-    input_node = InputNode.empty()
-    output_node = OutputNode.empty()
-
     workflow = Workflow(
-        input_node=input_node,
-        output_node=output_node,
+        input_node=engine.create_input_node(),
+        output_node=engine.create_output_node(),
         inner_nodes=[],
         edges=[],
     )
 
     context = InMemoryExecutionContext()
-    algorithm = ParallelExecutionAlgorithm()
-
-    engine = WorkflowEngine(execution_algorithm=algorithm)
     result = await engine.execute(
         context=context,
         workflow=workflow,
@@ -574,17 +551,14 @@ async def test_parallel_execution_empty_workflow():
 
 
 @pytest.mark.asyncio
-async def test_parallel_execution_single_node():
+async def test_parallel_execution_single_node(engine: WorkflowEngine):
     """Test that parallel execution works with a single node."""
-    input_node = InputNode.empty()
-    output_node = OutputNode.from_fields(result=IntegerValue)
-
-    a = ConstantIntegerNode.from_value(id="a", value=42)
-
     workflow = Workflow(
-        input_node=input_node,
-        output_node=output_node,
-        inner_nodes=[a],
+        input_node=engine.create_input_node(),
+        output_node=(output_node := engine.create_output_node(result=IntegerValue)),
+        inner_nodes=[
+            a := engine.create_node(ConstantIntegerNode, id="a", params=dict(value=42)),
+        ],
         edges=[
             Edge.from_nodes(
                 source=a, source_key="value", target=output_node, target_key="result"
@@ -593,8 +567,6 @@ async def test_parallel_execution_single_node():
     )
 
     context = InMemoryExecutionContext()
-    algorithm = ParallelExecutionAlgorithm()
-    engine = WorkflowEngine(execution_algorithm=algorithm)
     result = await engine.execute(
         context=context,
         workflow=workflow,
@@ -605,20 +577,19 @@ async def test_parallel_execution_single_node():
 
 
 @pytest.mark.asyncio
-async def test_parallel_execution_matches_sequential_output():
+async def test_parallel_execution_matches_sequential_output(engine: WorkflowEngine):
     """Test that parallel execution produces the same output as sequential."""
-    input_node = InputNode.from_fields(c=IntegerValue)
-    output_node = OutputNode.from_fields(sum=IntegerValue)
-
-    a = ConstantIntegerNode.from_value(id="a", value=42)
-    b = ConstantIntegerNode.from_value(id="b", value=2025)
-    a_plus_b = AddNode(id="a+b")
-    a_plus_b_plus_c = AddNode(id="a+b+c")
-
     workflow = Workflow(
-        input_node=input_node,
-        output_node=output_node,
-        inner_nodes=[a, b, a_plus_b, a_plus_b_plus_c],
+        input_node=(input_node := engine.create_input_node(c=IntegerValue)),
+        output_node=(output_node := engine.create_output_node(sum=IntegerValue)),
+        inner_nodes=[
+            a := engine.create_node(ConstantIntegerNode, id="a", params=dict(value=42)),
+            b := engine.create_node(
+                ConstantIntegerNode, id="b", params=dict(value=2025)
+            ),
+            a_plus_b := engine.create_node(AddNode, id="a+b"),
+            a_plus_b_plus_c := engine.create_node(AddNode, id="a+b+c"),
+        ],
         edges=[
             Edge.from_nodes(
                 source=a, source_key="value", target=a_plus_b, target_key="a"
@@ -651,18 +622,17 @@ async def test_parallel_execution_matches_sequential_output():
     input_data = {"c": IntegerValue(-256)}
 
     # Sequential execution
-    sequential_algo = TopologicalExecutionAlgorithm()
-    sequential_engine = WorkflowEngine(execution_algorithm=sequential_algo)
+    sequential_engine = WorkflowEngine(
+        execution_algorithm=TopologicalExecutionAlgorithm()
+    )
     sequential_result = await sequential_engine.execute(
         context=context,
         workflow=workflow,
         input=input_data,
     )
 
-    # Parallel execution
-    parallel_algo = ParallelExecutionAlgorithm()
-    parallel_engine = WorkflowEngine(execution_algorithm=parallel_algo)
-    parallel_result = await parallel_engine.execute(
+    # Parallel execution (the fixture engine)
+    parallel_result = await engine.execute(
         context=context,
         workflow=workflow,
         input=input_data,
@@ -678,7 +648,7 @@ async def test_parallel_execution_matches_sequential_output():
 
 
 @pytest.mark.asyncio
-async def test_parallel_execution_eager_dispatch():
+async def test_parallel_execution_eager_dispatch(engine: WorkflowEngine):
     """Test that dependent nodes start immediately when dependencies complete.
 
     Graph:
@@ -690,21 +660,22 @@ async def test_parallel_execution_eager_dispatch():
 
     With batch dispatch: A+B batch completes at 200ms, then C runs, finishes at 250ms.
     """
-    input_node = InputNode.empty()
-    output_node = OutputNode.from_fields(
-        a=IntegerValue,
-        b=IntegerValue,
-        c=IntegerValue,
-    )
-
-    a = SlowNode.from_delay(id="a", delay_ms=50)
-    b = SlowNode.from_delay(id="b", delay_ms=200)  # Not referenced, only used by id
-    c = SlowPassthroughNode.from_delay(id="c", delay_ms=50)
-
     workflow = Workflow(
-        input_node=input_node,
-        output_node=output_node,
-        inner_nodes=[a, b, c],
+        input_node=engine.create_input_node(),
+        output_node=(
+            output_node := engine.create_output_node(
+                a=IntegerValue,
+                b=IntegerValue,
+                c=IntegerValue,
+            )
+        ),
+        inner_nodes=[
+            a := engine.create_node(SlowNode, id="a", params=dict(delay_ms=50)),
+            b := engine.create_node(SlowNode, id="b", params=dict(delay_ms=200)),
+            c := engine.create_node(
+                SlowPassthroughNode, id="c", params=dict(delay_ms=50)
+            ),
+        ],
         edges=[
             Edge.from_nodes(source=a, source_key="value", target=c, target_key="value"),
             Edge.from_nodes(
@@ -720,9 +691,6 @@ async def test_parallel_execution_eager_dispatch():
     )
 
     context = InMemoryExecutionContext()
-    algorithm = ParallelExecutionAlgorithm()
-    engine = WorkflowEngine(execution_algorithm=algorithm)
-
     start = asyncio.get_event_loop().time()
     result = await engine.execute(
         context=context,

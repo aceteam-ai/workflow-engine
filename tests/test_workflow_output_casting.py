@@ -9,10 +9,8 @@ import pytest
 from workflow_engine import (
     Edge,
     FloatValue,
-    InputNode,
     IntegerValue,
     JSONValue,
-    OutputNode,
     SequenceValue,
     ValidationContext,
     Workflow,
@@ -27,19 +25,22 @@ from workflow_engine.files import JSONLinesFileValue
 from workflow_engine.nodes import AddNode, ConstantIntegerNode, ConstantStringNode
 
 
+@pytest.fixture
+def engine() -> WorkflowEngine:
+    return WorkflowEngine()
+
+
 @pytest.mark.unit
-async def test_basic_output_casting():
+async def test_basic_output_casting(engine: WorkflowEngine):
     """Test that IntegerValue is cast to FloatValue in workflow output."""
-    input_node = InputNode.empty()
-    output_node = OutputNode.from_fields(result=FloatValue)
-
-    node = ConstantIntegerNode.from_value(id="producer", value=42)
-
-    # Workflow expects FloatValue output, but node produces IntegerValue
     workflow = Workflow(
-        input_node=input_node,
-        output_node=output_node,
-        inner_nodes=[node],
+        input_node=engine.create_input_node(),
+        output_node=(output_node := engine.create_output_node(result=FloatValue)),
+        inner_nodes=[
+            node := engine.create_node(
+                ConstantIntegerNode, id="producer", params=dict(value=42)
+            ),
+        ],
         edges=[
             Edge.from_nodes(
                 source=node,
@@ -50,7 +51,6 @@ async def test_basic_output_casting():
         ],
     )
 
-    engine = WorkflowEngine()
     context = InMemoryExecutionContext()
     result = await engine.execute(context=context, workflow=workflow, input={})
 
@@ -64,19 +64,24 @@ async def test_basic_output_casting():
 @pytest.mark.unit
 async def test_multiple_outputs_casting():
     """Test that multiple outputs are cast correctly in parallel."""
-    input_node = InputNode.empty()
-    output_node = OutputNode.from_fields(
-        int_result=FloatValue,
-        str_result=IntegerValue,
-    )
-
-    int_node = ConstantIntegerNode.from_value(id="int_producer", value=100)
-    str_node = ConstantStringNode.from_value(id="str_producer", value="123")
+    engine = WorkflowEngine(execution_algorithm=TopologicalExecutionAlgorithm())
 
     workflow = Workflow(
-        input_node=input_node,
-        output_node=output_node,
-        inner_nodes=[int_node, str_node],
+        input_node=engine.create_input_node(),
+        output_node=(
+            output_node := engine.create_output_node(
+                int_result=FloatValue,
+                str_result=IntegerValue,
+            )
+        ),
+        inner_nodes=[
+            int_node := engine.create_node(
+                ConstantIntegerNode, id="int_producer", params=dict(value=100)
+            ),
+            str_node := engine.create_node(
+                ConstantStringNode, id="str_producer", params=dict(value="123")
+            ),
+        ],
         edges=[
             Edge.from_nodes(
                 source=int_node,
@@ -94,8 +99,6 @@ async def test_multiple_outputs_casting():
     )
 
     context = InMemoryExecutionContext()
-    engine = WorkflowEngine(execution_algorithm=TopologicalExecutionAlgorithm())
-
     result = await engine.execute(
         context=context,
         workflow=workflow,
@@ -115,17 +118,16 @@ async def test_multiple_outputs_casting():
 @pytest.mark.unit
 async def test_parallel_execution_algorithm():
     """Test that output casting works with ParallelExecutionAlgorithm."""
-    input_node = InputNode.empty()
-    output_node = OutputNode.from_fields(
-        result=FloatValue,
-    )
-
-    node = ConstantIntegerNode.from_value(id="producer", value=42)
+    engine = WorkflowEngine(execution_algorithm=ParallelExecutionAlgorithm())
 
     workflow = Workflow(
-        input_node=input_node,
-        output_node=output_node,
-        inner_nodes=[node],
+        input_node=engine.create_input_node(),
+        output_node=(output_node := engine.create_output_node(result=FloatValue)),
+        inner_nodes=[
+            node := engine.create_node(
+                ConstantIntegerNode, id="producer", params=dict(value=42)
+            ),
+        ],
         edges=[
             Edge.from_nodes(
                 source=node,
@@ -137,7 +139,6 @@ async def test_parallel_execution_algorithm():
     )
 
     context = InMemoryExecutionContext()
-    engine = WorkflowEngine(execution_algorithm=ParallelExecutionAlgorithm())
     result = await engine.execute(context=context, workflow=workflow, input={})
 
     assert result.status is WorkflowExecutionResultStatus.SUCCESS
@@ -149,22 +150,17 @@ async def test_parallel_execution_algorithm():
 @pytest.mark.asyncio
 async def test_complex_type_sequence_to_jsonlines():
     """Test casting complex types like SequenceValue[JSONValue] to JSONLinesFileValue."""
-    # Create a sequence of JSON values
     json_values = [JSONValue({"name": "Alice"}), JSONValue({"name": "Bob"})]
     sequence = SequenceValue(json_values)
 
-    # Test that the sequence can be cast to JSONLinesFileValue
     context = InMemoryExecutionContext()
 
-    # Verify the cast is possible
     assert sequence.can_cast_to(JSONLinesFileValue)
 
-    # Perform the cast
     result = await sequence.cast_to(JSONLinesFileValue, context=context)
 
     assert isinstance(result, JSONLinesFileValue)
 
-    # Verify the result has a path (may be relative or absolute depending on context)
     assert result.path is not None
     assert len(result.path) > 0
 
@@ -172,15 +168,16 @@ async def test_complex_type_sequence_to_jsonlines():
 @pytest.mark.unit
 async def test_no_casting_when_types_match():
     """Test that no casting occurs when output types already match."""
-    input_node = InputNode.empty()
-    output_node = OutputNode.from_fields(result=IntegerValue)
-
-    node = ConstantIntegerNode.from_value(id="producer", value=42)
+    engine = WorkflowEngine(execution_algorithm=TopologicalExecutionAlgorithm())
 
     workflow = Workflow(
-        input_node=input_node,
-        output_node=output_node,
-        inner_nodes=[node],
+        input_node=engine.create_input_node(),
+        output_node=(output_node := engine.create_output_node(result=IntegerValue)),
+        inner_nodes=[
+            node := engine.create_node(
+                ConstantIntegerNode, id="producer", params=dict(value=42)
+            ),
+        ],
         edges=[
             Edge.from_nodes(
                 source=node,
@@ -192,7 +189,6 @@ async def test_no_casting_when_types_match():
     )
 
     context = InMemoryExecutionContext()
-    engine = WorkflowEngine(execution_algorithm=TopologicalExecutionAlgorithm())
     result = await engine.execute(
         context=context,
         workflow=workflow,
@@ -207,20 +203,19 @@ async def test_no_casting_when_types_match():
 @pytest.mark.unit
 async def test_input_casting():
     """Test that workflow inputs can be cast to expected types."""
-    input_node = InputNode.from_fields(
-        a=FloatValue,
-        b=FloatValue,
-    )
-    output_node = OutputNode.from_fields(
-        result=FloatValue,
-    )
-
-    add_node = AddNode(id="add")
+    engine = WorkflowEngine(execution_algorithm=TopologicalExecutionAlgorithm())
 
     workflow = Workflow(
-        input_node=input_node,
-        output_node=output_node,
-        inner_nodes=[add_node],
+        input_node=(
+            input_node := engine.create_input_node(
+                a=FloatValue,
+                b=FloatValue,
+            )
+        ),
+        output_node=(output_node := engine.create_output_node(result=FloatValue)),
+        inner_nodes=[
+            add_node := engine.create_node(AddNode, id="add"),
+        ],
         edges=[
             Edge.from_nodes(
                 source=input_node,
@@ -243,17 +238,13 @@ async def test_input_casting():
         ],
     )
 
-    engine = WorkflowEngine(execution_algorithm=TopologicalExecutionAlgorithm())
     validated_workflow = await engine.validate(workflow)
 
-    # Workflow should expect FloatValue inputs
     input_fields = get_data_fields(validated_workflow.input_type)
     assert issubclass(input_fields["a"][0], FloatValue)
     assert issubclass(input_fields["b"][0], FloatValue)
 
     context = InMemoryExecutionContext()
-    engine = WorkflowEngine(execution_algorithm=TopologicalExecutionAlgorithm())
-
     result = await engine.execute(
         context=context,
         workflow=workflow,
@@ -264,19 +255,16 @@ async def test_input_casting():
 
 
 @pytest.mark.unit
-async def test_workflow_output_type_inference():
+async def test_workflow_output_type_inference(engine: WorkflowEngine):
     """Test that workflow infers output types from OutputNode."""
-    input_node = InputNode.empty()
-    output_node = OutputNode.from_fields(
-        result=IntegerValue,
-    )
-
-    node = ConstantIntegerNode.from_value(id="producer", value=42)
-
     workflow = Workflow(
-        input_node=input_node,
-        output_node=output_node,
-        inner_nodes=[node],
+        input_node=engine.create_input_node(),
+        output_node=(output_node := engine.create_output_node(result=IntegerValue)),
+        inner_nodes=[
+            node := engine.create_node(
+                ConstantIntegerNode, id="producer", params=dict(value=42)
+            ),
+        ],
         edges=[
             Edge.from_nodes(
                 source=node,

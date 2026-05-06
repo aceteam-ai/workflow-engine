@@ -10,8 +10,6 @@ from pydantic import ValidationError
 
 from workflow_engine import (
     Edge,
-    InputNode,
-    OutputNode,
     StringValue,
     Workflow,
     WorkflowEngine,
@@ -185,17 +183,20 @@ class TestRateLimitIntegration:
     @pytest.mark.asyncio
     async def test_execution_with_rate_limit_registry(self):
         """Test that execution algorithm uses rate limit registry."""
-        input_node = InputNode.empty()
-        output_node = OutputNode.from_fields(
-            result=StringValue,
+        rate_limits = RateLimitRegistry()
+        rate_limits.configure("ConstantString", RateLimitConfig(max_concurrency=1))
+        engine = WorkflowEngine(
+            execution_algorithm=TopologicalExecutionAlgorithm(rate_limits=rate_limits)
         )
 
-        constant = ConstantStringNode.from_value(id="constant", value="test")
-
         workflow = Workflow(
-            input_node=input_node,
-            output_node=output_node,
-            inner_nodes=[constant],
+            input_node=engine.create_input_node(),
+            output_node=(output_node := engine.create_output_node(result=StringValue)),
+            inner_nodes=[
+                constant := engine.create_node(
+                    ConstantStringNode, id="constant", params=dict(value="test")
+                ),
+            ],
             edges=[
                 Edge.from_nodes(
                     source=constant,
@@ -207,10 +208,6 @@ class TestRateLimitIntegration:
         )
 
         context = InMemoryExecutionContext()
-        rate_limits = RateLimitRegistry()
-        rate_limits.configure("ConstantString", RateLimitConfig(max_concurrency=1))
-        algorithm = TopologicalExecutionAlgorithm(rate_limits=rate_limits)
-        engine = WorkflowEngine(execution_algorithm=algorithm)
         result = await engine.execute(
             context=context,
             workflow=workflow,
@@ -223,17 +220,16 @@ class TestRateLimitIntegration:
     @pytest.mark.asyncio
     async def test_execution_without_rate_limits(self):
         """Test that execution works without rate limits configured."""
-        input_node = InputNode.empty()
-        output_node = OutputNode.from_fields(
-            result=StringValue,
-        )
-
-        constant = ConstantStringNode.from_value(id="constant", value="test")
+        engine = WorkflowEngine(execution_algorithm=TopologicalExecutionAlgorithm())
 
         workflow = Workflow(
-            input_node=input_node,
-            output_node=output_node,
-            inner_nodes=[constant],
+            input_node=engine.create_input_node(),
+            output_node=(output_node := engine.create_output_node(result=StringValue)),
+            inner_nodes=[
+                constant := engine.create_node(
+                    ConstantStringNode, id="constant", params=dict(value="test")
+                ),
+            ],
             edges=[
                 Edge.from_nodes(
                     source=constant,
@@ -245,8 +241,6 @@ class TestRateLimitIntegration:
         )
 
         context = InMemoryExecutionContext()
-        algorithm = TopologicalExecutionAlgorithm()
-        engine = WorkflowEngine(execution_algorithm=algorithm)
         result = await engine.execute(
             context=context,
             workflow=workflow,
@@ -261,18 +255,23 @@ class TestRateLimitIntegration:
         """Test that rate limiter is released even when node fails."""
         from workflow_engine.nodes import ErrorNode
 
-        input_node = InputNode.empty()
-        output_node = OutputNode.from_fields(
-            result=StringValue,
+        rate_limits = RateLimitRegistry()
+        rate_limits.configure("Error", RateLimitConfig(max_concurrency=1))
+        engine = WorkflowEngine(
+            execution_algorithm=TopologicalExecutionAlgorithm(rate_limits=rate_limits)
         )
 
-        constant = ConstantStringNode.from_value(id="constant", value="test")
-        error = ErrorNode.from_name(id="error", name="TestError")
-
         workflow = Workflow(
-            input_node=input_node,
-            output_node=output_node,
-            inner_nodes=[constant, error],
+            input_node=engine.create_input_node(),
+            output_node=(output_node := engine.create_output_node(result=StringValue)),
+            inner_nodes=[
+                constant := engine.create_node(
+                    ConstantStringNode, id="constant", params=dict(value="test")
+                ),
+                error := engine.create_node(
+                    ErrorNode, id="error", params=dict(error_name="TestError")
+                ),
+            ],
             edges=[
                 Edge.from_nodes(
                     source=constant,
@@ -290,12 +289,6 @@ class TestRateLimitIntegration:
         )
 
         context = InMemoryExecutionContext()
-        rate_limits = RateLimitRegistry()
-        config = RateLimitConfig(max_concurrency=1)
-        rate_limits.configure("Error", config)
-        algorithm = TopologicalExecutionAlgorithm(rate_limits=rate_limits)
-        engine = WorkflowEngine(execution_algorithm=algorithm)
-
         result = await engine.execute(
             context=context,
             workflow=workflow,

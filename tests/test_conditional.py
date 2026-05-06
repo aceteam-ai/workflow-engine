@@ -3,9 +3,7 @@ import pytest
 from workflow_engine import (
     BooleanValue,
     Edge,
-    InputNode,
     IntegerValue,
-    OutputNode,
     Workflow,
     WorkflowEngine,
     WorkflowExecutionResultStatus,
@@ -15,22 +13,35 @@ from workflow_engine.nodes import AddNode, ConstantIntegerNode, IfElseNode
 
 
 @pytest.fixture
-def add_one_workflow() -> Workflow:
+def engine() -> WorkflowEngine:
+    return WorkflowEngine()
+
+
+@pytest.fixture
+def add_one_workflow(engine: WorkflowEngine) -> Workflow:
     """Create a workflow that adds one to a number."""
-    input_node = InputNode.from_fields(
-        start=IntegerValue,
-    )
-    output_node = OutputNode.from_fields(
-        result=IntegerValue,
-    )
-
-    one = ConstantIntegerNode.from_value(id="one", value=1)
-    add_one = AddNode(id="add_one")
-
     return Workflow(
-        input_node=input_node,
-        output_node=output_node,
-        inner_nodes=[one, add_one],
+        input_node=(
+            input_node := engine.create_input_node(
+                start=IntegerValue,
+            )
+        ),
+        output_node=(
+            output_node := engine.create_output_node(
+                result=IntegerValue,
+            )
+        ),
+        inner_nodes=[
+            one := engine.create_node(
+                ConstantIntegerNode,
+                id="one",
+                params=dict(value=1),
+            ),
+            add_one := engine.create_node(
+                AddNode,
+                id="add_one",
+            ),
+        ],
         edges=[
             Edge.from_nodes(
                 source=one,
@@ -55,22 +66,30 @@ def add_one_workflow() -> Workflow:
 
 
 @pytest.fixture
-def subtract_one_workflow() -> Workflow:
+def subtract_one_workflow(engine: WorkflowEngine) -> Workflow:
     """Create a workflow that subtracts one from a number."""
-    input_node = InputNode.from_fields(
-        start=IntegerValue,
-    )
-    output_node = OutputNode.from_fields(
-        result=IntegerValue,
-    )
-
-    negative_one = ConstantIntegerNode.from_value(id="negative_one", value=-1)
-    subtract_one = AddNode(id="subtract_one")
-
     return Workflow(
-        input_node=input_node,
-        output_node=output_node,
-        inner_nodes=[negative_one, subtract_one],
+        input_node=(
+            input_node := engine.create_input_node(
+                start=IntegerValue,
+            )
+        ),
+        output_node=(
+            output_node := engine.create_output_node(
+                result=IntegerValue,
+            )
+        ),
+        inner_nodes=[
+            negative_one := engine.create_node(
+                ConstantIntegerNode,
+                id="negative_one",
+                params=dict(value=-1),
+            ),
+            subtract_one := engine.create_node(
+                AddNode,
+                id="subtract_one",
+            ),
+        ],
         edges=[
             Edge.from_nodes(
                 source=negative_one,
@@ -96,34 +115,38 @@ def subtract_one_workflow() -> Workflow:
 
 @pytest.mark.asyncio
 async def test_conditional_workflow(
+    engine: WorkflowEngine,
     add_one_workflow: Workflow,
     subtract_one_workflow: Workflow,
 ):
     """Test that the workflow outputs start+1 when condition is True, and
     start-1 when condition is False."""
     context = InMemoryExecutionContext()
-    engine = WorkflowEngine()
 
     start_value = 42
 
-    input_node = InputNode.from_fields(
-        start=IntegerValue,
-        condition=BooleanValue,
-    )
-    output_node = OutputNode.from_fields(
-        result=IntegerValue,
-    )
-
-    conditional = IfElseNode.from_workflows(
-        id="conditional",
-        if_true=add_one_workflow,
-        if_false=subtract_one_workflow,
-    )
-
     workflow = Workflow(
-        input_node=input_node,
-        output_node=output_node,
-        inner_nodes=[conditional],
+        input_node=(
+            input_node := engine.create_input_node(
+                start=IntegerValue,
+                condition=BooleanValue,
+            )
+        ),
+        output_node=(
+            output_node := engine.create_output_node(
+                result=IntegerValue,
+            )
+        ),
+        inner_nodes=[
+            conditional := engine.create_node(
+                IfElseNode,
+                id="conditional",
+                params=dict(
+                    if_true=add_one_workflow,
+                    if_false=subtract_one_workflow,
+                ),
+            )
+        ],
         edges=[
             Edge.from_nodes(
                 source=input_node,
@@ -171,40 +194,47 @@ async def test_conditional_workflow(
 
 @pytest.mark.asyncio
 async def test_conditional_workflow_twice_series(
+    engine: WorkflowEngine,
     add_one_workflow: Workflow,
     subtract_one_workflow: Workflow,
 ):
     """Test that the workflow behaves correctly when condition is called twice
     in series, once with True and once with False."""
     context = InMemoryExecutionContext()
-    engine = WorkflowEngine()
 
     start_value = 42
 
-    input_node = InputNode.from_fields(
-        start=IntegerValue,
-        condition_1=BooleanValue,
-        condition_2=BooleanValue,
-    )
-    output_node = OutputNode.from_fields(
-        result=IntegerValue,
-    )
-
-    conditional_1 = IfElseNode.from_workflows(
-        id="conditional_1",
-        if_true=add_one_workflow,
-        if_false=subtract_one_workflow,
-    )
-    conditional_2 = IfElseNode.from_workflows(
-        id="conditional_2",
-        if_true=add_one_workflow,
-        if_false=subtract_one_workflow,
-    )
-
     workflow = Workflow(
-        input_node=input_node,
-        output_node=output_node,
-        inner_nodes=[conditional_1, conditional_2],
+        input_node=(
+            input_node := engine.create_input_node(
+                start=IntegerValue,
+                condition_1=BooleanValue,
+                condition_2=BooleanValue,
+            )
+        ),
+        output_node=(
+            output_node := engine.create_output_node(
+                result=IntegerValue,
+            )
+        ),
+        inner_nodes=[
+            conditional_1 := engine.create_node(
+                IfElseNode,
+                id="conditional_1",
+                params=dict(
+                    if_true=add_one_workflow,
+                    if_false=subtract_one_workflow,
+                ),
+            ),
+            conditional_2 := engine.create_node(
+                IfElseNode,
+                id="conditional_2",
+                params=dict(
+                    if_true=add_one_workflow,
+                    if_false=subtract_one_workflow,
+                ),
+            ),
+        ],
         edges=[
             Edge.from_nodes(
                 source=conditional_1,

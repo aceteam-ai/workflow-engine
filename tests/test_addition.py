@@ -10,29 +10,47 @@ from workflow_engine import (
     WorkflowExecutionResultStatus,
 )
 from workflow_engine.contexts import InMemoryExecutionContext
-from workflow_engine.core.io import InputNode, OutputNode
 from workflow_engine.core.values import get_data_fields
 from workflow_engine.nodes import AddNode, ConstantIntegerNode
 
 
 @pytest.fixture
-def workflow():
-    """Helper function to create the addition workflow."""
-    input_node = InputNode.from_fields(
-        c=IntegerValue,
-    )
-    output_node = OutputNode.from_fields(
-        sum=IntegerValue,
-    )
+def engine() -> WorkflowEngine:
+    return WorkflowEngine()
 
+
+@pytest.fixture
+def workflow(engine: WorkflowEngine) -> Workflow:
     return Workflow(
-        input_node=input_node,
-        output_node=output_node,
+        input_node=(
+            input_node := engine.create_input_node(
+                c=IntegerValue,
+            )
+        ),
+        output_node=(
+            output_node := engine.create_output_node(
+                sum=IntegerValue,
+            )
+        ),
         inner_nodes=[
-            a := ConstantIntegerNode.from_value(id="a", value=42),
-            b := ConstantIntegerNode.from_value(id="b", value=2025),
-            a_plus_b := AddNode(id="a+b"),
-            a_plus_b_plus_c := AddNode(id="a+b+c"),
+            a := engine.create_node(
+                ConstantIntegerNode,
+                id="a",
+                params=dict(value=42),
+            ),
+            b := engine.create_node(
+                ConstantIntegerNode,
+                id="b",
+                params=dict(value=2025),
+            ),
+            a_plus_b := engine.create_node(
+                AddNode,
+                id="a+b",
+            ),
+            a_plus_b_plus_c := engine.create_node(
+                AddNode,
+                id="a+b+c",
+            ),
         ],
         edges=[
             Edge.from_nodes(
@@ -70,19 +88,28 @@ def workflow():
 
 
 @pytest.mark.asyncio
-async def test_add_3_arguments():
+async def test_add_3_arguments(engine: WorkflowEngine):
     """Test AddNode with 3 arguments (a, b, c)."""
-    constants = [
-        ConstantIntegerNode.from_value(id=f"const_{i}", value=(i + 1) * 10)
-        for i in range(3)
-    ]
-    add = AddNode.with_arity(id="add", arity=3)
-    output_node = OutputNode.from_fields(sum=IntegerValue)
-
     workflow = Workflow(
-        input_node=InputNode.from_fields(),
-        output_node=output_node,
-        inner_nodes=[*constants, add],
+        input_node=engine.create_input_node(),
+        output_node=(output_node := engine.create_output_node(sum=IntegerValue)),
+        inner_nodes=[
+            *(
+                constants := [
+                    engine.create_node(
+                        ConstantIntegerNode,
+                        id=f"const_{i}",
+                        params=dict(value=(i + 1) * 10),
+                    )
+                    for i in range(3)
+                ]
+            ),
+            add := engine.create_node(
+                AddNode,
+                id="add",
+                params=dict(num_arguments=3),
+            ),
+        ],
         edges=[
             Edge.from_nodes(
                 source=constants[i],
@@ -103,7 +130,6 @@ async def test_add_3_arguments():
     )
 
     context = InMemoryExecutionContext()
-    engine = WorkflowEngine()
     result = await engine.execute(
         context=context,
         workflow=workflow,
@@ -114,23 +140,33 @@ async def test_add_3_arguments():
 
 
 @pytest.mark.asyncio
-async def test_add_30_arguments():
+async def test_add_30_arguments(engine: WorkflowEngine):
     """Test AddNode with 30 arguments (a-z, aa-ad), verifying field name generation."""
     n = 30
     # Field names: a, b, ..., z (26), aa, ab, ac, ad (4)
     expected_names = [chr(ord("a") + i) for i in range(26)] + ["aa", "ab", "ac", "ad"]
     assert len(expected_names) == n
 
-    constants = [
-        ConstantIntegerNode.from_value(id=f"const_{i}", value=i + 1) for i in range(n)
-    ]
-    add = AddNode.with_arity(id="add", arity=n)
-    output_node = OutputNode.from_fields(sum=IntegerValue)
-
     workflow = Workflow(
-        input_node=InputNode.from_fields(),
-        output_node=output_node,
-        inner_nodes=[*constants, add],
+        input_node=engine.create_input_node(),
+        output_node=(output_node := engine.create_output_node(sum=IntegerValue)),
+        inner_nodes=[
+            *(
+                constants := [
+                    engine.create_node(
+                        ConstantIntegerNode,
+                        id=f"const_{i}",
+                        params=dict(value=i + 1),
+                    )
+                    for i in range(n)
+                ]
+            ),
+            add := engine.create_node(
+                AddNode,
+                id="add",
+                params=dict(num_arguments=n),
+            ),
+        ],
         edges=[
             Edge.from_nodes(
                 source=constants[i],
@@ -151,7 +187,6 @@ async def test_add_30_arguments():
     )
 
     context = InMemoryExecutionContext()
-    engine = WorkflowEngine()
     result = await engine.execute(
         context=context,
         workflow=workflow,
@@ -161,13 +196,19 @@ async def test_add_30_arguments():
     assert result.output == {"sum": sum(range(1, n + 1))}
 
 
-async def test_add_1000_arguments_field_names():
+async def test_add_1000_arguments_field_names(engine: WorkflowEngine):
     """Spot-check field names for a 1000-argument AddNode without executing it."""
-    add = AddNode.with_arity(id="add", arity=1000)
+    validation_context = ValidationContext()
+
+    add = engine.create_node(
+        AddNode,
+        id="add",
+        params=dict(num_arguments=1000),
+    )
     fields = [
         (name, value_type, field_info.title)
         for name, (value_type, field_info) in get_data_fields(
-            await add.input_type(ValidationContext())
+            await add.input_type(validation_context)
         ).items()
     ]
     assert len(fields) == 1000
@@ -186,10 +227,9 @@ async def test_add_1000_arguments_field_names():
 
 
 @pytest.mark.asyncio
-async def test_workflow_execution(workflow: Workflow):
+async def test_workflow_execution(engine: WorkflowEngine, workflow: Workflow):
     """Test that the workflow executes correctly and produces the expected result."""
     context = InMemoryExecutionContext()
-    engine = WorkflowEngine()
 
     c = -256
 

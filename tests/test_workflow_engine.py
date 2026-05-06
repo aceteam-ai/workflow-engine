@@ -1,6 +1,6 @@
 """Tests for WorkflowEngine."""
 
-from typing import Literal, Type
+from typing import Type
 
 import pytest
 from overrides import override
@@ -9,17 +9,18 @@ from workflow_engine import (
     Edge,
     Empty,
     ExecutionContext,
+    InputNode,
     IntegerValue,
     Node,
     NodeRegistry,
     NodeTypeInfo,
+    OutputNode,
     ValueRegistry,
     Workflow,
     WorkflowEngine,
     WorkflowExecutionResultStatus,
 )
 from workflow_engine.contexts import InMemoryExecutionContext
-from workflow_engine.core.io import InputNode, OutputNode
 from workflow_engine.execution import ParallelExecutionAlgorithm
 from workflow_engine.nodes import AddNode
 
@@ -27,12 +28,10 @@ from workflow_engine.nodes import AddNode
 # Test fixtures - simple node classes for testing
 class SampleAddNode(Node[Empty, Empty, Empty]):
     TYPE_INFO = NodeTypeInfo.from_parameter_type(
-        name="SampleAdd",
         display_name="Sample Add",
         version="1.0.0",
         parameter_type=Empty,
     )
-    type: Literal["SampleAdd"] = "SampleAdd"  # pyright: ignore[reportIncompatibleVariableOverride]
 
     @classmethod
     @override
@@ -58,12 +57,10 @@ class SampleAddNode(Node[Empty, Empty, Empty]):
 
 class SampleMultiplyNode(Node[Empty, Empty, Empty]):
     TYPE_INFO = NodeTypeInfo.from_parameter_type(
-        name="SampleMultiply",
         display_name="Sample Multiply",
         version="1.0.0",
         parameter_type=Empty,
     )
-    type: Literal["SampleMultiply"] = "SampleMultiply"  # pyright: ignore[reportIncompatibleVariableOverride]
 
     @classmethod
     @override
@@ -85,6 +82,19 @@ class SampleMultiplyNode(Node[Empty, Empty, Empty]):
         input: Empty,
     ) -> Empty:
         return Empty()
+
+
+def _build_registry(*node_classes: type[Node]) -> NodeRegistry:
+    """Build a registry with the given node classes plus Node, Input, Output."""
+    builder = (
+        NodeRegistry.builder(lazy=True)
+        .register(Node, name="Node")
+        .register(InputNode)
+        .register(OutputNode)
+    )
+    for cls in node_classes:
+        builder.register(cls)
+    return builder.build()
 
 
 class TestWorkflowEngine:
@@ -112,60 +122,39 @@ class TestWorkflowEngine:
 
     async def test_default_engine_loads_workflow(self):
         """Test that default engine can load workflows with built-in node types."""
-        # Create engine with no arguments - uses global registries
         engine = WorkflowEngine()
 
-        # Use SampleAddNode which is registered in our test's global registry
-        input_node = InputNode.empty()
-        output_node = OutputNode.empty()
-
         workflow = Workflow.model_construct(
-            input_node=input_node,
+            input_node=engine.create_input_node(),
             inner_nodes=[
                 Node.model_construct(type="SampleAdd", id="node1", version="1.0.0")
             ],
-            output_node=output_node,
+            output_node=engine.create_output_node(),
             edges=[],
         )
 
-        # Should be able to load it
         typed_workflow = await engine.validate(workflow)
         assert isinstance(typed_workflow.inner_nodes[0], SampleAddNode)
 
     async def test_load_workflow_with_untyped_nodes(self):
         """Test loading a workflow with untyped nodes into typed nodes."""
-        # Set up registry
-        node_registry = (
-            NodeRegistry.builder(lazy=True)
-            .register(Node)
-            .register(SampleAddNode)
-            .build()
-        )
-
-        value_registry = ValueRegistry.builder(lazy=True)
-
         engine = WorkflowEngine(
-            node_registry=node_registry,
-            value_registry=value_registry,
+            node_registry=_build_registry(SampleAddNode),
+            value_registry=ValueRegistry.builder(lazy=True),
         )
 
-        # Create workflow with untyped node
-        input_node = InputNode.empty()
-        output_node = OutputNode.empty()
         untyped_node = Node.model_construct(
             type="SampleAdd", id="node1", version="1.0.0"
         )
         workflow = Workflow(
-            input_node=input_node,
+            input_node=engine.create_input_node(),
             inner_nodes=[untyped_node],
-            output_node=output_node,
+            output_node=engine.create_output_node(),
             edges=[],
         )
 
-        # Load workflow
         typed_workflow = await engine.validate(workflow)
 
-        # Verify the node is now typed
         assert len(typed_workflow.inner_nodes) == 1
         assert isinstance(typed_workflow.inner_nodes[0], SampleAddNode)
         assert typed_workflow.inner_nodes[0].type == "SampleAdd"
@@ -173,107 +162,67 @@ class TestWorkflowEngine:
 
     async def test_load_workflow_with_already_typed_nodes(self):
         """Test that loading a workflow with typed nodes returns equivalent workflow."""
-        node_registry = (
-            NodeRegistry.builder(lazy=True)
-            .register(Node)
-            .register(SampleAddNode)
-            .build()
-        )
-
-        value_registry = ValueRegistry.builder(lazy=True)
-
         engine = WorkflowEngine(
-            node_registry=node_registry,
-            value_registry=value_registry,
+            node_registry=_build_registry(SampleAddNode),
+            value_registry=ValueRegistry.builder(lazy=True),
         )
 
-        # Create workflow with already typed node
-        input_node = InputNode.empty()
-        output_node = OutputNode.empty()
-        typed_node = SampleAddNode(
-            id="node1",
-            version="1.0.0",
-        )
+        typed_node = engine.create_node(SampleAddNode, id="node1")
         workflow = Workflow(
-            input_node=input_node,
+            input_node=engine.create_input_node(),
             inner_nodes=[typed_node],
-            output_node=output_node,
+            output_node=engine.create_output_node(),
             edges=[],
         )
 
-        # Load workflow
         loaded_workflow = await engine.validate(workflow)
 
-        # Verify the node is still the same type
         assert len(loaded_workflow.inner_nodes) == 1
         assert isinstance(loaded_workflow.inner_nodes[0], SampleAddNode)
         assert loaded_workflow.inner_nodes[0].id == "node1"
 
     async def test_load_workflow_with_multiple_nodes(self):
         """Test loading a workflow with multiple untyped nodes."""
-        node_registry = (
-            NodeRegistry.builder(lazy=True)
-            .register(Node)
-            .register(SampleAddNode)
-            .register(SampleMultiplyNode)
-            .build()
-        )
-
-        value_registry = ValueRegistry.builder(lazy=True)
-
         engine = WorkflowEngine(
-            node_registry=node_registry,
-            value_registry=value_registry,
+            node_registry=_build_registry(SampleAddNode, SampleMultiplyNode),
+            value_registry=ValueRegistry.builder(lazy=True),
         )
 
-        # Create workflow with multiple untyped nodes
-        input_node = InputNode.empty()
-        output_node = OutputNode.empty()
         node1 = Node.model_construct(type="SampleAdd", id="node1", version="1.0.0")
         node2 = Node.model_construct(type="SampleMultiply", id="node2", version="1.0.0")
 
         workflow = Workflow(
-            input_node=input_node,
+            input_node=engine.create_input_node(),
             inner_nodes=[node1, node2],
-            output_node=output_node,
+            output_node=engine.create_output_node(),
             edges=[],
         )
 
-        # Load workflow
         typed_workflow = await engine.validate(workflow)
 
-        # Verify both nodes are typed
         assert len(typed_workflow.inner_nodes) == 2
         assert isinstance(typed_workflow.inner_nodes[0], SampleAddNode)
         assert isinstance(typed_workflow.inner_nodes[1], SampleMultiplyNode)
 
     async def test_load_workflow_with_unregistered_node_type_raises_error(self):
         """Test that loading a workflow with unregistered node type raises ValueError."""
-        node_registry = NodeRegistry.builder(lazy=True).register(Node).build()
-
-        value_registry = ValueRegistry.builder(lazy=True)
-
         engine = WorkflowEngine(
-            node_registry=node_registry,
-            value_registry=value_registry,
+            node_registry=_build_registry(),
+            value_registry=ValueRegistry.builder(lazy=True),
         )
 
-        # Create workflow with unregistered node type using model_construct to bypass validation
-        input_node = InputNode.empty()
-        output_node = OutputNode.empty()
         untyped_node = Node.model_construct(
             type="UnregisteredType",
             id="node1",
             version="1.0.0",
         )
         workflow = Workflow.model_construct(
-            input_node=input_node,
+            input_node=engine.create_input_node(),
             inner_nodes=[untyped_node],
-            output_node=output_node,
+            output_node=engine.create_output_node(),
             edges=[],
         )
 
-        # Loading should raise error
         with pytest.raises(
             ValueError, match='Node type "UnregisteredType" is not registered'
         ):
@@ -281,43 +230,21 @@ class TestWorkflowEngine:
 
     async def test_load_workflow_with_different_registries(self):
         """Test that different engines with different registries have different capabilities."""
-        # Engine A with both SampleAddNode and SampleMultiplyNode
-        node_registry_a = (
-            NodeRegistry.builder(lazy=True)
-            .register(Node)
-            .register(SampleAddNode)
-            .register(SampleMultiplyNode)
-            .build()
-        )
-
         engine_a = WorkflowEngine(
-            node_registry=node_registry_a,
+            node_registry=_build_registry(SampleAddNode, SampleMultiplyNode),
             value_registry=ValueRegistry.builder(lazy=True),
         )
-
-        # Engine B with only SampleAddNode
-        node_registry_b = (
-            NodeRegistry.builder(lazy=True)
-            .register(Node)
-            .register(SampleAddNode)
-            .build()
-        )
-
         engine_b = WorkflowEngine(
-            node_registry=node_registry_b,
+            node_registry=_build_registry(SampleAddNode),
             value_registry=ValueRegistry.builder(lazy=True),
         )
-
-        # Workflow with SampleAdd node - both can load
-        input_node = InputNode.empty()
-        output_node = OutputNode.empty()
 
         workflow_add = Workflow.model_construct(
-            input_node=input_node,
+            input_node=engine_a.create_input_node(),
             inner_nodes=[
                 Node.model_construct(type="SampleAdd", id="node1", version="1.0.0")
             ],
-            output_node=output_node,
+            output_node=engine_a.create_output_node(),
             edges=[],
         )
 
@@ -327,20 +254,18 @@ class TestWorkflowEngine:
         assert isinstance(workflow_a.inner_nodes[0], SampleAddNode)
         assert isinstance(workflow_b.inner_nodes[0], SampleAddNode)
 
-        # Workflow with SampleMultiply node - only engine A can load
         workflow_multiply = Workflow.model_construct(
-            input_node=input_node,
+            input_node=engine_a.create_input_node(),
             inner_nodes=[
                 Node.model_construct(type="SampleMultiply", id="node1", version="1.0.0")
             ],
-            output_node=output_node,
+            output_node=engine_a.create_output_node(),
             edges=[],
         )
 
         workflow_a_mult = await engine_a.validate(workflow_multiply)
         assert isinstance(workflow_a_mult.inner_nodes[0], SampleMultiplyNode)
 
-        # Engine B cannot load SampleMultiply
         with pytest.raises(
             ValueError, match='Node type "SampleMultiply" is not registered'
         ):
@@ -348,37 +273,23 @@ class TestWorkflowEngine:
 
     async def test_load_preserves_workflow_structure(self):
         """Test that loading preserves edges and other workflow structure."""
-        node_registry = (
-            NodeRegistry.builder(lazy=True)
-            .register(Node)
-            .register(SampleAddNode)
-            .build()
-        )
-
-        value_registry = ValueRegistry.builder(lazy=True)
-
         engine = WorkflowEngine(
-            node_registry=node_registry,
-            value_registry=value_registry,
+            node_registry=_build_registry(SampleAddNode),
+            value_registry=ValueRegistry.builder(lazy=True),
         )
 
-        # Create workflow with multiple nodes (no edges for simplicity)
-        input_node = InputNode.empty()
-        output_node = OutputNode.empty()
         node1 = Node.model_construct(type="SampleAdd", id="node1", version="1.0.0")
         node2 = Node.model_construct(type="SampleAdd", id="node2", version="1.0.0")
 
         workflow = Workflow.model_construct(
-            input_node=input_node,
+            input_node=engine.create_input_node(),
             inner_nodes=[node1, node2],
-            output_node=output_node,
+            output_node=engine.create_output_node(),
             edges=[],
         )
 
-        # Load workflow
         typed_workflow = await engine.validate(workflow)
 
-        # Verify structure is preserved
         assert len(typed_workflow.inner_nodes) == 2
         assert typed_workflow.input_node.id == "input"
         assert typed_workflow.output_node.id == "output"
@@ -391,90 +302,47 @@ class TestWorkflowEngineMultiTenancy:
 
     async def test_tenant_isolation(self):
         """Test that different tenants can have different node types available."""
-        # Tenant A has only SampleAddNode
-        tenant_a_registry = (
-            NodeRegistry.builder(lazy=True)
-            .register(Node)
-            .register(SampleAddNode)
-            .build()
-        )
-
-        engine_a = WorkflowEngine(
-            node_registry=tenant_a_registry,
-        )
-
-        # Tenant B has only SampleMultiplyNode
-        tenant_b_registry = (
-            NodeRegistry.builder(lazy=True)
-            .register(Node)
-            .register(SampleMultiplyNode)
-            .build()
-        )
-
-        engine_b = WorkflowEngine(
-            node_registry=tenant_b_registry,
-        )
-
-        # Workflow with SampleAdd node - use model_construct to bypass validation
-        input_node = InputNode.empty()
-        output_node = OutputNode.empty()
+        engine_a = WorkflowEngine(node_registry=_build_registry(SampleAddNode))
+        engine_b = WorkflowEngine(node_registry=_build_registry(SampleMultiplyNode))
 
         workflow_add = Workflow.model_construct(
-            input_node=input_node,
+            input_node=engine_a.create_input_node(),
             inner_nodes=[
                 Node.model_construct(type="SampleAdd", id="node1", version="1.0.0")
             ],
-            output_node=output_node,
+            output_node=engine_a.create_output_node(),
             edges=[],
         )
 
-        # Tenant A can load it
         loaded_a = await engine_a.validate(workflow_add)
         assert isinstance(loaded_a.inner_nodes[0], SampleAddNode)
 
-        # Tenant B cannot load it
         with pytest.raises(ValueError, match='Node type "SampleAdd" is not registered'):
             await engine_b.validate(workflow_add)
 
     async def test_shared_workflow_different_engines(self):
         """Test that the same workflow JSON can be loaded by different engines."""
-        # Create two engines with different registries
-        registry_1 = NodeRegistry.builder(lazy=True)
-        registry_1.register(SampleAddNode)
-        registry_1.register(Node)
-
-        registry_2 = NodeRegistry.builder(lazy=True)
-        registry_2.register(SampleAddNode)
-        registry_2.register(Node)
-
         engine_1 = WorkflowEngine(
-            node_registry=registry_1,
+            node_registry=_build_registry(SampleAddNode),
             value_registry=ValueRegistry.builder(lazy=True),
         )
-
         engine_2 = WorkflowEngine(
-            node_registry=registry_2,
+            node_registry=_build_registry(SampleAddNode),
             value_registry=ValueRegistry.builder(lazy=True),
         )
-
-        # Create a workflow
-        input_node = InputNode.empty()
-        output_node = OutputNode.empty()
 
         workflow = Workflow(
-            input_node=input_node,
+            input_node=engine_1.create_input_node(),
             inner_nodes=[
                 Node.model_construct(type="SampleAdd", id="node1", version="1.0.0")
             ],
-            output_node=output_node,
+            output_node=engine_1.create_output_node(),
             edges=[],
         )
 
-        # Both engines can load the same workflow independently
         validated_workflow_1 = await engine_1.validate(workflow)
         validated_workflow_2 = await engine_2.validate(workflow)
 
-        # Both should produce typed workflows
         assert isinstance(validated_workflow_1.inner_nodes[0], SampleAddNode)
         assert isinstance(validated_workflow_2.inner_nodes[0], SampleAddNode)
 
@@ -484,24 +352,19 @@ class TestWorkflowEngineExecution:
 
     async def test_execute_with_default_algorithm(self):
         """Test that execute() works with default TopologicalExecutionAlgorithm."""
-
-        # Create engine with defaults
         engine = WorkflowEngine()
 
-        # Create a simple addition workflow
-        input_node = InputNode.from_fields(
-            a=IntegerValue,
-            b=IntegerValue,
-        )
-        output_node = OutputNode.from_fields(
-            result=IntegerValue,
-        )
-        add_node = AddNode(id="add1")
-
         workflow = Workflow(
-            input_node=input_node,
-            inner_nodes=[add_node],
-            output_node=output_node,
+            input_node=(
+                input_node := engine.create_input_node(
+                    a=IntegerValue,
+                    b=IntegerValue,
+                )
+            ),
+            output_node=(output_node := engine.create_output_node(result=IntegerValue)),
+            inner_nodes=[
+                add_node := engine.create_node(AddNode, id="add1"),
+            ],
             edges=[
                 Edge.from_nodes(
                     source=input_node, source_key="a", target=add_node, target_key="a"
@@ -518,7 +381,6 @@ class TestWorkflowEngineExecution:
             ],
         )
 
-        # Execute workflow
         context = InMemoryExecutionContext()
         input_data = {"a": IntegerValue(5), "b": IntegerValue(3)}
         result = await engine.execute(
@@ -527,34 +389,27 @@ class TestWorkflowEngineExecution:
             input=input_data,
         )
 
-        # Verify results
         assert result.status is WorkflowExecutionResultStatus.SUCCESS
         assert result.output["result"].root == 8
 
     async def test_execute_with_custom_algorithm(self):
         """Test that execute() uses the provided execution algorithm."""
-
-        # Create engine with custom algorithm
         custom_algorithm = ParallelExecutionAlgorithm()
         engine = WorkflowEngine(execution_algorithm=custom_algorithm)
 
-        # Verify the algorithm is stored
         assert engine.execution_algorithm is custom_algorithm
 
-        # Create a simple workflow
-        input_node = InputNode.from_fields(
-            a=IntegerValue,
-            b=IntegerValue,
-        )
-        output_node = OutputNode.from_fields(
-            result=IntegerValue,
-        )
-        add_node = AddNode(id="add1")
-
         workflow = Workflow(
-            input_node=input_node,
-            inner_nodes=[add_node],
-            output_node=output_node,
+            input_node=(
+                input_node := engine.create_input_node(
+                    a=IntegerValue,
+                    b=IntegerValue,
+                )
+            ),
+            output_node=(output_node := engine.create_output_node(result=IntegerValue)),
+            inner_nodes=[
+                add_node := engine.create_node(AddNode, id="add1"),
+            ],
             edges=[
                 Edge.from_nodes(
                     source=input_node, source_key="a", target=add_node, target_key="a"
@@ -571,7 +426,6 @@ class TestWorkflowEngineExecution:
             ],
         )
 
-        # Execute workflow
         context = InMemoryExecutionContext()
         input_data = {"a": IntegerValue(10), "b": IntegerValue(20)}
         result = await engine.execute(
@@ -580,30 +434,24 @@ class TestWorkflowEngineExecution:
             input=input_data,
         )
 
-        # Verify results
         assert result.status is WorkflowExecutionResultStatus.SUCCESS
         assert result.output["result"].root == 30
 
     async def test_execute_calls_load_internally(self):
         """Test that execute() calls load() internally before execution."""
-
-        # Create engine
         engine = WorkflowEngine()
 
-        # Create a simple workflow
-        input_node = InputNode.from_fields(
-            a=IntegerValue,
-            b=IntegerValue,
-        )
-        output_node = OutputNode.from_fields(
-            result=IntegerValue,
-        )
-        add_node = AddNode(id="add1")
-
         workflow = Workflow(
-            input_node=input_node,
-            inner_nodes=[add_node],
-            output_node=output_node,
+            input_node=(
+                input_node := engine.create_input_node(
+                    a=IntegerValue,
+                    b=IntegerValue,
+                )
+            ),
+            output_node=(output_node := engine.create_output_node(result=IntegerValue)),
+            inner_nodes=[
+                add_node := engine.create_node(AddNode, id="add1"),
+            ],
             edges=[
                 Edge.from_nodes(
                     source=input_node, source_key="a", target=add_node, target_key="a"
@@ -620,7 +468,6 @@ class TestWorkflowEngineExecution:
             ],
         )
 
-        # Execute workflow - load is called internally
         context = InMemoryExecutionContext()
         input_data = {"a": IntegerValue(7), "b": IntegerValue(4)}
         result = await engine.execute(
@@ -629,36 +476,36 @@ class TestWorkflowEngineExecution:
             input=input_data,
         )
 
-        # Verify it worked
         assert result.status is WorkflowExecutionResultStatus.SUCCESS
         assert result.output["result"].root == 11
 
     async def test_execute_with_typed_workflow(self):
         """Test that execute() works with already typed workflows."""
-
-        # Create engine
         engine = WorkflowEngine()
 
-        # Create workflow with typed node
-        input_node = InputNode.from_fields(
-            a=IntegerValue,
-            b=IntegerValue,
-        )
-        output_node = OutputNode.from_fields(
-            result=IntegerValue,
-        )
-        typed_node = AddNode(id="add1")
-
         workflow = Workflow(
-            input_node=input_node,
-            inner_nodes=[typed_node],
-            output_node=output_node,
+            input_node=(
+                input_node := engine.create_input_node(
+                    a=IntegerValue,
+                    b=IntegerValue,
+                )
+            ),
+            output_node=(output_node := engine.create_output_node(result=IntegerValue)),
+            inner_nodes=[
+                typed_node := engine.create_node(AddNode, id="add1"),
+            ],
             edges=[
                 Edge.from_nodes(
-                    source=input_node, source_key="a", target=typed_node, target_key="a"
+                    source=input_node,
+                    source_key="a",
+                    target=typed_node,
+                    target_key="a",
                 ),
                 Edge.from_nodes(
-                    source=input_node, source_key="b", target=typed_node, target_key="b"
+                    source=input_node,
+                    source_key="b",
+                    target=typed_node,
+                    target_key="b",
                 ),
                 Edge.from_nodes(
                     source=typed_node,
@@ -669,7 +516,6 @@ class TestWorkflowEngineExecution:
             ],
         )
 
-        # Execute workflow
         context = InMemoryExecutionContext()
         input_data = {"a": IntegerValue(15), "b": IntegerValue(25)}
         result = await engine.execute(
@@ -678,32 +524,26 @@ class TestWorkflowEngineExecution:
             input=input_data,
         )
 
-        # Verify results
         assert result.status is WorkflowExecutionResultStatus.SUCCESS
         assert result.output["result"].root == 40
 
     async def test_execute_with_multiple_nodes(self):
         """Test execute() with a workflow containing multiple nodes."""
-
-        # Create engine
         engine = WorkflowEngine()
 
-        # Create workflow: (a + b) + c
-        input_node = InputNode.from_fields(
-            a=IntegerValue,
-            b=IntegerValue,
-            c=IntegerValue,
-        )
-        output_node = OutputNode.from_fields(
-            result=IntegerValue,
-        )
-        add_node1 = AddNode(id="add1")
-        add_node2 = AddNode(id="add2")
-
         workflow = Workflow(
-            input_node=input_node,
-            inner_nodes=[add_node1, add_node2],
-            output_node=output_node,
+            input_node=(
+                input_node := engine.create_input_node(
+                    a=IntegerValue,
+                    b=IntegerValue,
+                    c=IntegerValue,
+                )
+            ),
+            output_node=(output_node := engine.create_output_node(result=IntegerValue)),
+            inner_nodes=[
+                add_node1 := engine.create_node(AddNode, id="add1"),
+                add_node2 := engine.create_node(AddNode, id="add2"),
+            ],
             edges=[
                 Edge.from_nodes(
                     source=input_node, source_key="a", target=add_node1, target_key="a"
@@ -712,7 +552,10 @@ class TestWorkflowEngineExecution:
                     source=input_node, source_key="b", target=add_node1, target_key="b"
                 ),
                 Edge.from_nodes(
-                    source=add_node1, source_key="sum", target=add_node2, target_key="a"
+                    source=add_node1,
+                    source_key="sum",
+                    target=add_node2,
+                    target_key="a",
                 ),
                 Edge.from_nodes(
                     source=input_node, source_key="c", target=add_node2, target_key="b"
@@ -726,7 +569,6 @@ class TestWorkflowEngineExecution:
             ],
         )
 
-        # Execute: (2 + 3) + 4 = 9
         context = InMemoryExecutionContext()
         input_data = {
             "a": IntegerValue(2),
@@ -739,40 +581,25 @@ class TestWorkflowEngineExecution:
             input=input_data,
         )
 
-        # Verify results
         assert result.status is WorkflowExecutionResultStatus.SUCCESS
         assert result.output["result"].root == 9
 
     async def test_execute_with_tenant_specific_engine(self):
         """Test that tenant-specific engines execute with isolated registries."""
-
-        # Create tenant-specific registry with only SampleAddNode
-        tenant_registry = (
-            NodeRegistry.builder(lazy=True)
-            .register(Node)
-            .register(SampleAddNode)
-            .build()
-        )
-
         engine = WorkflowEngine(
-            node_registry=tenant_registry,
+            node_registry=_build_registry(SampleAddNode),
             value_registry=ValueRegistry.builder(lazy=True),
         )
 
-        # Create workflow with SampleAdd node
-        input_node = InputNode.empty()
-        output_node = OutputNode.empty()
-
         workflow = Workflow.model_construct(
-            input_node=input_node,
+            input_node=engine.create_input_node(),
             inner_nodes=[
                 Node.model_construct(type="SampleAdd", id="node1", version="1.0.0")
             ],
-            output_node=output_node,
+            output_node=engine.create_output_node(),
             edges=[],
         )
 
-        # Execute workflow
         context = InMemoryExecutionContext()
         result = await engine.execute(
             context=context,
@@ -780,5 +607,4 @@ class TestWorkflowEngineExecution:
             input={},
         )
 
-        # Should execute successfully (no errors)
         assert result.status is WorkflowExecutionResultStatus.SUCCESS

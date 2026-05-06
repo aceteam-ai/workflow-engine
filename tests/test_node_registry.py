@@ -1,6 +1,6 @@
 """Tests for NodeRegistry implementations."""
 
-from typing import Literal, Type
+from typing import Type
 
 import pytest
 from overrides import override
@@ -18,12 +18,10 @@ from workflow_engine.core.node import ImmutableNodeRegistry, NodeRegistryBuilder
 # Test fixtures - simple node classes for testing
 class SampleNodeA(Node[Empty, Empty, Empty]):
     TYPE_INFO = NodeTypeInfo.from_parameter_type(
-        name="TestA",
         display_name="Test A",
         version="1.0.0",
         parameter_type=Empty,
     )
-    type: Literal["TestA"] = "TestA"  # pyright: ignore[reportIncompatibleVariableOverride]
 
     @classmethod
     @override
@@ -49,12 +47,10 @@ class SampleNodeA(Node[Empty, Empty, Empty]):
 
 class SampleNodeB(Node[Empty, Empty, Empty]):
     TYPE_INFO = NodeTypeInfo.from_parameter_type(
-        name="TestB",
         display_name="Test B",
         version="1.0.0",
         parameter_type=Empty,
     )
-    type: Literal["TestB"] = "TestB"  # pyright: ignore[reportIncompatibleVariableOverride]
 
     @classmethod
     @override
@@ -76,12 +72,6 @@ class SampleNodeB(Node[Empty, Empty, Empty]):
         input: Empty,
     ):
         return Empty()
-
-
-class SampleBaseNode(Node[Empty, Empty, Empty]):
-    """A base node class without a type discriminator."""
-
-    pass
 
 
 class TestImmutableNodeRegistry:
@@ -132,8 +122,8 @@ class TestEagerNodeRegistryBuilder:
         """Test registering node classes."""
         registry = (
             NodeRegistry.builder(lazy=False)
-            .register(SampleNodeA)
-            .register(SampleNodeB)
+            .register(SampleNodeA, name="TestA")
+            .register(SampleNodeB, name="TestB")
             .build()
         )
         assert registry.get("TestA") is SampleNodeA
@@ -142,21 +132,23 @@ class TestEagerNodeRegistryBuilder:
     def test_fluent_interface(self):
         """Test that methods return self for chaining."""
         builder1 = NodeRegistry.builder(lazy=False)
-        builder2 = builder1.register(SampleNodeA).register(SampleNodeB)
+        builder2 = builder1.register(SampleNodeA, name="TestA").register(
+            SampleNodeB, name="TestB"
+        )
         assert builder1 is builder2
 
     def test_duplicate_node_class_raises_error(self):
         """Test that registering the same node type twice raises ValueError."""
         builder = NodeRegistry.builder(lazy=False)
-        builder.register(SampleNodeA)
+        builder.register(SampleNodeA, name="TestA")
 
         with pytest.raises(ValueError, match='Node type "TestA" is already registered'):
-            builder.register(SampleNodeA)
+            builder.register(SampleNodeA, name="TestA")
 
     def test_build_returns_immutable_registry(self):
         """Test that build() returns an ImmutableNodeRegistry."""
         builder = NodeRegistry.builder(lazy=False)
-        builder.register(SampleNodeA)
+        builder.register(SampleNodeA, name="TestA")
 
         registry = builder.build()
         assert isinstance(registry, ImmutableNodeRegistry)
@@ -170,54 +162,58 @@ class TestLazyNodeRegistry:
         """Test that LazyNodeRegistry starts in unfrozen state."""
         registry = NodeRegistry.builder(lazy=True)
         # Should be able to register without error
-        registry.register(SampleNodeA)
+        registry.register(SampleNodeA, name="TestA")
         assert True  # No exception means it's unfrozen
 
     def test_register_node_class_when_unfrozen(self):
         """Test registering node classes when unfrozen."""
         (
             NodeRegistry.builder(lazy=True)
-            .register(Node)
-            .register(SampleNodeA)
-            .register(SampleNodeB)
+            .register(Node, name="Node")
+            .register(SampleNodeA, name="TestA")
+            .register(SampleNodeB, name="TestB")
             .build()
         )
 
     def test_fluent_interface(self):
         """Test that methods return self for chaining."""
         registry = NodeRegistry.builder(lazy=True)
-        result = registry.register(SampleNodeB).register(Node).register(SampleNodeA)
+        result = (
+            registry.register(SampleNodeB, name="TestB")
+            .register(Node, name="Node")
+            .register(SampleNodeA, name="TestA")
+        )
 
         assert result is registry
 
     def test_build_freezes_registry(self):
         """Test that build() freezes the registry."""
         registry = NodeRegistry.builder(lazy=True)
-        registry.register(SampleNodeA)
+        registry.register(SampleNodeA, name="TestA")
 
         # Build should freeze
         registry.build()
 
         # Should not be able to register after freezing
         with pytest.raises(ValueError, match="Node registry is frozen"):
-            registry.register(SampleNodeB)
+            registry.register(SampleNodeB, name="TestB")
 
     def test_access_triggers_build(self):
         """Test that accessing the registry triggers build."""
         registry = NodeRegistry.builder(lazy=True)
-        registry.register(SampleNodeA)
+        registry.register(SampleNodeA, name="TestA")
 
         # Access should trigger build
         registry.get("TestA")
 
         # Should be frozen now
         with pytest.raises(ValueError, match="Node registry is frozen"):
-            registry.register(SampleNodeB)
+            registry.register(SampleNodeB, name="TestB")
 
     def test_build_is_idempotent(self):
         """Test that calling build() multiple times is safe."""
         registry = NodeRegistry.builder(lazy=True)
-        registry.register(SampleNodeA)
+        registry.register(SampleNodeA, name="TestA")
 
         result1 = registry.build()
         result2 = registry.build()
@@ -228,8 +224,8 @@ class TestLazyNodeRegistry:
     def test_duplicate_same_class_logs_warning(self, caplog):
         """Test that registering the same class twice logs a warning but succeeds."""
         registry = NodeRegistry.builder(lazy=True)
-        registry.register(SampleNodeA)
-        registry.register(SampleNodeA)  # Same class
+        registry.register(SampleNodeA, name="TestA")
+        registry.register(SampleNodeA, name="TestA")  # Same class, same name
 
         # Build should log warning but not raise
         registry.build()
@@ -250,12 +246,10 @@ class TestLazyNodeRegistry:
 
             class DuplicateTestA(Node[Empty, Empty, Empty]):
                 TYPE_INFO = NodeTypeInfo.from_parameter_type(
-                    name="TestA",
                     display_name="Test A Dup",
                     version="1.0.0",
                     parameter_type=Empty,
                 )
-                type: Literal["TestA"] = "TestA"  # pyright: ignore[reportIncompatibleVariableOverride]
 
                 @classmethod
                 @override
@@ -282,8 +276,8 @@ class TestLazyNodeRegistry:
             NodeRegistry.DEFAULT = original_default
 
         registry = NodeRegistry.builder(lazy=True)
-        registry.register(SampleNodeA)
-        registry.register(DuplicateTestA)
+        registry.register(SampleNodeA, name="TestA")
+        registry.register(DuplicateTestA, name="TestA")
 
         # Build should raise error
         with pytest.raises(
@@ -295,8 +289,8 @@ class TestLazyNodeRegistry:
     def test_duplicate_base_class_logs_warning(self, caplog):
         """Test that registering the same base class twice logs a warning."""
         registry = NodeRegistry.builder(lazy=True)
-        registry.register(Node)
-        registry.register(Node)
+        registry.register(Node, name="Node")
+        registry.register(Node, name="Node")
 
         registry.build()
 
@@ -308,7 +302,7 @@ class TestLazyNodeRegistry:
     def test_get_not_found_returns_none(self):
         """Missing registry keys yield None."""
         registry = NodeRegistry.builder(lazy=True)
-        registry.register(SampleNodeA)
+        registry.register(SampleNodeA, name="TestA")
 
         registry.build()
         assert registry.get("NonExistent") is None
@@ -323,7 +317,7 @@ class TestLazyNodeRegistry:
     def test_build_returns_self(self):
         """Test that build() returns self (the LazyNodeRegistry itself)."""
         registry = NodeRegistry.builder(lazy=True)
-        registry.register(SampleNodeA)
+        registry.register(SampleNodeA, name="TestA")
 
         result = registry.build()
         assert result is registry
@@ -332,7 +326,7 @@ class TestLazyNodeRegistry:
     def test_registrations_deleted_after_build(self):
         """Test that _registrations list is deleted after build to save memory."""
         registry = NodeRegistry.builder(lazy=True)
-        registry.register(SampleNodeA)
+        registry.register(SampleNodeA, name="TestA")
 
         assert hasattr(registry, "_registrations")
         registry.build()
@@ -350,8 +344,8 @@ class TestNodeRegistryIntegration:
 
         # These classes should have been registered via __init_subclass__
         # but we're creating a fresh registry for isolation
-        registry.register(SampleNodeA)
-        registry.register(SampleNodeB)
+        registry.register(SampleNodeA, name="TestA")
+        registry.register(SampleNodeB, name="TestB")
 
         # Retrieve and verify
         assert registry.get("TestA") is SampleNodeA
@@ -364,7 +358,10 @@ class TestNodeRegistryLoad:
     def test_load_node_with_base_class(self):
         """Test loading a base node instance into concrete type."""
         registry = (
-            NodeRegistry.builder(lazy=True).register(Node).register(SampleNodeA).build()
+            NodeRegistry.builder(lazy=True)
+            .register(Node, name="Node")
+            .register(SampleNodeA, name="TestA")
+            .build()
         )
 
         # Create a base Node instance using model_construct to bypass validators
@@ -380,7 +377,9 @@ class TestNodeRegistryLoad:
 
     def test_load_node_with_concrete_class_returns_unchanged(self):
         """Test that loading a concrete node returns it unchanged."""
-        registry = NodeRegistry.builder(lazy=True).register(SampleNodeA).build()
+        registry = (
+            NodeRegistry.builder(lazy=True).register(SampleNodeA, name="TestA").build()
+        )
 
         # Create a concrete node instance
         concrete_node = SampleNodeA(type="TestA", id="test-1", version="1.0.0")
@@ -393,7 +392,7 @@ class TestNodeRegistryLoad:
 
     def test_load_node_unregistered_type_raises_error(self):
         """Test that loading a node with unregistered type raises ValueError."""
-        registry = NodeRegistry.builder(lazy=True).register(Node).build()
+        registry = NodeRegistry.builder(lazy=True).register(Node, name="Node").build()
 
         # Create a base Node with unregistered type using model_construct to bypass validation
         base_node = Node.model_construct(
@@ -408,11 +407,17 @@ class TestNodeRegistryLoad:
     def test_load_node_with_different_registries(self):
         """Test that different registries load to different concrete types."""
         registry_a = (
-            NodeRegistry.builder(lazy=True).register(Node).register(SampleNodeA).build()
+            NodeRegistry.builder(lazy=True)
+            .register(Node, name="Node")
+            .register(SampleNodeA, name="TestA")
+            .build()
         )
 
         registry_b = (
-            NodeRegistry.builder(lazy=True).register(Node).register(SampleNodeB).build()
+            NodeRegistry.builder(lazy=True)
+            .register(Node, name="Node")
+            .register(SampleNodeB, name="TestB")
+            .build()
         )
 
         base_node_a = Node.model_construct(type="TestA", id="test-1", version="1.0.0")
@@ -431,7 +436,10 @@ class TestNodeRegistryLoad:
     def test_load_node_preserves_params(self):
         """Test that loading preserves node parameters."""
         registry = (
-            NodeRegistry.builder(lazy=True).register(SampleNodeA).register(Node).build()
+            NodeRegistry.builder(lazy=True)
+            .register(SampleNodeA, name="TestA")
+            .register(Node, name="Node")
+            .build()
         )
 
         base_node = Node.model_construct(

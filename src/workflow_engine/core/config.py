@@ -37,6 +37,28 @@ class NodeImport(Import):
             validate_subclass=Node,
         )
 
+    @classmethod
+    def from_node(cls, node: type[Node]) -> Self:
+        return cls(
+            root=f"{node.__module__}.{node.__name__}",
+        )
+
+
+class NodesConfig(ImmutableRootModel[Mapping[str, NodeImport]]):
+    @classmethod
+    def from_nodes(cls, *args: type[Node], **kwargs: type[Node]) -> Self:
+        nodes: dict[str, NodeImport] = {}
+        for node in args:
+            name = node.default_type_name()
+            if name in nodes:
+                raise ValueError(f"Duplicate node type {name} in args")
+            nodes[name] = NodeImport.from_node(node)
+        for name, node in kwargs.items():
+            if name in nodes:
+                raise ValueError(f"Duplicate node type {name} in kwargs")
+            nodes[name] = NodeImport.from_node(node)
+        return cls(nodes)
+
 
 class ExecutionAlgorithmImport(Import):
     @cached_property
@@ -99,16 +121,15 @@ class WorkflowEngineConfig(ImmutableBaseModel):
     without instantiating the engine).
     """
 
-    nodes: Mapping[str, NodeImport] = Field(
-        description="A mapping from node type names to their configurations.",
-        default_factory=dict,
+    nodes: NodesConfig = Field(
+        description="The configuration for the nodes.",
     )
     execution_algorithm: ExecutionAlgorithmConfig | None = None
 
     @cached_property
     def node_registry(self) -> NodeRegistry:
         return ImmutableNodeRegistry(
-            node_classes={k: v.node_cls for k, v in self.nodes.items()}
+            node_classes={k: v.node_cls for k, v in self.nodes.root.items()}
         )
 
     async def build_execution_algorithm(self) -> ExecutionAlgorithm | None:

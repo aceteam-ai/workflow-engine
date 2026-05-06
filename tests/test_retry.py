@@ -2,7 +2,7 @@
 """Tests for retry behavior in workflow execution."""
 
 from datetime import timedelta
-from typing import ClassVar, Literal, Type, override
+from typing import ClassVar, Type, override
 from unittest.mock import AsyncMock
 
 import pytest
@@ -11,10 +11,8 @@ from workflow_engine import (
     Data,
     Edge,
     ExecutionContext,
-    InputNode,
     Node,
     NodeTypeInfo,
-    OutputNode,
     Params,
     ShouldRetry,
     StringValue,
@@ -25,9 +23,9 @@ from workflow_engine import (
 from workflow_engine.contexts import InMemoryExecutionContext
 from workflow_engine.execution.retry import NodeRetryState, RetryTracker
 from workflow_engine.execution.topological import TopologicalExecutionAlgorithm
+from workflow_engine.nodes import ConstantStringNode
 
 
-# Test node that raises ShouldRetry a configurable number of times
 class RetryableInput(Data):
     value: StringValue
 
@@ -45,14 +43,12 @@ class RetryableNode(Node[RetryableInput, RetryableOutput, RetryableParams]):
     """A node that fails a configurable number of times before succeeding."""
 
     TYPE_INFO: ClassVar[NodeTypeInfo] = NodeTypeInfo.from_parameter_type(
-        name="Retryable",
         display_name="Retryable",
         description="A node that fails a configurable number of times.",
         version="0.4.0",
         parameter_type=RetryableParams,
     )
 
-    type: Literal["Retryable"] = "Retryable"  # pyright: ignore[reportIncompatibleVariableOverride]
     _attempt_counts: ClassVar[dict[str, int]] = {}
 
     @classmethod
@@ -74,7 +70,6 @@ class RetryableNode(Node[RetryableInput, RetryableOutput, RetryableParams]):
         output_type: Type[RetryableOutput],
         input: RetryableInput,
     ) -> RetryableOutput:
-        # Track attempts per node id
         if self.id not in RetryableNode._attempt_counts:
             RetryableNode._attempt_counts[self.id] = 0
         RetryableNode._attempt_counts[self.id] += 1
@@ -83,25 +78,19 @@ class RetryableNode(Node[RetryableInput, RetryableOutput, RetryableParams]):
             raise ShouldRetry.for_user(
                 f"Temporary failure (attempt {RetryableNode._attempt_counts[self.id]})",
                 node=self,
-                backoff=timedelta(milliseconds=10),  # Short backoff for tests
+                backoff=timedelta(milliseconds=10),
             )
 
         return RetryableOutput(result=StringValue(f"Success: {input.value.root}"))
 
-    @classmethod
-    def from_fail_count(cls, id: str, fail_count: int) -> "RetryableNode":
-        return cls(id=id, params=RetryableParams(fail_count=fail_count))
-
 
 class RetryableNode2(Node[RetryableInput, RetryableOutput, RetryableParams]):
     TYPE_INFO: ClassVar[NodeTypeInfo] = NodeTypeInfo.from_parameter_type(
-        name="Retryable2",
         display_name="Retryable2",
         description="Another retryable node.",
         version="0.4.0",
         parameter_type=RetryableParams,
     )
-    type: Literal["Retryable2"] = "Retryable2"  # pyright: ignore[reportIncompatibleVariableOverride]
     _attempt_counts: ClassVar[dict[str, int]] = {}
 
     @classmethod
@@ -135,17 +124,11 @@ class RetryableNode2(Node[RetryableInput, RetryableOutput, RetryableParams]):
             )
         return RetryableOutput(result=StringValue(f"Node2: {input.value.root}"))
 
-    @classmethod
-    def from_fail_count(cls, id: str, fail_count: int) -> "RetryableNode2":
-        return cls(id=id, params=RetryableParams(fail_count=fail_count))
 
-
-# Node with custom max_retries in TYPE_INFO
 class CustomRetryNode(Node[RetryableInput, RetryableOutput, RetryableParams]):
     """A node with custom max_retries configured in TYPE_INFO."""
 
     TYPE_INFO: ClassVar[NodeTypeInfo] = NodeTypeInfo.from_parameter_type(
-        name="CustomRetry",
         display_name="Custom Retry",
         description="A node with custom max_retries.",
         version="0.4.0",
@@ -153,7 +136,6 @@ class CustomRetryNode(Node[RetryableInput, RetryableOutput, RetryableParams]):
         max_retries=5,
     )
 
-    type: Literal["CustomRetry"] = "CustomRetry"  # pyright: ignore[reportIncompatibleVariableOverride]
     _attempt_counts: ClassVar[dict[str, int]] = {}
 
     @classmethod
@@ -188,24 +170,28 @@ class CustomRetryNode(Node[RetryableInput, RetryableOutput, RetryableParams]):
 
         return RetryableOutput(result=StringValue(f"Success: {input.value.root}"))
 
-    @classmethod
-    def from_fail_count(cls, id: str, fail_count: int) -> "CustomRetryNode":
-        return cls(id=id, params=RetryableParams(fail_count=fail_count))
-
 
 @pytest.fixture(autouse=True)
 def reset_attempt_counts():
     """Reset attempt counts before each test."""
     RetryableNode._attempt_counts = {}
+    RetryableNode2._attempt_counts = {}
     CustomRetryNode._attempt_counts = {}
     yield
+
+
+@pytest.fixture
+def engine() -> WorkflowEngine:
+    return WorkflowEngine(
+        execution_algorithm=TopologicalExecutionAlgorithm(max_retries=3)
+    )
 
 
 # Unit tests for RetryTracker
 class TestRetryTracker:
     @pytest.fixture
-    def node(self) -> Node:
-        return RetryableNode.from_fail_count(id="node1", fail_count=0)
+    def node(self, engine: WorkflowEngine) -> Node:
+        return engine.create_node(RetryableNode, id="node1", params=dict(fail_count=0))
 
     @pytest.mark.unit
     def test_initial_state(self):
@@ -220,7 +206,6 @@ class TestRetryTracker:
         tracker = RetryTracker(default_max_retries=3)
         assert tracker.should_retry(node.id, None) is True
 
-        # Record first retry
         tracker.record_retry(
             node.id,
             ShouldRetry.for_user(
@@ -231,7 +216,6 @@ class TestRetryTracker:
         )
         assert tracker.should_retry(node.id, None) is True
 
-        # Record second retry
         tracker.record_retry(
             node.id,
             ShouldRetry.for_user(
@@ -288,18 +272,13 @@ class TestRetryTracker:
             ),
         )
 
-        # With default (2), should not retry
         assert tracker.should_retry(node.id, None) is False
-
-        # With node-specific override (5), should retry
         assert tracker.should_retry(node.id, 5) is True
 
 
-# Unit tests for NodeRetryState
 class TestNodeRetryState:
     @pytest.mark.unit
     def test_initial_state(self):
-        """Test that NodeRetryState starts correctly."""
         state = NodeRetryState(node_id="node1")
         assert state.node_id == "node1"
         assert state.attempt == 0
@@ -309,7 +288,6 @@ class TestNodeRetryState:
 
     @pytest.mark.unit
     def test_schedule_retry(self):
-        """Test that schedule_retry updates state correctly."""
         state = NodeRetryState(node_id="node1")
         state.schedule_retry(timedelta(seconds=10))
 
@@ -319,38 +297,31 @@ class TestNodeRetryState:
 
     @pytest.mark.unit
     def test_time_until_ready(self):
-        """Test that time_until_ready returns correct value."""
         state = NodeRetryState(node_id="node1")
 
-        # Initially ready, so no wait time
         assert state.time_until_ready() == timedelta(0)
 
-        # After scheduling, has wait time
         state.schedule_retry(timedelta(seconds=10))
         time_remaining = state.time_until_ready()
         assert time_remaining > timedelta(0)
         assert time_remaining <= timedelta(seconds=10)
 
 
-# Integration tests for retry behavior
 class TestRetryIntegration:
     @pytest.mark.asyncio
-    async def test_retry_succeeds_within_limit(self):
+    async def test_retry_succeeds_within_limit(self, engine: WorkflowEngine):
         """Test that a node succeeds after retrying within the limit."""
-        from workflow_engine.nodes import ConstantStringNode
-
-        input_node = InputNode.empty()
-        output_node = OutputNode.from_fields(
-            result=StringValue,
-        )
-
-        constant = ConstantStringNode.from_value(id="constant", value="input")
-        retryable = RetryableNode.from_fail_count(id="retryable", fail_count=2)
-
         workflow = Workflow(
-            input_node=input_node,
-            output_node=output_node,
-            inner_nodes=[constant, retryable],
+            input_node=engine.create_input_node(),
+            output_node=(output_node := engine.create_output_node(result=StringValue)),
+            inner_nodes=[
+                constant := engine.create_node(
+                    ConstantStringNode, id="constant", params=dict(value="input")
+                ),
+                retryable := engine.create_node(
+                    RetryableNode, id="retryable", params=dict(fail_count=2)
+                ),
+            ],
             edges=[
                 Edge.from_nodes(
                     source=constant,
@@ -368,8 +339,6 @@ class TestRetryIntegration:
         )
 
         context = InMemoryExecutionContext()
-        algorithm = TopologicalExecutionAlgorithm(max_retries=3)
-        engine = WorkflowEngine(execution_algorithm=algorithm)
         result = await engine.execute(
             context=context,
             workflow=workflow,
@@ -378,25 +347,22 @@ class TestRetryIntegration:
 
         assert result.status is WorkflowExecutionResultStatus.SUCCESS
         assert result.output == {"result": StringValue("Success: input")}
-        assert RetryableNode._attempt_counts["retryable"] == 3  # 2 failures + 1 success
+        assert RetryableNode._attempt_counts["retryable"] == 3
 
     @pytest.mark.asyncio
-    async def test_retry_fails_at_limit(self):
+    async def test_retry_fails_at_limit(self, engine: WorkflowEngine):
         """Test that a node fails after exhausting retries."""
-        from workflow_engine.nodes import ConstantStringNode
-
-        input_node = InputNode.empty()
-        output_node = OutputNode.from_fields(
-            result=StringValue,
-        )
-
-        constant = ConstantStringNode.from_value(id="constant", value="input")
-        retryable = RetryableNode.from_fail_count(id="retryable", fail_count=5)
-
         workflow = Workflow(
-            input_node=input_node,
-            output_node=output_node,
-            inner_nodes=[constant, retryable],
+            input_node=engine.create_input_node(),
+            output_node=(output_node := engine.create_output_node(result=StringValue)),
+            inner_nodes=[
+                constant := engine.create_node(
+                    ConstantStringNode, id="constant", params=dict(value="input")
+                ),
+                retryable := engine.create_node(
+                    RetryableNode, id="retryable", params=dict(fail_count=5)
+                ),
+            ],
             edges=[
                 Edge.from_nodes(
                     source=constant,
@@ -414,8 +380,6 @@ class TestRetryIntegration:
         )
 
         context = InMemoryExecutionContext()
-        algorithm = TopologicalExecutionAlgorithm(max_retries=3)
-        engine = WorkflowEngine(execution_algorithm=algorithm)
         result = await engine.execute(
             context=context,
             workflow=workflow,
@@ -424,26 +388,22 @@ class TestRetryIntegration:
 
         assert result.status is WorkflowExecutionResultStatus.ERROR
         assert "retryable" in result.errors.node_errors
-        # Should have tried 3 times (max_retries) + initial attempt
         assert RetryableNode._attempt_counts["retryable"] == 4
 
     @pytest.mark.asyncio
-    async def test_on_node_retry_hook_called(self):
+    async def test_on_node_retry_hook_called(self, engine: WorkflowEngine):
         """Test that the on_node_retry hook is called."""
-        from workflow_engine.nodes import ConstantStringNode
-
-        input_node = InputNode.empty()
-        output_node = OutputNode.from_fields(
-            result=StringValue,
-        )
-
-        constant = ConstantStringNode.from_value(id="constant", value="input")
-        retryable = RetryableNode.from_fail_count(id="retryable", fail_count=2)
-
         workflow = Workflow(
-            input_node=input_node,
-            output_node=output_node,
-            inner_nodes=[constant, retryable],
+            input_node=engine.create_input_node(),
+            output_node=(output_node := engine.create_output_node(result=StringValue)),
+            inner_nodes=[
+                constant := engine.create_node(
+                    ConstantStringNode, id="constant", params=dict(value="input")
+                ),
+                retryable := engine.create_node(
+                    RetryableNode, id="retryable", params=dict(fail_count=2)
+                ),
+            ],
             edges=[
                 Edge.from_nodes(
                     source=constant,
@@ -463,44 +423,41 @@ class TestRetryIntegration:
         context = InMemoryExecutionContext()
         mock_on_node_retry = AsyncMock()
         context.on_node_retry = mock_on_node_retry
-        algorithm = TopologicalExecutionAlgorithm(max_retries=3)
-        engine = WorkflowEngine(execution_algorithm=algorithm)
         _ = await engine.execute(
             context=context,
             workflow=workflow,
             input={},
         )
 
-        # Should have been called twice (for 2 retries)
         assert mock_on_node_retry.call_count == 2
 
-        # Check the first call arguments
         first_call = mock_on_node_retry.call_args_list[0]
         assert first_call.kwargs["node"].id == "retryable"
         assert isinstance(first_call.kwargs["exception"], ShouldRetry)
         assert first_call.kwargs["attempt"] == 1
 
-        # Check the second call
         second_call = mock_on_node_retry.call_args_list[1]
         assert second_call.kwargs["attempt"] == 2
 
     @pytest.mark.asyncio
     async def test_node_type_max_retries_override(self):
         """Test that NodeTypeInfo.max_retries overrides algorithm default."""
-        from workflow_engine.nodes import ConstantStringNode
-
-        input_node = InputNode.empty()
-        output_node = OutputNode.from_fields(
-            result=StringValue,
+        # Algorithm default is 2, but CustomRetryNode.TYPE_INFO.max_retries is 5
+        engine = WorkflowEngine(
+            execution_algorithm=TopologicalExecutionAlgorithm(max_retries=2)
         )
 
-        constant = ConstantStringNode.from_value(id="constant", value="input")
-        custom = CustomRetryNode.from_fail_count(id="custom", fail_count=4)
-
         workflow = Workflow(
-            input_node=input_node,
-            output_node=output_node,
-            inner_nodes=[constant, custom],
+            input_node=engine.create_input_node(),
+            output_node=(output_node := engine.create_output_node(result=StringValue)),
+            inner_nodes=[
+                constant := engine.create_node(
+                    ConstantStringNode, id="constant", params=dict(value="input")
+                ),
+                custom := engine.create_node(
+                    CustomRetryNode, id="custom", params=dict(fail_count=4)
+                ),
+            ],
             edges=[
                 Edge.from_nodes(
                     source=constant,
@@ -518,38 +475,41 @@ class TestRetryIntegration:
         )
 
         context = InMemoryExecutionContext()
-        # Algorithm default is 2, but CustomRetryNode.TYPE_INFO.max_retries is 5
-        algorithm = TopologicalExecutionAlgorithm(max_retries=2)
-        engine = WorkflowEngine(execution_algorithm=algorithm)
         result = await engine.execute(
             context=context,
             workflow=workflow,
             input={},
         )
 
-        # Should succeed because node-specific max_retries (5) > fail_count (4)
         assert result.status is WorkflowExecutionResultStatus.SUCCESS
         assert result.output == {"result": StringValue("Success: input")}
-        assert CustomRetryNode._attempt_counts["custom"] == 5  # 4 failures + 1 success
+        assert CustomRetryNode._attempt_counts["custom"] == 5
 
     @pytest.mark.asyncio
     async def test_retry_with_rate_limiting(self):
         """Test that retry and rate limiting work together correctly."""
         from workflow_engine.execution import RateLimitConfig, RateLimitRegistry
-        from workflow_engine.nodes import ConstantStringNode
 
-        input_node = InputNode.empty()
-        output_node = OutputNode.from_fields(
-            result=StringValue,
+        rate_limits = RateLimitRegistry()
+        rate_limits.configure("Retryable", RateLimitConfig(max_concurrency=1))
+        engine = WorkflowEngine(
+            execution_algorithm=TopologicalExecutionAlgorithm(
+                max_retries=3,
+                rate_limits=rate_limits,
+            )
         )
 
-        constant = ConstantStringNode.from_value(id="constant", value="input")
-        retryable = RetryableNode.from_fail_count(id="retryable", fail_count=1)
-
         workflow = Workflow(
-            input_node=input_node,
-            output_node=output_node,
-            inner_nodes=[constant, retryable],
+            input_node=engine.create_input_node(),
+            output_node=(output_node := engine.create_output_node(result=StringValue)),
+            inner_nodes=[
+                constant := engine.create_node(
+                    ConstantStringNode, id="constant", params=dict(value="input")
+                ),
+                retryable := engine.create_node(
+                    RetryableNode, id="retryable", params=dict(fail_count=1)
+                ),
+            ],
             edges=[
                 Edge.from_nodes(
                     source=constant,
@@ -567,53 +527,40 @@ class TestRetryIntegration:
         )
 
         context = InMemoryExecutionContext()
-
-        # Configure rate limiting for the retryable node
-        rate_limits = RateLimitRegistry()
-        rate_limits.configure("Retryable", RateLimitConfig(max_concurrency=1))
-        algorithm = TopologicalExecutionAlgorithm(
-            max_retries=3,
-            rate_limits=rate_limits,
-        )
-        engine = WorkflowEngine(execution_algorithm=algorithm)
         result = await engine.execute(
             context=context,
             workflow=workflow,
             input={},
         )
 
-        # Should succeed after 1 retry
         assert result.status is WorkflowExecutionResultStatus.SUCCESS
         assert result.output == {"result": StringValue("Success: input")}
-        assert RetryableNode._attempt_counts["retryable"] == 2  # 1 failure + 1 success
+        assert RetryableNode._attempt_counts["retryable"] == 2
 
-        # Verify rate limiter was properly released (can acquire again)
         limiter = rate_limits.get_limiter("Retryable")
         assert limiter is not None
         assert limiter._semaphore is not None
-        assert limiter._semaphore._value == 1  # Back to max value
+        assert limiter._semaphore._value == 1
 
     @pytest.mark.asyncio
-    async def test_multiple_retryable_nodes_in_sequence(self):
+    async def test_multiple_retryable_nodes_in_sequence(self, engine: WorkflowEngine):
         """Test workflow with multiple nodes that can retry in sequence."""
-        from workflow_engine.nodes import ConstantStringNode
-
-        # Reset counts
-        RetryableNode2._attempt_counts = {}
-
-        input_node = InputNode.empty()
-        output_node = OutputNode.from_fields(
-            final_result=StringValue,
-        )
-
-        constant = ConstantStringNode.from_value(id="constant", value="start")
-        node1 = RetryableNode.from_fail_count(id="node1", fail_count=1)
-        node2 = RetryableNode2.from_fail_count(id="node2", fail_count=1)
-
         workflow = Workflow(
-            input_node=input_node,
-            output_node=output_node,
-            inner_nodes=[constant, node1, node2],
+            input_node=engine.create_input_node(),
+            output_node=(
+                output_node := engine.create_output_node(final_result=StringValue)
+            ),
+            inner_nodes=[
+                constant := engine.create_node(
+                    ConstantStringNode, id="constant", params=dict(value="start")
+                ),
+                node1 := engine.create_node(
+                    RetryableNode, id="node1", params=dict(fail_count=1)
+                ),
+                node2 := engine.create_node(
+                    RetryableNode2, id="node2", params=dict(fail_count=1)
+                ),
+            ],
             edges=[
                 Edge.from_nodes(
                     source=constant,
@@ -637,8 +584,6 @@ class TestRetryIntegration:
         )
 
         context = InMemoryExecutionContext()
-        algorithm = TopologicalExecutionAlgorithm(max_retries=3)
-        engine = WorkflowEngine(execution_algorithm=algorithm)
         result = await engine.execute(
             context=context,
             workflow=workflow,
@@ -647,6 +592,5 @@ class TestRetryIntegration:
 
         assert result.status is WorkflowExecutionResultStatus.SUCCESS
         assert result.output == {"final_result": StringValue("Node2: Success: start")}
-        # Both nodes should have retried once
         assert RetryableNode._attempt_counts["node1"] == 2
         assert RetryableNode2._attempt_counts["node2"] == 2

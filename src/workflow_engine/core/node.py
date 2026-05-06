@@ -37,12 +37,14 @@ from .values import (
     DataMapping,
     Value,
     ValueSchema,
+    ValueType,
     get_data_fields,
 )
 from .values.data import Input_contra, Output, get_data_dict, get_data_schema
 
 if TYPE_CHECKING:
     from .context import ExecutionContext, ValidationContext
+    from .io import InputNode, OutputNode
     from .workflow import ValidatedWorkflow, Workflow
 
 logger = logging.getLogger(__name__)
@@ -81,9 +83,6 @@ class NodeTypeInfo(ImmutableBaseModel):
     Information about a node type, in serializable form.
     """
 
-    name: str = Field(
-        description="A unique name for the node type, which should be a literal string for concrete subclasses."
-    )
     display_name: str = Field(
         description="A human-readable display name for the node, which may or may not be unique."
     )
@@ -112,7 +111,6 @@ class NodeTypeInfo(ImmutableBaseModel):
     def from_parameter_type(
         cls,
         *,
-        name: str,
         display_name: str,
         description: str | None = None,
         version: str,
@@ -120,7 +118,6 @@ class NodeTypeInfo(ImmutableBaseModel):
         max_retries: int | None = None,
     ) -> Self:
         return cls(
-            name=name,
             display_name=display_name,
             description=description,
             version=version,
@@ -193,12 +190,11 @@ class Node(ImmutableBaseModel, Generic[Input_contra, Output, Params_co]):
     # eagerly build the mapping.
 
     @classmethod
-    def _concrete_type_name(cls) -> str:
+    def default_type_name(cls) -> str:
         if cls is Node:
-            return "Node"
-        type_info = getattr(cls, "TYPE_INFO", None)
-        if type_info is not None:
-            return type_info.name
+            raise ValueError(
+                f"{cls.__name__} is the base class, cannot get a default type name"
+            )
         return cls.__name__.removesuffix("Node")
 
     def __init_subclass__(cls, **kwargs: Unpack[ConfigDict]):
@@ -604,6 +600,9 @@ def _migrate_node_data(
         return data
 
 
+N = TypeVar("N", bound=Node)
+
+
 class NodeRegistry(ABC):
     """
     An immutable registry of concrete node classes by their names.
@@ -685,6 +684,80 @@ class NodeRegistry(ABC):
         for _, cls in self.items():
             builder.register(cls)
         return builder
+
+    # NODE CREATION METHODS
+    # Instead of invoking a specific class constructor (which prevents us from
+    # overriding one node type with another), we use name-based dispatch to
+    # create nodes using the following helpers.
+
+    def create_node(
+        self,
+        name: str | type[N],
+        /,
+        *,
+        id: str,
+        params: Mapping[str, Any] | Params | None = None,
+        **kwargs: Any,
+    ) -> N:
+        """
+        Create a new node instance by name.
+        If a Node type is provided, we will use its default_type_name()
+        """
+        if isinstance(name, str):
+            base_cls = Node
+            cls = self.get(name)
+        else:
+            base_cls = name
+            if not issubclass(base_cls, Node):
+                raise ValueError(f"Node type {name.__name__} is not a subclass of Node")
+            name = name.default_type_name()
+            cls = self.get(name)
+        if cls is None:
+            raise ValueError(f'Node type "{name}" is not registered')
+        if not issubclass(cls, base_cls):
+            raise ValueError(
+                f"Node type {cls.__name__} is not a subclass of {base_cls.__name__}"
+            )
+        return cls.model_validate(  # pyright: ignore[reportReturnType]
+            dict(
+                type=name,
+                id=id,
+                params=({} if params is None else params),
+                **kwargs,
+            )
+        )
+
+    def create_input_node(
+        self,
+        **fields: ValueType,
+    ) -> InputNode:
+        """
+        Create a new input node instance, using whatever has been registered as
+        the "Input" node type.
+        """
+        from .io import InputNode, SchemaParams
+
+        return self.create_node(
+            InputNode,
+            id="input",
+            params=SchemaParams.from_fields(**fields),
+        )
+
+    def create_output_node(
+        self,
+        **fields: ValueType,
+    ) -> OutputNode:
+        """
+        Create a new output node instance, using whatever has been registered as
+        the "Output" node type.
+        """
+        from .io import OutputNode, SchemaParams
+
+        return self.create_node(
+            OutputNode,
+            id="output",
+            params=SchemaParams.from_fields(**fields),
+        )
 
 
 class NodeRegistryBuilder(ABC):
@@ -790,7 +863,7 @@ class EagerNodeRegistryBuilder(NodeRegistryBuilder):
         node_cls: type[Node],
         name: str | None = None,
     ) -> Self:
-        key = node_cls._concrete_type_name() if name is None else name
+        key = node_cls.default_type_name() if name is None else name
         if key in self._node_classes:
             raise ValueError(f'Node type "{key}" is already registered')
         self._node_classes[key] = node_cls
@@ -844,7 +917,7 @@ class LazyNodeRegistry(NodeRegistryBuilder, NodeRegistry):
     ) -> Self:
         if self._frozen:
             raise ValueError("Node registry is frozen, cannot register new node types.")
-        key = node_cls._concrete_type_name() if name is None else name
+        key = node_cls.default_type_name() if name is None else name
         self._registrations.append((key, node_cls))
         return self
 
@@ -927,7 +1000,7 @@ class LazyNodeRegistry(NodeRegistryBuilder, NodeRegistry):
 
 
 # Register the abstract Node class under "Node" for polymorphic deserialization.
-NodeRegistry.DEFAULT = NodeRegistry.builder(lazy=True).register(Node)
+NodeRegistry.DEFAULT = NodeRegistry.builder(lazy=True)
 
 
 __all__ = [

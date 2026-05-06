@@ -1,16 +1,18 @@
 # workflow_engine/core/engine.py
 from collections.abc import Mapping
-from typing import Any
+from typing import Any, TypeVar
 
 from typing_extensions import Self
 
-from workflow_engine.core.config import WorkflowEngineConfig
-
+from .config import WorkflowEngineConfig
 from .context import ExecutionContext, ValidationContext
 from .execution import ExecutionAlgorithm, WorkflowExecutionResult
-from .node import NodeRegistry
-from .values import ValueRegistry, get_data_dict
+from .io import InputNode, OutputNode
+from .node import Node, NodeRegistry, Params
+from .values import ValueRegistry, ValueType, get_data_dict
 from .workflow import ValidatedWorkflow, Workflow
+
+N = TypeVar("N", bound=Node)
 
 
 class WorkflowEngine:
@@ -79,6 +81,46 @@ class WorkflowEngine:
             node_registry=self.node_registry,
             value_registry=self.value_registry,
         )
+
+    def create_node(
+        self,
+        name: str | type[N],
+        /,
+        *,
+        id: str,
+        params: Mapping[str, Any] | Params | None = None,
+        **kwargs: Any,
+    ) -> N:
+        """
+        Create a new node instance by name.
+        If a Node type is provided, we will use its default_type_name()
+        """
+        return self.node_registry.create_node(
+            name,
+            id=id,
+            params=params,
+            **kwargs,
+        )
+
+    def create_input_node(
+        self,
+        **fields: ValueType,
+    ) -> InputNode:
+        """
+        Create a new input node instance, using whatever has been registered as
+        the "Input" node type.
+        """
+        return self.node_registry.create_input_node(**fields)
+
+    def create_output_node(
+        self,
+        **fields: ValueType,
+    ) -> OutputNode:
+        """
+        Create a new output node instance, using whatever has been registered as
+        the "Output" node type.
+        """
+        return self.node_registry.create_output_node(**fields)
 
     async def validate(
         self,

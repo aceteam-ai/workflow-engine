@@ -3,7 +3,7 @@
 Simple nodes for testing the workflow engine, with limited usefulness otherwise.
 """
 
-from typing import ClassVar, Literal, Self, Type
+from typing import ClassVar, Self, Type
 
 from overrides import override
 from pydantic import Field
@@ -54,14 +54,12 @@ class SumOutput(Data):
 
 class AddNode(Node[Data, SumOutput, AddNodeParams]):
     TYPE_INFO: ClassVar[NodeTypeInfo] = NodeTypeInfo.from_parameter_type(
-        name="Add",
         display_name="Add",
         description="Adds two or more numbers.",
         version="1.0.0",
         parameter_type=AddNodeParams,
     )
 
-    type: Literal["Add"] = "Add"  # pyright: ignore[reportIncompatibleVariableOverride]
     # we can do this because an empty AddNodeParams is valid
     params: AddNodeParams = Field(default=AddNodeParams())  # pyright: ignore[reportIncompatibleVariableOverride]
 
@@ -103,8 +101,12 @@ class AddNode(Node[Data, SumOutput, AddNodeParams]):
         return SumOutput(sum=FloatValue(total))
 
     @classmethod
-    def with_arity(cls, id: str, arity: int) -> Self:
-        return cls(id=id, params=AddNodeParams(num_arguments=IntegerValue(arity)))
+    def with_arity(cls, id: str, type: str, arity: int) -> Self:
+        return cls(
+            id=id,
+            type=type,
+            params=AddNodeParams(num_arguments=IntegerValue(arity)),
+        )
 
 
 class SumNodeInput(Data):
@@ -123,14 +125,11 @@ class SumNodeOutput(Data):
 
 class SumNode(Node[SumNodeInput, SumNodeOutput, Empty]):
     TYPE_INFO: ClassVar[NodeTypeInfo] = NodeTypeInfo.from_parameter_type(
-        name="Sum",
         display_name="Sum",
         description="Sums a sequence of numbers.",
         version="0.4.0",
         parameter_type=Empty,
     )
-
-    type: Literal["Sum"] = "Sum"  # pyright: ignore[reportIncompatibleVariableOverride]
 
     @classmethod
     @override
@@ -170,14 +169,11 @@ class FactorizationData(Data):
 
 class FactorizationNode(Node[IntegerData, FactorizationData, Empty]):
     TYPE_INFO: ClassVar[NodeTypeInfo] = NodeTypeInfo.from_parameter_type(
-        name="Factorization",
         display_name="Factorization",
         description="Factorizes an integer into a sequence of its factors.",
         version="0.4.0",
         parameter_type=Empty,
     )
-
-    type: Literal["Factorization"] = "Factorization"  # pyright: ignore[reportIncompatibleVariableOverride]
 
     @classmethod
     @override

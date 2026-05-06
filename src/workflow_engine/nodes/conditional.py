@@ -3,7 +3,7 @@
 Conditional nodes that run different workflows depending on a condition input.
 """
 
-from typing import ClassVar, Literal, Self, Type
+from typing import ClassVar, Type
 
 from overrides import override
 from pydantic import ConfigDict, Field
@@ -59,14 +59,11 @@ class IfNode(Node[ConditionalInput, Empty, IfParams]):
     # TODO: allow conditional nodes with optional output
 
     TYPE_INFO: ClassVar[NodeTypeInfo] = NodeTypeInfo.from_parameter_type(
-        name="If",
         display_name="If",
         description="Executes the internal workflow if the boolean condition is true.",
         version="0.4.0",
         parameter_type=IfParams,
     )
-
-    type: Literal["If"] = "If"  # pyright: ignore[reportIncompatibleVariableOverride]
 
     @override
     async def dynamic_input_type(
@@ -98,17 +95,6 @@ class IfNode(Node[ConditionalInput, Empty, IfParams]):
     ) -> Empty | Workflow:
         return self.params.if_true.root if input.condition else Empty()
 
-    @classmethod
-    def from_workflow(
-        cls,
-        id: str,
-        if_true: Workflow,
-    ) -> Self:
-        return cls(
-            id=id,
-            params=IfParams(if_true=WorkflowValue(if_true)),
-        )
-
 
 class IfElseNode(Node[ConditionalInput, Data, IfElseParams]):
     """
@@ -122,13 +108,11 @@ class IfElseNode(Node[ConditionalInput, Data, IfElseParams]):
     # TODO: allow union types
 
     TYPE_INFO: ClassVar[NodeTypeInfo] = NodeTypeInfo.from_parameter_type(
-        name="IfElse",
         display_name="If Or Else",
         description="Executes one of the two internal workflows based on the boolean condition.",
         version="0.4.0",
         parameter_type=IfElseParams,
     )
-    type: Literal["IfElse"] = "IfElse"  # pyright: ignore[reportIncompatibleVariableOverride]
 
     @override
     async def dynamic_input_type(
@@ -171,21 +155,6 @@ class IfElseNode(Node[ConditionalInput, Data, IfElseParams]):
     ) -> Workflow:
         return (
             self.params.if_true.root if input.condition else self.params.if_false.root
-        )
-
-    @classmethod
-    def from_workflows(
-        cls,
-        id: str,
-        if_true: Workflow,
-        if_false: Workflow,
-    ) -> Self:
-        return cls(
-            id=id,
-            params=IfElseParams(
-                if_true=WorkflowValue(if_true),
-                if_false=WorkflowValue(if_false),
-            ),
         )
 
 
