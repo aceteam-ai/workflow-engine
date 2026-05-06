@@ -778,3 +778,149 @@ class TestWorkflowEdit:
         payload = json.loads(populated_workflow.read_text())
         ids = [n["id"] for n in payload["inner_nodes"]]
         assert ids == ["summer"]
+
+    def test_add_field_to_input(
+        self, runner: CliRunner, config_path: Path, tmp_path: Path
+    ):
+        wf = tmp_path / "wf.json"
+        _run(runner, "workflow", "init", str(wf))
+        _run(
+            runner,
+            "workflow",
+            "edit",
+            "add-field",
+            str(wf),
+            "input.x",
+            '{"x-value-type": "IntegerValue"}',
+            "--config",
+            str(config_path),
+        )
+        payload = json.loads(wf.read_text())
+        assert payload["input_node"]["params"]["fields"] == {
+            "x": {"x-value-type": "IntegerValue"}
+        }
+
+    def test_add_field_rejects_duplicate(
+        self, runner: CliRunner, config_path: Path, populated_workflow: Path
+    ):
+        result = runner.invoke(
+            cli,
+            [
+                "workflow",
+                "edit",
+                "add-field",
+                str(populated_workflow),
+                "input.nums",
+                '{"x-value-type": "IntegerValue"}',
+                "--config",
+                str(config_path),
+            ],
+        )
+        assert result.exit_code != 0
+
+    def test_update_field_replaces_schema(
+        self, runner: CliRunner, config_path: Path, populated_workflow: Path
+    ):
+        _run(
+            runner,
+            "workflow",
+            "edit",
+            "update-field",
+            str(populated_workflow),
+            "input.nums",
+            '{"x-value-type": "IntegerValue"}',
+            "--config",
+            str(config_path),
+        )
+        payload = json.loads(populated_workflow.read_text())
+        assert payload["input_node"]["params"]["fields"]["nums"] == {
+            "x-value-type": "IntegerValue"
+        }
+
+    def test_update_field_rejects_unknown(
+        self, runner: CliRunner, config_path: Path, populated_workflow: Path
+    ):
+        result = runner.invoke(
+            cli,
+            [
+                "workflow",
+                "edit",
+                "update-field",
+                str(populated_workflow),
+                "input.ghost",
+                '{"x-value-type": "IntegerValue"}',
+                "--config",
+                str(config_path),
+            ],
+        )
+        assert result.exit_code != 0
+
+    def test_remove_field_drops_referencing_edges(
+        self, runner: CliRunner, config_path: Path, populated_workflow: Path
+    ):
+        _run(
+            runner,
+            "workflow",
+            "edit",
+            "add-node",
+            str(populated_workflow),
+            "Sum",
+            "summer",
+            "--config",
+            str(config_path),
+        )
+        _run(
+            runner,
+            "workflow",
+            "edit",
+            "add-edge",
+            str(populated_workflow),
+            "input.nums",
+            "summer.values",
+            "--config",
+            str(config_path),
+        )
+        out = _run(
+            runner,
+            "workflow",
+            "edit",
+            "remove-field",
+            str(populated_workflow),
+            "input.nums",
+            "--config",
+            str(config_path),
+        )
+        assert "1 associated edge" in out
+        payload = json.loads(populated_workflow.read_text())
+        assert payload["edges"] == []
+        assert payload["input_node"]["params"]["fields"] == {}
+
+    def test_field_commands_reject_inner_node(
+        self, runner: CliRunner, config_path: Path, populated_workflow: Path
+    ):
+        _run(
+            runner,
+            "workflow",
+            "edit",
+            "add-node",
+            str(populated_workflow),
+            "Sum",
+            "summer",
+            "--config",
+            str(config_path),
+        )
+        result = runner.invoke(
+            cli,
+            [
+                "workflow",
+                "edit",
+                "add-field",
+                str(populated_workflow),
+                "summer.foo",
+                '{"x-value-type": "IntegerValue"}',
+                "--config",
+                str(config_path),
+            ],
+        )
+        assert result.exit_code != 0
+        assert "input or output" in result.output

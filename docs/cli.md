@@ -123,7 +123,15 @@ Append a new node of type `<name>` with id `<id>` to `inner_nodes`. `params` is 
 
 #### `wengine workflow edit <path> update-node <id> <params>`
 
-Replace the params of an existing node, preserving its type and id. Use this to grow or shrink the input/output node's `fields`, or to retune the params of an inner node without removing and re-adding it. Works on input, output, and inner nodes alike.
+Replace the params of an existing node, preserving its type and id. Use this to retune the params of an inner node, or to swap out an entire `fields` dict on the input or output node in one shot. Works on input, output, and inner nodes alike.
+
+#### Field-level convenience commands (input/output nodes only)
+
+For incremental edits to the input or output node's `fields`, three convenience subcommands operate on a single field at a time. The handle is `nodeId.fieldName`. They reject inner nodes — for those, use `update-node`.
+
+- `wengine workflow edit <path> add-field <handle> <schema>` — add a new field. Errors if the field already exists.
+- `wengine workflow edit <path> update-field <handle> <schema>` — replace an existing field's schema. Errors if the field doesn't exist.
+- `wengine workflow edit <path> remove-field <handle>` — remove a field and any edges that reference it.
 
 #### `wengine workflow edit <path> remove-node <id>`
 

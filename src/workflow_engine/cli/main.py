@@ -543,6 +543,124 @@ async def edit_update_node(
     click.echo(f"Updated params on node {node_id!r}.")
 
 
+async def _apply_fields_change(
+    engine: WorkflowEngine,
+    wf: Workflow,
+    node_id: str,
+    new_fields: dict[str, Any],
+) -> Workflow:
+    """Return a workflow where the named input/output node's `fields` is replaced."""
+    if node_id not in (wf.input_node.id, wf.output_node.id):
+        raise click.ClickException(
+            f"Field-level edits only work on the input or output node "
+            f"(got {node_id!r}). For inner nodes, use `update-node`."
+        )
+    target_node = wf.input_node if node_id == wf.input_node.id else wf.output_node
+    try:
+        new_node = engine.create_node(
+            target_node.type, id=node_id, params={"fields": new_fields}
+        )
+    except Exception as e:
+        raise click.ClickException(f"Invalid fields for node {node_id!r}: {e}") from e
+    if node_id == wf.input_node.id:
+        return wf.model_copy(update={"input_node": new_node})
+    return wf.model_copy(update={"output_node": new_node})
+
+
+@workflow_edit.command("add-field")
+@click.argument("path", type=click.Path(exists=True, dir_okay=False, path_type=Path))
+@click.argument("handle")
+@click.argument("schema_arg", metavar="SCHEMA")
+@config_option
+@coro
+async def edit_add_field(
+    path: Path, handle: str, schema_arg: str, config_path: Path | None
+):
+    """Add a single field to an input/output node. HANDLE is `nodeId.fieldName`."""
+    engine = await _build_engine(config_path)
+    wf = _load_workflow(path)
+    node_id, field_name = _parse_handle(handle)
+    schema_obj = _load_input(schema_arg)
+    current = dict(
+        wf.nodes_by_id[node_id].params.model_dump(mode="json").get("fields", {})
+    )
+    if field_name in current:
+        raise click.ClickException(
+            f"Field {field_name!r} already exists on node {node_id!r}."
+        )
+    current[field_name] = schema_obj
+    new_wf = await _apply_fields_change(engine, wf, node_id, current)
+    await _validate_or_die(engine, new_wf)
+    _save_workflow(path, new_wf)
+    click.echo(f"Added field {handle}.")
+
+
+@workflow_edit.command("update-field")
+@click.argument("path", type=click.Path(exists=True, dir_okay=False, path_type=Path))
+@click.argument("handle")
+@click.argument("schema_arg", metavar="SCHEMA")
+@config_option
+@coro
+async def edit_update_field(
+    path: Path, handle: str, schema_arg: str, config_path: Path | None
+):
+    """Replace the schema of an existing field. HANDLE is `nodeId.fieldName`."""
+    engine = await _build_engine(config_path)
+    wf = _load_workflow(path)
+    node_id, field_name = _parse_handle(handle)
+    schema_obj = _load_input(schema_arg)
+    current = dict(
+        wf.nodes_by_id[node_id].params.model_dump(mode="json").get("fields", {})
+    )
+    if field_name not in current:
+        raise click.ClickException(
+            f"Field {field_name!r} not found on node {node_id!r}."
+        )
+    current[field_name] = schema_obj
+    new_wf = await _apply_fields_change(engine, wf, node_id, current)
+    await _validate_or_die(engine, new_wf)
+    _save_workflow(path, new_wf)
+    click.echo(f"Updated field {handle}.")
+
+
+@workflow_edit.command("remove-field")
+@click.argument("path", type=click.Path(exists=True, dir_okay=False, path_type=Path))
+@click.argument("handle")
+@config_option
+@coro
+async def edit_remove_field(path: Path, handle: str, config_path: Path | None):
+    """Remove a field from an input/output node. HANDLE is `nodeId.fieldName`.
+
+    Also drops any edges referencing the removed field.
+    """
+    engine = await _build_engine(config_path)
+    wf = _load_workflow(path)
+    node_id, field_name = _parse_handle(handle)
+    current = dict(
+        wf.nodes_by_id[node_id].params.model_dump(mode="json").get("fields", {})
+    )
+    if field_name not in current:
+        raise click.ClickException(
+            f"Field {field_name!r} not found on node {node_id!r}."
+        )
+    del current[field_name]
+    new_wf = await _apply_fields_change(engine, wf, node_id, current)
+
+    def edge_touches_removed_field(e: Edge) -> bool:
+        if e.source_id == node_id and ".".join(e.source_key_path) == field_name:
+            return True
+        if e.target_id == node_id and e.target_key == field_name:
+            return True
+        return False
+
+    new_edges = tuple(e for e in new_wf.edges if not edge_touches_removed_field(e))
+    dropped = len(new_wf.edges) - len(new_edges)
+    new_wf = new_wf.model_copy(update={"edges": new_edges})
+    await _validate_or_die(engine, new_wf)
+    _save_workflow(path, new_wf)
+    click.echo(f"Removed field {handle} and {dropped} associated edge(s).")
+
+
 @workflow_edit.command("remove-node")
 @click.argument("path", type=click.Path(exists=True, dir_okay=False, path_type=Path))
 @click.argument("node_id", metavar="ID")
