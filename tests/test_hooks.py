@@ -34,15 +34,7 @@ from workflow_engine.execution.parallel import (
 )
 from workflow_engine.nodes import ConstantStringNode, ErrorNode
 
-
-@pytest.fixture(params=["topological", "parallel"])
-def algorithm(request) -> ExecutionAlgorithm:
-    if request.param == "topological":
-        return TopologicalExecutionAlgorithm()
-    elif request.param == "parallel":
-        return ParallelExecutionAlgorithm()
-    else:
-        raise ValueError(f"Invalid algorithm: {request.param}")
+from .conftest import YieldingNode
 
 
 @pytest.fixture
@@ -158,36 +150,6 @@ class ExpandingNode(Node[Data, ExpandingOutput, Params]):
         )
 
 
-class HookYieldingNode(Node[Data, ExpandingOutput, Params]):
-    TYPE_INFO: ClassVar[NodeTypeInfo] = NodeTypeInfo.from_parameter_type(
-        display_name="HookYielding",
-        description="Always raises ShouldYield.",
-        version="1.0.0",
-        parameter_type=Params,
-    )
-
-    @classmethod
-    @override
-    def static_input_type(cls) -> Type[Data]:
-        return Data
-
-    @classmethod
-    @override
-    def static_output_type(cls) -> Type[ExpandingOutput]:
-        return ExpandingOutput
-
-    @override
-    async def run(
-        self,
-        *,
-        context: ExecutionContext,
-        input_type: Type[Data],
-        output_type: Type[ExpandingOutput],
-        input: Data,
-    ) -> ExpandingOutput:
-        raise ShouldYield("waiting for approval")
-
-
 def _error_and_yield_workflow(engine: WorkflowEngine) -> Workflow:
     """A workflow where one independent branch errors and another yields."""
     return Workflow(
@@ -201,7 +163,7 @@ def _error_and_yield_workflow(engine: WorkflowEngine) -> Workflow:
                 ErrorNode, id="error", params=dict(error_name="TestError")
             ),
             yielding := engine.create_node(
-                HookYieldingNode, id="yielding", params=Params()
+                YieldingNode, id="yielding", params=Params()
             ),
         ],
         edges=[
@@ -213,7 +175,7 @@ def _error_and_yield_workflow(engine: WorkflowEngine) -> Workflow:
             ),
             Edge.from_nodes(
                 source=yielding,
-                source_key="value",
+                source_key="result",
                 target=output_node,
                 target_key="value",
             ),
@@ -227,13 +189,13 @@ def _yielding_workflow(engine: WorkflowEngine) -> Workflow:
         output_node=(output_node := engine.create_output_node(value=StringValue)),
         inner_nodes=[
             yielding := engine.create_node(
-                HookYieldingNode, id="yielding", params=Params()
+                YieldingNode, id="yielding", params=Params()
             ),
         ],
         edges=[
             Edge.from_nodes(
                 source=yielding,
-                source_key="value",
+                source_key="result",
                 target=output_node,
                 target_key="value",
             )
