@@ -68,12 +68,12 @@ class ExecutionAlgorithmImport(Import):
         imported = dynamic_import(
             module=self.module,
             name=self.name,
+            validate_predicate=callable,
         )
-        if not callable(imported):
-            raise ValueError(
-                f"Execution algorithm factory {imported.__name__} is not a callable"
-            )
-        return imported  # type: ignore[reportCallIssue]
+        return cast(
+            Callable[..., ExecutionAlgorithm | Awaitable[ExecutionAlgorithm]],
+            imported,
+        )
 
     async def build_execution_algorithm(self, **kwargs) -> ExecutionAlgorithm:
         factory = self.execution_algorithm_factory

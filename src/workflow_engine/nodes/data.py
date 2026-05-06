@@ -59,11 +59,6 @@ class SequenceData(Data, Generic[V]):
 class GatherSequenceNode(Node[Data, SequenceData, SequenceParams]):
     """
     Creates a new sequence object of a given length.
-
-    Example:
-        >>> node = GatherSequenceNode.from_length("node_id", 3)
-        >>> node.run(context, input={}).model_dump()
-        {"sequence": [0, 1, 2]}
     """
 
     TYPE_INFO: ClassVar[NodeTypeInfo] = NodeTypeInfo.from_parameter_type(
@@ -134,22 +129,6 @@ class GatherSequenceNode(Node[Data, SequenceData, SequenceParams]):
             sequence=SequenceValue[self.element_type](
                 root=[input_dict[self.key(i)] for i in self.indices]
             )
-        )
-
-    @classmethod
-    def from_length(
-        cls,
-        *,
-        id: str,
-        type: str,
-        length: int,
-        element_type: ValueType = Value,
-    ) -> Self:
-        return cls(
-            id=id,
-            type=type,
-            params=SequenceParams(length=IntegerValue(root=length)),
-            element_type=element_type,
         )
 
 
@@ -223,21 +202,6 @@ class ExpandSequenceNode(Node[SequenceData, Data, SequenceParams]):
             f"Expected sequence of length {N}, but got {len(input.sequence)}"
         )
         return output_type(**{self.key(i): input.sequence[i] for i in range(N)})
-
-    @classmethod
-    def from_length(
-        cls,
-        id: str,
-        type: str,
-        length: int,
-        element_type: ValueType = Value,
-    ) -> Self:
-        return cls(
-            id=id,
-            type=type,
-            params=SequenceParams(length=IntegerValue(root=length)),
-            element_type=element_type,
-        )
 
 
 ################################################################################
@@ -315,21 +279,6 @@ class GatherMappingNode(Node[Data, MappingData, MappingParams]):
             )
         )
 
-    @classmethod
-    def from_keys(
-        cls,
-        id: str,
-        type: str,
-        keys: Sequence[str],
-    ) -> Self:
-        return cls(
-            id=id,
-            type=type,
-            params=MappingParams(
-                keys=SequenceValue[StringValue]([StringValue(key) for key in keys])
-            ),
-        )
-
 
 class ExpandMappingNode(Node[MappingData, Data, MappingParams]):
     """
@@ -381,22 +330,6 @@ class ExpandMappingNode(Node[MappingData, Data, MappingParams]):
         input: MappingData,
     ) -> Data:
         return output_type(**{key.root: input.mapping[key] for key in self.params.keys})
-
-    @classmethod
-    def from_keys(
-        cls,
-        *,
-        id: str,
-        type: str,
-        keys: Sequence[str],
-    ) -> Self:
-        return cls(
-            id=id,
-            type=type,
-            params=MappingParams(
-                keys=SequenceValue[StringValue]([StringValue(key) for key in keys])
-            ),
-        )
 
 
 ################################################################################
@@ -456,15 +389,6 @@ class GatherDataNode(Node[Data, NestedData, Empty]):
     ) -> NestedData:
         return NestedData[self.data_type](data=DataValue[self.data_type](root=input))
 
-    @classmethod
-    def from_data_type(cls, *, id: str, type: str, data_type: Type[Data]) -> Self:
-        return cls(
-            id=id,
-            type=type,
-            params=Empty(),
-            data_type=data_type,
-        )
-
 
 class ExpandDataNode(Node[NestedData, Data, Empty]):
     """
@@ -507,21 +431,6 @@ class ExpandDataNode(Node[NestedData, Data, Empty]):
         input: NestedData,
     ) -> Data:
         return input.data.root
-
-    @classmethod
-    def from_data_type(
-        cls,
-        *,
-        id: str,
-        type: str,
-        data_type: Type[Data],
-    ) -> Self:
-        return cls(
-            id=id,
-            type=type,
-            params=Empty(),
-            data_type=data_type,
-        )
 
 
 __all__ = [

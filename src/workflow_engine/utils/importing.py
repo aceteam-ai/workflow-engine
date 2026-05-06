@@ -16,6 +16,8 @@ def dynamic_import(
 def dynamic_import(
     module: str,
     name: str,
+    *,
+    validate_predicate: Callable[[Any], bool] | None = None,
 ) -> Any: ...
 
 
@@ -25,6 +27,7 @@ def dynamic_import(
     name: str | None = None,
     *,
     validate_instance: type[T],
+    validate_predicate: Callable[[T], bool] | None = None,
 ) -> T: ...
 
 
@@ -34,16 +37,8 @@ def dynamic_import(
     name: str | None = None,
     *,
     validate_subclass: type[T],
+    validate_predicate: Callable[[type[T]], bool] | None = None,
 ) -> type[T]: ...
-
-
-@overload
-def dynamic_import(
-    module: str,
-    name: str | None = None,
-    *,
-    validate_predicate: tuple[type[T], Callable[[Any], bool]],
-) -> T: ...
 
 
 def dynamic_import(
@@ -52,9 +47,9 @@ def dynamic_import(
     *,
     validate_instance: type[T] | None = None,
     validate_subclass: type[T] | None = None,
-    validate_predicate: tuple[type[T], Callable[[Any], bool]] | None = None,
+    validate_predicate: Callable[[Any], bool] | None = None,
 ) -> ModuleType | Any | T | type[T]:
-    f"""Dynamically import:
+    """Dynamically import:
 
     If `name` is not provided, the module is imported and returned. Roughly:
     ```python
@@ -93,7 +88,7 @@ def dynamic_import(
                 f"{imported_name} is not a subclass of {validate_subclass.__name__}"
             )
     if validate_predicate is not None:
-        if not validate_predicate[1](imported):
+        if not validate_predicate(imported):
             raise ValueError(f"{imported_name} does not satisfy the predicate")
     return imported
 

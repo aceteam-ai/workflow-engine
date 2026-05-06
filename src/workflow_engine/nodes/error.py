@@ -1,6 +1,6 @@
 # workflow_engine/nodes/error.py
 
-from typing import ClassVar, Self, Type
+from typing import ClassVar, Type
 
 from overrides import override
 from pydantic import Field
@@ -62,20 +62,6 @@ class ErrorNode(Node[ErrorInput, Empty, ErrorParams]):
     ) -> Empty:
         raise WorkflowException.for_user(
             f"{self.params.error_name}: {input.info}",
-        )
-
-    @classmethod
-    def from_name(
-        cls,
-        *,
-        id: str,
-        type: str,
-        name: str,
-    ) -> Self:
-        return cls(
-            id=id,
-            type=type,
-            params=ErrorParams(error_name=StringValue(name)),
         )
 
 

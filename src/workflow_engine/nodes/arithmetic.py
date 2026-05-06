@@ -3,7 +3,7 @@
 Simple nodes for testing the workflow engine, with limited usefulness otherwise.
 """
 
-from typing import ClassVar, Self, Type
+from typing import ClassVar, Type
 
 from overrides import override
 from pydantic import Field
@@ -99,14 +99,6 @@ class AddNode(Node[Data, SumOutput, AddNodeParams]):
             for i in range(self.params.num_arguments.root)
         )
         return SumOutput(sum=FloatValue(total))
-
-    @classmethod
-    def with_arity(cls, id: str, type: str, arity: int) -> Self:
-        return cls(
-            id=id,
-            type=type,
-            params=AddNodeParams(num_arguments=IntegerValue(arity)),
-        )
 
 
 class SumNodeInput(Data):

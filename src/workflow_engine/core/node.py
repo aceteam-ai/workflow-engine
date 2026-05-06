@@ -179,15 +179,12 @@ class Node(ImmutableBaseModel, Generic[Input_contra, Output, Params_co]):
     # --------------------------------------------------------------------------
     # SUBCLASS DISPATCH
     # Each concrete Node subclass registers itself on the default lazy registry
-    # when the class body is executed. The registry key defaults to ``TYPE_INFO.name``
-    # when present, otherwise the class name with an optional ``Node`` suffix
-    # removed; the abstract base ``Node`` class registers under the name ``"Node"``.
+    # when the class body is executed, under the name `default_type_name()`.
     #
     # This is brittle when multiple packages define different classes for the
     # same type name; prefer supplying your own NodeRegistry in that case.
-    #
-    # The default registry stays lazy until first use so import order does not
-    # eagerly build the mapping.
+    # The default registry stays lazy until first use to avoid eagerly building
+    # an invalid mapping.
 
     @classmethod
     def default_type_name(cls) -> str:
@@ -775,8 +772,8 @@ class NodeRegistryBuilder(ABC):
     ) -> Self:
         """
         Register a node class by name.
-        If name is provided, use it as the registry key.
-        Otherwise, use ``node_cls._concrete_type_name()``.
+        If `name` is provided, use it as the registry key.
+        Otherwise, use `node_cls.default_type_name()`.
         """
         raise NotImplementedError()
 
