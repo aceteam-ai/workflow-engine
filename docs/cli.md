@@ -130,7 +130,7 @@ When a schema-changing edit (`update-node` or `update-field`) makes an existing 
 
 #### `wengine workflow edit add-node <path> <name> <id> [params]`
 
-Append a new node of type `<name>` with id `<id>` to `inner_nodes`. `params` is a JSON literal, `@file.json`, or `-` for stdin (defaults to `{}`).
+Append a new node of type `<name>` with id `<id>` to `inner_nodes`. `params` is a JSON literal, `@file.json`, or `-` for stdin (defaults to `{}`). Rejects `Input`/`Output` node types — every workflow has exactly one of each, so they can't be added as inner nodes; use `update-node` / `add-field` / `update-field` to modify the existing ones.
 
 #### `wengine workflow edit update-node <path> <id> <params>`
 
