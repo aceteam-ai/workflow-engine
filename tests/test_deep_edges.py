@@ -27,15 +27,6 @@ from workflow_engine import (
 )
 from workflow_engine.contexts import InMemoryExecutionContext
 from workflow_engine.core.node import Node, NodeTypeInfo
-from workflow_engine.execution import TopologicalExecutionAlgorithm
-from workflow_engine.execution.parallel import ParallelExecutionAlgorithm
-
-
-@pytest.fixture(params=["topological", "parallel"])
-def algorithm(request) -> ExecutionAlgorithm:
-    if request.param == "topological":
-        return TopologicalExecutionAlgorithm()
-    return ParallelExecutionAlgorithm()
 
 
 @pytest.fixture
