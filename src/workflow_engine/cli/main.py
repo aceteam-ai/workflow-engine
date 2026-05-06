@@ -326,12 +326,15 @@ def _save_workflow(path: Path, wf: Workflow) -> None:
 async def _prune_incompatible_edges(
     engine: WorkflowEngine, wf: Workflow
 ) -> tuple[Workflow, list[str]]:
-    """Drop edges whose endpoints are no longer type-compatible.
+    """Drop edges that fail per-edge type validation against the resolved nodes.
 
     Returns (possibly-updated workflow, list of human-readable descriptions of
     dropped edges). The caller is responsible for surfacing the warnings.
-    Edges referencing missing nodes/keys are left in place so the subsequent
-    full validation can produce a clearer error.
+    Edges referencing missing nodes are left in place (no resolved type to
+    check against), but edges whose handles can't be resolved on existing
+    nodes — e.g. a stale source field — are pruned the same way as outright
+    type mismatches. The follow-up full validation will surface any structural
+    errors that survive pruning.
     """
     # Validate a copy without edges to recover per-node resolved I/O types.
     # (Going through the engine ensures discriminator dispatch produces the
@@ -390,7 +393,7 @@ async def workflow_check(path: Path, config_path: Path | None):
     """Validate a workflow and print its input/output schemas."""
     engine = await _build_engine(config_path)
     wf = _load_workflow(path)
-    validated = await engine.validate(wf)
+    validated = await _validate_or_die(engine, wf)
     out = {
         "ok": True,
         "input_schema": validated.input_type.model_json_schema(),
@@ -436,7 +439,7 @@ async def workflow_describe(path: Path, as_json: bool, config_path: Path | None)
 
     engine = await _build_engine(config_path)
     wf = _load_workflow(path)
-    validated = await engine.validate(wf)
+    validated = await _validate_or_die(engine, wf)
 
     nodes_summary = [
         {
@@ -624,6 +627,8 @@ async def edit_add_field(
     engine = await _build_engine(config_path)
     wf = _load_workflow(path)
     node_id, field_name = _parse_handle(handle)
+    if node_id not in wf.nodes_by_id:
+        raise click.ClickException(f"Node id {node_id!r} not found.")
     schema_obj = _load_input(schema_arg)
     current = dict(
         wf.nodes_by_id[node_id].params.model_dump(mode="json").get("fields", {})
@@ -652,6 +657,8 @@ async def edit_update_field(
     engine = await _build_engine(config_path)
     wf = _load_workflow(path)
     node_id, field_name = _parse_handle(handle)
+    if node_id not in wf.nodes_by_id:
+        raise click.ClickException(f"Node id {node_id!r} not found.")
     schema_obj = _load_input(schema_arg)
     current = dict(
         wf.nodes_by_id[node_id].params.model_dump(mode="json").get("fields", {})
@@ -683,6 +690,8 @@ async def edit_remove_field(path: Path, handle: str, config_path: Path | None):
     engine = await _build_engine(config_path)
     wf = _load_workflow(path)
     node_id, field_name = _parse_handle(handle)
+    if node_id not in wf.nodes_by_id:
+        raise click.ClickException(f"Node id {node_id!r} not found.")
     current = dict(
         wf.nodes_by_id[node_id].params.model_dump(mode="json").get("fields", {})
     )
@@ -741,14 +750,28 @@ async def edit_remove_node(path: Path, node_id: str, config_path: Path | None):
 @config_option
 @coro
 async def edit_add_edge(path: Path, source: str, target: str, config_path: Path | None):
-    """Add an edge SOURCE -> TARGET (each formatted as 'nodeId.handle')."""
+    """Add an edge SOURCE -> TARGET.
+
+    SOURCE is `nodeId.handle` and may use a dotted path to address a nested
+    output field (e.g. `node.struct.field`). TARGET is `nodeId.handle` and
+    must be a single segment — the engine doesn't support writes into nested
+    target fields.
+    """
     engine = await _build_engine(config_path)
     wf = _load_workflow(path)
     src_id, src_key = _parse_handle(source)
     tgt_id, tgt_key = _parse_handle(target)
+    if "." in tgt_key:
+        raise click.ClickException(
+            f"Target handle {target!r} must be a single segment "
+            f"(nested target paths are not supported)."
+        )
+    source_key_value: str | list[str] = (
+        src_key.split(".") if "." in src_key else src_key
+    )
     new_edge = Edge(
         source_id=src_id,
-        source_key=src_key,
+        source_key=source_key_value,
         target_id=tgt_id,
         target_key=tgt_key,
     )
@@ -767,11 +790,15 @@ async def edit_add_edge(path: Path, source: str, target: str, config_path: Path 
 async def edit_remove_edge(
     path: Path, source: str, target: str, config_path: Path | None
 ):
-    """Remove the edge SOURCE -> TARGET."""
+    """Remove the edge SOURCE -> TARGET. SOURCE may use a dotted nested path."""
     engine = await _build_engine(config_path)
     wf = _load_workflow(path)
     src_id, src_key = _parse_handle(source)
     tgt_id, tgt_key = _parse_handle(target)
+    if "." in tgt_key:
+        raise click.ClickException(
+            f"Target handle {target!r} must be a single segment."
+        )
 
     def matches(e: Edge) -> bool:
         return (
@@ -804,7 +831,7 @@ async def edit_possible_edges(path: Path, handle: str, config_path: Path | None)
     """
     engine = await _build_engine(config_path)
     wf = _load_workflow(path)
-    validated = await engine.validate(wf)
+    validated = await _validate_or_die(engine, wf)
 
     node_id, key = _parse_handle(handle)
     if node_id not in validated.nodes_by_id:

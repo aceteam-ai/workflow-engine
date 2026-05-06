@@ -618,20 +618,19 @@ class TestWorkflowEdit:
             "--config",
             str(config_path),
         )
-        # Adding another sibling node — its values input shouldn't appear because... well
-        # actually it would appear since it's unwired. Test the simpler case:
-        # summer.sum's matches should still include output.total since output.total is unwired.
+        # input.nums (an output handle) is now wired into summer.values; that
+        # already-wired target should NOT appear in its candidate list anymore.
         out = _run(
             runner,
             "workflow",
             "edit",
             "possible-edges",
             str(populated_workflow),
-            "summer.sum",
+            "input.nums",
             "--config",
             str(config_path),
         )
-        assert "output.total" in out
+        assert "summer.values" not in out
 
     def test_full_construction_then_run(
         self,

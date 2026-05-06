@@ -113,17 +113,17 @@ Run a single node.
 
 Create a blank workflow and store it at `path`. Pass `--force` to overwrite an existing file. (Template support is planned but not yet implemented.)
 
-### `wengine workflow edit <path> <subcommand>`
+### `wengine workflow edit <subcommand> <path> ...`
 
 Apply an edit to the workflow stored at `path`. Each edit reloads the file, applies the change, runs full workflow validation, and saves the result back to `path` only if validation succeeds. On failure the file is left untouched.
 
 When a schema-changing edit (`update-node` or `update-field`) makes an existing edge type-incompatible, the edge is dropped automatically and a warning is printed to stderr. This keeps the workflow valid while making the cost of the schema change visible.
 
-#### `wengine workflow edit <path> add-node <name> <id> [params]`
+#### `wengine workflow edit add-node <path> <name> <id> [params]`
 
 Append a new node of type `<name>` with id `<id>` to `inner_nodes`. `params` is a JSON literal, `@file.json`, or `-` for stdin (defaults to `{}`).
 
-#### `wengine workflow edit <path> update-node <id> <params>`
+#### `wengine workflow edit update-node <path> <id> <params>`
 
 Replace the params of an existing node, preserving its type and id. Use this to retune the params of an inner node, or to swap out an entire `fields` dict on the input or output node in one shot. Works on input, output, and inner nodes alike.
 
@@ -131,23 +131,23 @@ Replace the params of an existing node, preserving its type and id. Use this to 
 
 For incremental edits to the input or output node's `fields`, three convenience subcommands operate on a single field at a time. The handle is `nodeId.fieldName`. They reject inner nodes — for those, use `update-node`.
 
-- `wengine workflow edit <path> add-field <handle> <schema>` — add a new field. Errors if the field already exists.
-- `wengine workflow edit <path> update-field <handle> <schema>` — replace an existing field's schema. Errors if the field doesn't exist.
-- `wengine workflow edit <path> remove-field <handle>` — remove a field and any edges that reference it.
+- `wengine workflow edit add-field <path> <handle> <schema>` — add a new field. Errors if the field already exists.
+- `wengine workflow edit update-field <path> <handle> <schema>` — replace an existing field's schema. Errors if the field doesn't exist.
+- `wengine workflow edit remove-field <path> <handle>` — remove a field and any edges that reference it.
 
-#### `wengine workflow edit <path> remove-node <id>`
+#### `wengine workflow edit remove-node <path> <id>`
 
 Remove an inner node and any edges that touch it. Refuses to remove the workflow's input or output node.
 
-#### `wengine workflow edit <path> add-edge <source> <target>`
+#### `wengine workflow edit add-edge <path> <source> <target>`
 
-Add an edge `source -> target`, where each side is formatted as `nodeId.handle`. Type compatibility is enforced by the validation step.
+Add an edge `source -> target`, where each side is formatted as `nodeId.handle`. The source handle may use a dotted path (e.g. `node.struct.field`) to address a nested output field; the target handle must be a single segment. Type compatibility is enforced by the validation step.
 
-#### `wengine workflow edit <path> remove-edge <source> <target>`
+#### `wengine workflow edit remove-edge <path> <source> <target>`
 
 Remove the edge `source -> target`. Errors if no matching edge exists.
 
-#### `wengine workflow edit <path> possible-edges <nodeId>.<handle>`
+#### `wengine workflow edit possible-edges <path> <nodeId>.<handle>`
 
 For the given handle (an output or input on the named node), list all compatible counterparts on other nodes. Uses `Value.can_cast_to` to determine compatibility. Already-wired inputs are excluded (each input takes one source). Doesn't modify the workflow.
 
