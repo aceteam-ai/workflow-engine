@@ -113,29 +113,29 @@ Run a single node.
 
 Create a blank workflow and store it at `path`. Pass `--force` to overwrite an existing file. (Template support is planned but not yet implemented.)
 
-### `wengine workflow edit <path> [command]`
+### `wengine workflow edit <path> <subcommand>`
 
-> Avoid implementing this in the first iteration of the CLI; it's tricky to get these right.
+Apply an edit to the workflow stored at `path`. Each edit reloads the file, applies the change, runs full workflow validation, and saves the result back to `path` only if validation succeeds. On failure the file is left untouched.
 
-Apply an edit to the workflow stored at `path`, and save it back to the same file if the result is valid.
+#### `wengine workflow edit <path> add-node <name> <id> [params]`
 
-#### `wengine workflow edit <path> add-node <name> <id> <params>`
+Append a new node of type `<name>` with id `<id>` to `inner_nodes`. `params` is a JSON literal, `@file.json`, or `-` for stdin (defaults to `{}`).
 
 #### `wengine workflow edit <path> remove-node <id>`
 
-Deletes all edges associated with that node too.
-
-#### `wengine workflow edit <path> possible-edges <nodeId>.<handle>`
-
-Locates all sources or targets that the given handle can connect to in a type-safe way. Doesn't edit the workflow.
+Remove an inner node and any edges that touch it. Refuses to remove the workflow's input or output node.
 
 #### `wengine workflow edit <path> add-edge <source> <target>`
 
-Validates that the edge can be added.
+Add an edge `source -> target`, where each side is formatted as `nodeId.handle`. Type compatibility is enforced by the validation step.
 
 #### `wengine workflow edit <path> remove-edge <source> <target>`
 
-where `source` and `target` are of the format `nodeId.handle`.
+Remove the edge `source -> target`. Errors if no matching edge exists.
+
+#### `wengine workflow edit <path> possible-edges <nodeId>.<handle>`
+
+For the given handle (an output or input on the named node), list all compatible counterparts on other nodes. Uses `Value.can_cast_to` to determine compatibility. Already-wired inputs are excluded (each input takes one source). Doesn't modify the workflow.
 
 ### `wengine workflow check <path>`
 
