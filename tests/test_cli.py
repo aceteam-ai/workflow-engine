@@ -113,6 +113,24 @@ class TestSchema:
         )
         assert result.exit_code != 0
 
+    def test_invalid_json_input_reports_clean_error(self, runner: CliRunner):
+        result = runner.invoke(cli, ["schema", "check", "{not json"])
+        assert result.exit_code != 0
+        # Should be a click error, not a Python traceback.
+        assert "Traceback" not in result.output
+        assert "Invalid JSON" in result.output
+
+    def test_check_accepts_config_flag(self, runner: CliRunner, config_path: Path):
+        out = _run(
+            runner,
+            "schema",
+            "check",
+            '{"x-value-type": "JSONValue"}',
+            "--config",
+            str(config_path),
+        )
+        assert json.loads(out)["title"] == "JSONValue"
+
 
 # ---------- node ----------
 

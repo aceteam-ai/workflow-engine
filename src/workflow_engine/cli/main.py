@@ -43,10 +43,24 @@ def _load_input(value: str) -> Any:
     if value == "-":
         import sys
 
-        return json.loads(sys.stdin.read())
-    if value.startswith("@"):
-        return json.loads(Path(value[1:]).read_text())
-    return json.loads(value)
+        source = "stdin"
+        try:
+            text = sys.stdin.read()
+        except OSError as e:
+            raise click.ClickException(f"Failed to read from stdin: {e}") from e
+    elif value.startswith("@"):
+        source = f"file {value[1:]!r}"
+        try:
+            text = Path(value[1:]).read_text()
+        except OSError as e:
+            raise click.ClickException(f"Failed to read {value[1:]!r}: {e}") from e
+    else:
+        source = "inline argument"
+        text = value
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError as e:
+        raise click.ClickException(f"Invalid JSON in {source}: {e}") from e
 
 
 async def _build_engine(config_path: Path | None) -> WorkflowEngine:
@@ -122,8 +136,9 @@ async def schema_list(config_path: Path | None):
 
 @schema.command("check")
 @click.argument("schema_arg", metavar="SCHEMA")
+@config_option
 @coro
-async def schema_check(schema_arg: str):
+async def schema_check(schema_arg: str, config_path: Path | None):
     """Validate an aliased value schema and print the fully-resolved schema.
 
     SCHEMA is a JSON literal, @file.json, or - for stdin. Examples:
@@ -131,6 +146,9 @@ async def schema_check(schema_arg: str):
       wengine schema check '{"x-value-type": "JSONValue"}'
       wengine schema check '{"type": "array", "items": {"x-value-type": "StringValue"}}'
     """
+    # Building the engine surfaces config errors early; schema resolution
+    # itself still uses ValueRegistry.DEFAULT today.
+    await _build_engine(config_path)
     raw = _load_input(schema_arg)
     schema_obj = validate_value_schema(raw)
     cls = schema_obj.to_value_cls()
@@ -140,9 +158,11 @@ async def schema_check(schema_arg: str):
 @schema.command("parse")
 @click.argument("schema_arg", metavar="SCHEMA")
 @click.argument("value_arg", metavar="VALUE")
+@config_option
 @coro
-async def schema_parse(schema_arg: str, value_arg: str):
+async def schema_parse(schema_arg: str, value_arg: str, config_path: Path | None):
     """Parse VALUE as the given SCHEMA. Prints the validated value as JSON."""
+    await _build_engine(config_path)
     raw_schema = _load_input(schema_arg)
     raw_value = _load_input(value_arg)
     schema_obj = validate_value_schema(raw_schema)

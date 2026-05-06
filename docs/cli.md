@@ -12,7 +12,7 @@ Prints the default config file location, so users know where to edit it.
 
 Prints the full contents of the config file (default location, or the file given via `--config`).
 
-All other commands accept an optional `--config=<path>` flag to override the default config location.
+All commands that build an engine (everything under `schema`, `node`, and the read/run subcommands of `workflow`) accept an optional `--config=<path>` flag to override the default config location. `workflow init` does not — it only writes a file.
 
 ## `wengine schema`
 
@@ -83,7 +83,7 @@ Example: `wengine node check Sum` returns an `input_schema` whose `values` prope
 
 ### `wengine schema check <schema>`
 
-Uses the engine's validation powers to validate an aliased JSON schema type (e.g. `{"x-value-type": "JSONValue"}`, `{"type": "array", "item": {"x-value-type": "StringValue"}}`) and return a full schema.
+Uses the engine's validation powers to validate an aliased JSON schema type (e.g. `{"x-value-type": "JSONValue"}`, `{"type": "array", "items": {"x-value-type": "StringValue"}}`) and return a full schema.
 
 ### `wengine schema parse <schema> <value>`
 
@@ -109,9 +109,9 @@ Run a single node.
 
 ## `wengine workflow`
 
-### `wengine workflow init <path> [template]`
+### `wengine workflow init <path>`
 
-Create a workflow maybe starting from a template (if provided, or blank otherwise), and store it at `path`.
+Create a blank workflow and store it at `path`. Pass `--force` to overwrite an existing file. (Template support is planned but not yet implemented.)
 
 ### `wengine workflow edit <path> [command]`
 
@@ -137,27 +137,26 @@ Validates that the edge can be added.
 
 where `source` and `target` are of the format `nodeId.handle`.
 
-### `wengine workflow check <path> [json]`
+### `wengine workflow check <path>`
 
-Validate a workflow.
-
-- If `json` is provided, then the provided JSON is validated and saved to `path` if successful.
-- If `json` is not provided, then the existing workflow saved at `path` is loaded and re-validated (useful if a user made manual edits to the file).
-
-On success, prints the workflow's overall input and output schemas.
+Loads the workflow at `path`, validates it, and prints its overall input and output schemas. (A future iteration will accept an inline JSON payload that is validated and saved back to `path` if successful.)
 
 ### `wengine workflow describe <path>`
 
 Print a structured summary of the workflow stored at `path` without executing it. Intended as the primary read-only inspection command for both humans and agents — avoids re-parsing the workflow JSON to answer common questions.
 
-Output includes:
+Current output includes:
 
-- **Metadata**: workflow name, version, and any top-level annotations.
-- - **Nodes**: for each node, its `id`, type name, and resolved parameter values. Parameters that reference workflow inputs or upstream outputs are shown as references, not literals.
+- **Nodes**: for each node, its `id`, type name, and parameter values.
 - **Edges**: list of `sourceNodeId.handle -> targetNodeId.handle` connections.
-- **Inferred I/O**: the workflow's overall input schema (handles with no incoming edge that read from workflow input) and output schema (handles exposed as workflow outputs).
-- **Execution order**: the topological order the engine would use, with parallelizable groups indicated.
+- **Inferred I/O**: the workflow's overall input and output schemas.
+- **Execution order**: topological generations of node IDs (each generation can run in parallel).
+
+Future work (not yet emitted):
+
+- **Metadata**: workflow name, version, and top-level annotations.
 - **Warnings**: dangling handles, unreachable nodes, or nodes whose params reference inputs that aren't provided by the workflow input schema. Non-fatal — `check` is the command that fails on these.
+- Resolved-parameter views that distinguish references to upstream outputs from literals.
 
 Supports `--json` for machine-readable output (stable shape, suitable for agent consumption) and a default human-readable rendering.
 
