@@ -200,8 +200,9 @@ class Node(ImmutableBaseModel, Generic[Input_contra, Output, Params_co]):
         # Skip parameterized generic aliases (e.g. `Node[Data, Data, P]`),
         # which Pydantic synthesizes as intermediate classes when a concrete
         # subclass writes `class FooNode(Node[I, O, P])`. They show up here
-        # with names containing `[`. Only concrete subclasses should register.
-        if "[" in cls.__name__:
+        # with bracketed names. Only concrete subclasses should register.
+        name = cls.__name__
+        if "[" in name and "]" in name and name.count("[") == name.count("]"):
             return
 
         NodeRegistry.DEFAULT.register(cls)
