@@ -44,7 +44,7 @@ class Edge(ImmutableBaseModel):
 
     @cached_property
     def source_key_path_string(self) -> str:
-        return ".".join(self.source_key)
+        return ".".join(self.source_key_path)
 
     @classmethod
     def from_nodes(
