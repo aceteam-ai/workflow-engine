@@ -4,6 +4,31 @@ All notable changes to this project will be documented in this file.
 
 This project uses [PEP 440](https://peps.python.org/pep-0440/) versioning with release candidates (rcN) for pre-release versions.
 
+## [2.0.0rc11] - 2026-05-06
+
+### Added
+- New `wengine` CLI (#127, #128, #129) shipped as the `wengine` console script. Provides:
+  - `config path` / `config show` for inspecting the active config (`platformdirs`-located YAML by default).
+  - `schema list` / `check` / `parse` for working with the value-type system, including the `x-value-type` form for concrete types and standard JSON Schema composition for generics.
+  - `node list` / `info` / `check` / `run` for inspecting and executing single nodes.
+  - `workflow init` / `check` / `describe` / `run` for scaffolding, validating, summarising, and executing workflows.
+  - `workflow edit add-node` / `update-node` / `remove-node` / `add-field` / `update-field` / `remove-field` / `add-edge` / `remove-edge` / `possible-edges` for building workflows incrementally with full type-checked validation on every edit. Schema-changing edits auto-prune now-incompatible edges with a stderr warning.
+- Claude Code skill at `.claude/skills/wengine/SKILL.md` (plus a starter `config.example.yaml`) that turns the CLI into a playbook agents can follow end-to-end.
+- TOML serialization/deserialization support on all immutable models (#117), alongside the existing JSON and YAML round-trips (#116).
+- "Type casting between `Value` types" guidance in `docs/cli.md` explaining the implicit-cast behavior at edge boundaries (#129).
+
+### Changed
+- Node registry name is now decoupled from the node class: aliases in the registry (or `engine.yaml`) can differ from the Python class name, enabling per-deployment renames and overrides without touching node code (#122).
+- Node auto-registration now skips parameterized generic aliases (e.g. `Node[Data, Data, P]`) that Pydantic synthesizes as intermediate classes when a concrete subclass writes `class FooNode(Node[I, O, P])`. Only concrete subclasses register on `NodeRegistry.DEFAULT` (#125).
+
+### Fixed
+- `WorkflowException` is now correctly serialised in `LocalContext.on_node_error` (#121).
+- `Edge.source_key_path_string` no longer iterates a single-segment string character-by-character (`"nums"` rendered as `"n.u.m.s"`); joins the normalised path tuple instead (#126).
+
+### Internal
+- Shared test fixtures and node types lifted into `tests/conftest.py` so per-file test files no longer re-declare them (#124).
+- Dependency bumps: `pytest` 9.0.2 → 9.0.3 (#120), `python-dotenv` 1.2.1 → 1.2.2 (#119), `cryptography` 46.0.6 → 46.0.7 (#118).
+
 ## [2.0.0rc7] - 2026-03-24
 
 ### Changed
