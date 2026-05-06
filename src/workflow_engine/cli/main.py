@@ -22,7 +22,6 @@ from workflow_engine.core.config import WorkflowEngineConfig
 from workflow_engine.core.context import ValidationContext
 from workflow_engine.core.edge import Edge
 from workflow_engine.core.engine import WorkflowEngine
-from workflow_engine.core.io import InputNode, OutputNode
 from workflow_engine.core.node import NodeRegistry
 from workflow_engine.core.values import ValueRegistry
 from workflow_engine.core.values.data import Data, DataValue
@@ -629,11 +628,10 @@ async def edit_add_node(
     wf = _load_workflow(path)
     if node_id in wf.nodes_by_id:
         raise click.ClickException(f"Node id {node_id!r} already exists in workflow.")
-    cls = engine.node_registry.get(name)
-    if cls is not None and issubclass(cls, (InputNode, OutputNode)):
+    if name in ("Input", "Output"):
         raise click.ClickException(
-            f"Cannot add an Input/Output-type node ({name!r}) as an inner node. "
-            f"Each workflow already has exactly one input and one output node — "
+            f"Cannot add the {name!r} node as an inner node. "
+            f"Every workflow has exactly one Input and one Output node — "
             f"use `update-node`, `add-field`, or `update-field` to modify them."
         )
     params = _load_input(params_arg)
