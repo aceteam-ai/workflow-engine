@@ -2,7 +2,7 @@
 """Tests for context lifecycle hooks."""
 
 from collections.abc import Mapping
-from typing import ClassVar, Literal, Type
+from typing import ClassVar, Type
 from unittest.mock import AsyncMock
 
 import pytest
@@ -27,7 +27,6 @@ from workflow_engine import (
 )
 from workflow_engine.contexts import InMemoryExecutionContext
 from workflow_engine.core import ValidatedWorkflow
-from workflow_engine.core.io import InputNode, OutputNode
 from workflow_engine.execution import TopologicalExecutionAlgorithm
 from workflow_engine.execution.parallel import (
     ErrorHandlingMode,
@@ -46,15 +45,21 @@ def algorithm(request) -> ExecutionAlgorithm:
         raise ValueError(f"Invalid algorithm: {request.param}")
 
 
-def _simple_workflow() -> Workflow:
+@pytest.fixture
+def engine() -> WorkflowEngine:
+    return WorkflowEngine()
+
+
+def _simple_workflow(engine: WorkflowEngine) -> Workflow:
     """A minimal workflow: (no input) -> constant -> output."""
-    input_node = InputNode.empty()
-    output_node = OutputNode.from_fields(value=StringValue)
-    constant = ConstantStringNode.from_value(id="constant", value="hello")
     return Workflow(
-        input_node=input_node,
-        output_node=output_node,
-        inner_nodes=[constant],
+        input_node=engine.create_input_node(),
+        output_node=(output_node := engine.create_output_node(value=StringValue)),
+        inner_nodes=[
+            constant := engine.create_node(
+                ConstantStringNode, id="constant", params=dict(value="hello")
+            ),
+        ],
         edges=[
             Edge.from_nodes(
                 source=constant,
@@ -66,16 +71,19 @@ def _simple_workflow() -> Workflow:
     )
 
 
-def _error_workflow() -> Workflow:
+def _error_workflow(engine: WorkflowEngine) -> Workflow:
     """A workflow that raises an error during execution."""
-    input_node = InputNode.empty()
-    output_node = OutputNode.from_fields(value=StringValue)
-    constant = ConstantStringNode.from_value(id="constant", value="hello")
-    error = ErrorNode.from_name(id="error", name="TestError")
     return Workflow(
-        input_node=input_node,
-        output_node=output_node,
-        inner_nodes=[constant, error],
+        input_node=engine.create_input_node(),
+        output_node=(output_node := engine.create_output_node(value=StringValue)),
+        inner_nodes=[
+            constant := engine.create_node(
+                ConstantStringNode, id="constant", params=dict(value="hello")
+            ),
+            error := engine.create_node(
+                ErrorNode, id="error", params=dict(error_name="TestError")
+            ),
+        ],
         edges=[
             Edge.from_nodes(
                 source=constant,
@@ -101,13 +109,11 @@ class ExpandingOutput(Data):
 # Its output_type matches the inner workflow's output schema.
 class ExpandingNode(Node[Data, ExpandingOutput, Params]):
     TYPE_INFO: ClassVar[NodeTypeInfo] = NodeTypeInfo.from_parameter_type(
-        name="Expanding",
         display_name="Expanding",
         description="A node that expands into a subgraph.",
         version="1.0.0",
         parameter_type=Params,
     )
-    type: Literal["Expanding"] = "Expanding"  # pyright: ignore[reportIncompatibleVariableOverride]
 
     output_value: str
 
@@ -130,13 +136,15 @@ class ExpandingNode(Node[Data, ExpandingOutput, Params]):
         output_type: Type[ExpandingOutput],
         input: Data,
     ) -> Workflow:
-        inner_input = InputNode.empty()
-        inner_output = OutputNode.from_fields(value=StringValue)
-        constant = ConstantStringNode.from_value(
-            id="inner_constant", value=self.output_value
+        registry = context.validation_context.node_registry
+        inner_output = registry.create_output_node(value=StringValue)
+        constant = registry.create_node(
+            ConstantStringNode,
+            id="inner_constant",
+            params=dict(value=self.output_value),
         )
         return Workflow(
-            input_node=inner_input,
+            input_node=registry.create_input_node(),
             output_node=inner_output,
             inner_nodes=[constant],
             edges=[
@@ -149,20 +157,14 @@ class ExpandingNode(Node[Data, ExpandingOutput, Params]):
             ],
         )
 
-    @classmethod
-    def create(cls, id: str, output_value: str = "expanded") -> "ExpandingNode":
-        return cls(id=id, params=Params(), output_value=output_value)
 
-
-class YieldingNode(Node[Data, ExpandingOutput, Params]):
+class HookYieldingNode(Node[Data, ExpandingOutput, Params]):
     TYPE_INFO: ClassVar[NodeTypeInfo] = NodeTypeInfo.from_parameter_type(
-        name="HookYielding",
         display_name="HookYielding",
         description="Always raises ShouldYield.",
         version="1.0.0",
         parameter_type=Params,
     )
-    type: Literal["HookYielding"] = "HookYielding"  # pyright: ignore[reportIncompatibleVariableOverride]
 
     @classmethod
     @override
@@ -186,17 +188,22 @@ class YieldingNode(Node[Data, ExpandingOutput, Params]):
         raise ShouldYield("waiting for approval")
 
 
-def _error_and_yield_workflow() -> Workflow:
+def _error_and_yield_workflow(engine: WorkflowEngine) -> Workflow:
     """A workflow where one independent branch errors and another yields."""
-    input_node = InputNode.empty()
-    output_node = OutputNode.from_fields(value=StringValue)
-    constant = ConstantStringNode.from_value(id="constant", value="hello")
-    error = ErrorNode.from_name(id="error", name="TestError")
-    yielding = YieldingNode(id="yielding", params=Params())
     return Workflow(
-        input_node=input_node,
-        output_node=output_node,
-        inner_nodes=[constant, error, yielding],
+        input_node=engine.create_input_node(),
+        output_node=(output_node := engine.create_output_node(value=StringValue)),
+        inner_nodes=[
+            constant := engine.create_node(
+                ConstantStringNode, id="constant", params=dict(value="hello")
+            ),
+            error := engine.create_node(
+                ErrorNode, id="error", params=dict(error_name="TestError")
+            ),
+            yielding := engine.create_node(
+                HookYieldingNode, id="yielding", params=Params()
+            ),
+        ],
         edges=[
             Edge.from_nodes(
                 source=constant,
@@ -214,14 +221,15 @@ def _error_and_yield_workflow() -> Workflow:
     )
 
 
-def _yielding_workflow() -> Workflow:
-    yielding = YieldingNode(id="yielding", params=Params())
-    input_node = InputNode.empty()
-    output_node = OutputNode.from_fields(value=StringValue)
+def _yielding_workflow(engine: WorkflowEngine) -> Workflow:
     return Workflow(
-        input_node=input_node,
-        output_node=output_node,
-        inner_nodes=[yielding],
+        input_node=engine.create_input_node(),
+        output_node=(output_node := engine.create_output_node(value=StringValue)),
+        inner_nodes=[
+            yielding := engine.create_node(
+                HookYieldingNode, id="yielding", params=Params()
+            ),
+        ],
         edges=[
             Edge.from_nodes(
                 source=yielding,
@@ -233,14 +241,20 @@ def _yielding_workflow() -> Workflow:
     )
 
 
-def _expanding_workflow(output_value: str = "expanded") -> Workflow:
-    expanding = ExpandingNode.create(id="expanding", output_value=output_value)
-    input_node = InputNode.empty()
-    output_node = OutputNode.from_fields(value=StringValue)
+def _expanding_workflow(
+    engine: WorkflowEngine, output_value: str = "expanded"
+) -> Workflow:
     return Workflow(
-        input_node=input_node,
-        output_node=output_node,
-        inner_nodes=[expanding],
+        input_node=engine.create_input_node(),
+        output_node=(output_node := engine.create_output_node(value=StringValue)),
+        inner_nodes=[
+            expanding := engine.create_node(
+                ExpandingNode,
+                id="expanding",
+                params=Params(),
+                output_value=output_value,
+            ),
+        ],
         edges=[
             Edge.from_nodes(
                 source=expanding,
@@ -254,8 +268,8 @@ def _expanding_workflow(output_value: str = "expanded") -> Workflow:
 
 class TestOnNodeStart:
     @pytest.mark.asyncio
-    async def test_called_for_each_node(self):
-        workflow = _simple_workflow()
+    async def test_called_for_each_node(self, engine: WorkflowEngine):
+        workflow = _simple_workflow(engine)
         context = InMemoryExecutionContext()
         called_ids: list[str] = []
         original = context.on_node_start
@@ -298,9 +312,9 @@ class TestOnNodeStart:
         }
 
     @pytest.mark.asyncio
-    async def test_can_skip_node_execution(self):
+    async def test_can_skip_node_execution(self, engine: WorkflowEngine):
         """Returning a DataMapping from on_node_start bypasses run()."""
-        workflow = _simple_workflow()
+        workflow = _simple_workflow(engine)
         context = InMemoryExecutionContext()
         original = context.on_node_start
 
@@ -338,9 +352,9 @@ class TestOnNodeStart:
         assert result.output == {"value": StringValue("cached")}
 
     @pytest.mark.asyncio
-    async def test_can_short_circuit_expanding_node(self):
+    async def test_can_short_circuit_expanding_node(self, engine: WorkflowEngine):
         """Returning a Workflow from on_node_start bypasses run() and triggers expansion."""
-        workflow = _expanding_workflow()
+        workflow = _expanding_workflow(engine)
         context = InMemoryExecutionContext()
         run_called = False
         expand_called = False
@@ -349,13 +363,14 @@ class TestOnNodeStart:
         original_on_node_expand = context.on_node_expand
 
         # Build a replacement workflow to return from on_node_start
-        replacement_input = InputNode.empty()
-        replacement_output = OutputNode.from_fields(value=StringValue)
-        replacement_constant = ConstantStringNode.from_value(
-            id="replacement_constant", value="short-circuited"
+        replacement_output = engine.create_output_node(value=StringValue)
+        replacement_constant = engine.create_node(
+            ConstantStringNode,
+            id="replacement_constant",
+            params=dict(value="short-circuited"),
         )
         replacement_workflow = Workflow(
-            input_node=replacement_input,
+            input_node=engine.create_input_node(),
             output_node=replacement_output,
             inner_nodes=[replacement_constant],
             edges=[
@@ -436,8 +451,8 @@ class TestOnNodeStart:
 
 class TestOnNodeFinish:
     @pytest.mark.asyncio
-    async def test_called_for_each_node(self):
-        workflow = _simple_workflow()
+    async def test_called_for_each_node(self, engine: WorkflowEngine):
+        workflow = _simple_workflow(engine)
         context = InMemoryExecutionContext()
         called_ids: list[str] = []
         original = context.on_node_finish
@@ -483,9 +498,9 @@ class TestOnNodeFinish:
         }
 
     @pytest.mark.asyncio
-    async def test_can_modify_output(self):
+    async def test_can_modify_output(self, engine: WorkflowEngine):
         """The context can transform a node's output via on_node_finish."""
-        workflow = _simple_workflow()
+        workflow = _simple_workflow(engine)
         context = InMemoryExecutionContext()
 
         async def on_node_finish(
@@ -519,9 +534,9 @@ class TestOnNodeFinish:
         assert result.output == {"value": StringValue("overridden")}
 
     @pytest.mark.asyncio
-    async def test_not_called_for_expanding_nodes(self):
+    async def test_not_called_for_expanding_nodes(self, engine: WorkflowEngine):
         """on_node_finish is not called when a node returns a Workflow."""
-        workflow = _expanding_workflow()
+        workflow = _expanding_workflow(engine)
         context = InMemoryExecutionContext()
         finish_ids: list[str] = []
 
@@ -557,8 +572,8 @@ class TestOnNodeFinish:
 
 class TestOnNodeExpand:
     @pytest.mark.asyncio
-    async def test_called_when_node_emits_workflow(self):
-        workflow = _expanding_workflow()
+    async def test_called_when_node_emits_workflow(self, engine: WorkflowEngine):
+        workflow = _expanding_workflow(engine)
         context = InMemoryExecutionContext()
         original = context.on_node_expand
 
@@ -597,9 +612,9 @@ class TestOnNodeExpand:
         assert result.output == {"value": StringValue("expanded")}
 
     @pytest.mark.asyncio
-    async def test_can_modify_emitted_workflow(self):
+    async def test_can_modify_emitted_workflow(self, engine: WorkflowEngine):
         """The context can replace the emitted workflow via on_node_expand."""
-        workflow = _expanding_workflow()
+        workflow = _expanding_workflow(engine)
         context = InMemoryExecutionContext()
 
         async def on_node_expand(
@@ -615,13 +630,15 @@ class TestOnNodeExpand:
             assert output_type is not None
             assert input == {}
             assert isinstance(workflow, ValidatedWorkflow)
-            inner_input = InputNode.empty()
-            inner_output = OutputNode.from_fields(value=StringValue)
-            constant = ConstantStringNode.from_value(
-                id="replaced_constant", value="replaced"
+            registry = context.validation_context.node_registry
+            inner_output = registry.create_output_node(value=StringValue)
+            constant = registry.create_node(
+                ConstantStringNode,
+                id="replaced_constant",
+                params=dict(value="replaced"),
             )
             overridden_workflow = Workflow(
-                input_node=inner_input,
+                input_node=registry.create_input_node(),
                 output_node=inner_output,
                 inner_nodes=[constant],
                 edges=[
@@ -654,8 +671,9 @@ class TestOnNodeYield:
     async def test_called_when_node_yields(
         self,
         algorithm: ExecutionAlgorithm,
+        engine: WorkflowEngine,
     ):
-        workflow = _yielding_workflow()
+        workflow = _yielding_workflow(engine)
         context = InMemoryExecutionContext()
         yielded = []
 
@@ -691,8 +709,9 @@ class TestOnNodeYield:
     async def test_called_with_correct_arguments(
         self,
         algorithm: ExecutionAlgorithm,
+        engine: WorkflowEngine,
     ):
-        workflow = _yielding_workflow()
+        workflow = _yielding_workflow(engine)
         context = InMemoryExecutionContext()
 
         async def on_node_yield(
@@ -724,9 +743,10 @@ class TestOnNodeYield:
     async def test_not_called_for_regular_error(
         self,
         algorithm: ExecutionAlgorithm,
+        engine: WorkflowEngine,
     ):
         """on_node_yield must not fire when a node raises a plain error."""
-        workflow = _error_workflow()
+        workflow = _error_workflow(engine)
         context = InMemoryExecutionContext()
         mock = AsyncMock()
         context.on_node_yield = mock
@@ -744,8 +764,9 @@ class TestOnNodeYield:
     async def test_not_called_on_success(
         self,
         algorithm: ExecutionAlgorithm,
+        engine: WorkflowEngine,
     ):
-        workflow = _simple_workflow()
+        workflow = _simple_workflow(engine)
         context = InMemoryExecutionContext()
         mock = AsyncMock()
         context.on_node_yield = mock
@@ -762,8 +783,8 @@ class TestOnNodeYield:
 
 class TestOnWorkflowStart:
     @pytest.mark.asyncio
-    async def test_called_at_start(self):
-        workflow = _simple_workflow()
+    async def test_called_at_start(self, engine: WorkflowEngine):
+        workflow = _simple_workflow(engine)
         context = InMemoryExecutionContext()
         original = context.on_workflow_start
 
@@ -789,9 +810,9 @@ class TestOnWorkflowStart:
         assert result.status is WorkflowExecutionResultStatus.SUCCESS
 
     @pytest.mark.asyncio
-    async def test_can_skip_execution(self):
+    async def test_can_skip_execution(self, engine: WorkflowEngine):
         """Returning a result from on_workflow_start bypasses all node execution."""
-        workflow = _simple_workflow()
+        workflow = _simple_workflow(engine)
         context = InMemoryExecutionContext()
         cached_output = {"value": StringValue("cached_workflow")}
 
@@ -841,8 +862,8 @@ class TestOnWorkflowStart:
 
 class TestOnWorkflowFinish:
     @pytest.mark.asyncio
-    async def test_called_on_success(self):
-        workflow = _simple_workflow()
+    async def test_called_on_success(self, engine: WorkflowEngine):
+        workflow = _simple_workflow(engine)
         context = InMemoryExecutionContext()
         original = context.on_workflow_finish
 
@@ -874,8 +895,8 @@ class TestOnWorkflowFinish:
         assert result.status is WorkflowExecutionResultStatus.SUCCESS
 
     @pytest.mark.asyncio
-    async def test_can_modify_output(self):
-        workflow = _simple_workflow()
+    async def test_can_modify_output(self, engine: WorkflowEngine):
+        workflow = _simple_workflow(engine)
         context = InMemoryExecutionContext()
 
         async def on_workflow_finish(
@@ -903,8 +924,8 @@ class TestOnWorkflowFinish:
         assert result.output == {"value": StringValue("modified")}
 
     @pytest.mark.asyncio
-    async def test_not_called_on_error(self):
-        workflow = _error_workflow()
+    async def test_not_called_on_error(self, engine: WorkflowEngine):
+        workflow = _error_workflow(engine)
         context = InMemoryExecutionContext()
         mock = AsyncMock()
         context.on_workflow_finish = mock
@@ -926,8 +947,9 @@ class TestOnWorkflowYield:
     async def test_called_when_workflow_yields(
         self,
         algorithm: ExecutionAlgorithm,
+        engine: WorkflowEngine,
     ):
-        workflow = _yielding_workflow()
+        workflow = _yielding_workflow(engine)
         context = InMemoryExecutionContext()
         original = context.on_workflow_yield
 
@@ -964,8 +986,9 @@ class TestOnWorkflowYield:
     async def test_called_with_correct_arguments(
         self,
         algorithm: ExecutionAlgorithm,
+        engine: WorkflowEngine,
     ):
-        workflow = _yielding_workflow()
+        workflow = _yielding_workflow(engine)
         context = InMemoryExecutionContext()
 
         async def on_workflow_yield(
@@ -999,8 +1022,9 @@ class TestOnWorkflowYield:
     async def test_not_called_on_success(
         self,
         algorithm: ExecutionAlgorithm,
+        engine: WorkflowEngine,
     ):
-        workflow = _simple_workflow()
+        workflow = _simple_workflow(engine)
         context = InMemoryExecutionContext()
         mock = AsyncMock()
         context.on_workflow_yield = mock
@@ -1019,8 +1043,9 @@ class TestOnWorkflowYield:
     async def test_not_called_on_error(
         self,
         algorithm: ExecutionAlgorithm,
+        engine: WorkflowEngine,
     ):
-        workflow = _error_workflow()
+        workflow = _error_workflow(engine)
         context = InMemoryExecutionContext()
         mock = AsyncMock()
         context.on_workflow_yield = mock
@@ -1037,8 +1062,8 @@ class TestOnWorkflowYield:
 
 class TestOnWorkflowError:
     @pytest.mark.asyncio
-    async def test_called_on_error(self):
-        workflow = _error_workflow()
+    async def test_called_on_error(self, engine: WorkflowEngine):
+        workflow = _error_workflow(engine)
         context = InMemoryExecutionContext()
         original = context.on_workflow_error
 
@@ -1076,9 +1101,9 @@ class TestOnWorkflowError:
         assert result.status is WorkflowExecutionResultStatus.ERROR
 
     @pytest.mark.asyncio
-    async def test_can_modify_errors(self):
+    async def test_can_modify_errors(self, engine: WorkflowEngine):
         """The context can clear errors via on_workflow_error."""
-        workflow = _error_workflow()
+        workflow = _error_workflow(engine)
         context = InMemoryExecutionContext()
 
         async def on_workflow_error(
@@ -1109,8 +1134,8 @@ class TestOnWorkflowError:
         assert result.status is WorkflowExecutionResultStatus.SUCCESS
 
     @pytest.mark.asyncio
-    async def test_not_called_on_success(self):
-        workflow = _simple_workflow()
+    async def test_not_called_on_success(self, engine: WorkflowEngine):
+        workflow = _simple_workflow(engine)
         context = InMemoryExecutionContext()
         mock = AsyncMock()
         context.on_workflow_error = mock
@@ -1130,10 +1155,10 @@ class TestOnWorkflowError:
 class TestWorkflowYieldPartialOutput:
     @pytest.mark.asyncio
     async def test_partial_output_passed_to_on_workflow_yield(
-        self, algorithm: ExecutionAlgorithm
+        self, algorithm: ExecutionAlgorithm, engine: WorkflowEngine
     ):
         """on_workflow_yield receives the partial output from completed nodes."""
-        workflow = _yielding_workflow()
+        workflow = _yielding_workflow(engine)
         context = InMemoryExecutionContext()
         received: dict = {}
 
@@ -1165,9 +1190,11 @@ class TestWorkflowYieldPartialOutput:
 
 class TestWorkflowErrorNodeYields:
     @pytest.mark.asyncio
-    async def test_node_yields_passed_to_on_workflow_error(self):
+    async def test_node_yields_passed_to_on_workflow_error(
+        self, engine: WorkflowEngine
+    ):
         """on_workflow_error receives node_yields (empty when no nodes yielded)."""
-        workflow = _error_workflow()
+        workflow = _error_workflow(engine)
         context = InMemoryExecutionContext()
         received: dict = {}
 
@@ -1206,9 +1233,11 @@ class TestWorkflowErrorNodeYields:
 
 class TestErrorPrecedenceOverYield:
     @pytest.mark.asyncio
-    async def test_error_takes_precedence_over_yield_in_continue_mode(self):
+    async def test_error_takes_precedence_over_yield_in_continue_mode(
+        self, engine: WorkflowEngine
+    ):
         """When both errors and yields occur, on_workflow_error is called, not on_workflow_yield."""
-        workflow = _error_and_yield_workflow()
+        workflow = _error_and_yield_workflow(engine)
         context = InMemoryExecutionContext()
         yield_mock = AsyncMock(side_effect=context.on_workflow_yield)
         original_on_error = context.on_workflow_error
@@ -1251,9 +1280,11 @@ class TestErrorPrecedenceOverYield:
         yield_mock.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_node_yields_included_in_error_hook_when_both_occur(self):
+    async def test_node_yields_included_in_error_hook_when_both_occur(
+        self, engine: WorkflowEngine
+    ):
         """When both errors and yields occur, on_workflow_error receives the node_yields."""
-        workflow = _error_and_yield_workflow()
+        workflow = _error_and_yield_workflow(engine)
         context = InMemoryExecutionContext()
         received: dict = {}
 

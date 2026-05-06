@@ -22,13 +22,17 @@ from workflow_engine import (
 )
 from workflow_engine.contexts import InMemoryExecutionContext
 from workflow_engine.core import ValidatedWorkflow
-from workflow_engine.core.io import InputNode, OutputNode
 from workflow_engine.core.values import (
     get_field_annotations,
     get_only_field,
 )
 from workflow_engine.execution import TopologicalExecutionAlgorithm
 from workflow_engine.nodes import AddNode, ForEachNode
+
+
+@pytest.fixture
+def engine() -> WorkflowEngine:
+    return WorkflowEngine(execution_algorithm=TopologicalExecutionAlgorithm())
 
 
 def _input_element_type(workflow: ValidatedWorkflow):
@@ -49,23 +53,33 @@ def _output_element_type(workflow: ValidatedWorkflow):
     return DataValue[workflow.output_type]
 
 
-def _workflow_with_foreach(inner_workflow: ValidatedWorkflow) -> Workflow:
+def _workflow_with_foreach(
+    engine: WorkflowEngine,
+    inner_workflow: ValidatedWorkflow,
+) -> Workflow:
     """Wrap an inner workflow in a ForEach with outer input/output nodes."""
-    for_each = ForEachNode.from_workflow(id="for_each", workflow=inner_workflow)
     input_elem = _input_element_type(inner_workflow)
     output_elem = _output_element_type(inner_workflow)
     if output_elem is None:
         raise ValueError("_workflow_with_foreach does not support 0-output workflows")
-    input_node = InputNode.from_fields(
-        sequence=SequenceValue[input_elem],
-    )
-    output_node = OutputNode.from_fields(
-        results=SequenceValue[output_elem],
-    )
     return Workflow(
-        input_node=input_node,
-        output_node=output_node,
-        inner_nodes=[for_each],
+        input_node=(
+            input_node := engine.create_input_node(
+                sequence=SequenceValue[input_elem],
+            )
+        ),
+        output_node=(
+            output_node := engine.create_output_node(
+                results=SequenceValue[output_elem],
+            )
+        ),
+        inner_nodes=[
+            for_each := engine.create_node(
+                ForEachNode,
+                id="for_each",
+                params=dict(workflow=inner_workflow),
+            ),
+        ],
         edges=[
             Edge.from_nodes(
                 source=input_node,
@@ -89,15 +103,14 @@ def _workflow_with_foreach(inner_workflow: ValidatedWorkflow) -> Workflow:
 
 
 @pytest.fixture
-def single_in_single_out_workflow() -> Workflow:
+def single_in_single_out_workflow(engine: WorkflowEngine) -> Workflow:
     """1 input (x), 1 output (y). Doubles the input: y = 2x."""
-    input_node = InputNode.from_fields(x=FloatValue)
-    output_node = OutputNode.from_fields(y=FloatValue)
-    add = AddNode(id="add")
     return Workflow(
-        input_node=input_node,
-        output_node=output_node,
-        inner_nodes=[add],
+        input_node=(input_node := engine.create_input_node(x=FloatValue)),
+        output_node=(output_node := engine.create_output_node(y=FloatValue)),
+        inner_nodes=[
+            add := engine.create_node(AddNode, id="add"),
+        ],
         edges=[
             Edge.from_nodes(
                 source=input_node,
@@ -122,16 +135,16 @@ def single_in_single_out_workflow() -> Workflow:
 
 
 @pytest.fixture
-def single_in_multi_out_workflow() -> Workflow:
+def single_in_multi_out_workflow(engine: WorkflowEngine) -> Workflow:
     """1 input (x), 2 outputs (first, second). Duplicates: first=x, second=x."""
-    input_node = InputNode.from_fields(x=FloatValue)
-    output_node = OutputNode.from_fields(
-        first=FloatValue,
-        second=FloatValue,
-    )
     return Workflow(
-        input_node=input_node,
-        output_node=output_node,
+        input_node=(input_node := engine.create_input_node(x=FloatValue)),
+        output_node=(
+            output_node := engine.create_output_node(
+                first=FloatValue,
+                second=FloatValue,
+            )
+        ),
         inner_nodes=[],
         edges=[
             Edge.from_nodes(
@@ -151,18 +164,19 @@ def single_in_multi_out_workflow() -> Workflow:
 
 
 @pytest.fixture
-def multi_in_single_out_workflow() -> Workflow:
+def multi_in_single_out_workflow(engine: WorkflowEngine) -> Workflow:
     """2 inputs (a, b), 1 output (c). Adds: c = a + b."""
-    input_node = InputNode.from_fields(
-        a=FloatValue,
-        b=FloatValue,
-    )
-    output_node = OutputNode.from_fields(c=FloatValue)
-    add = AddNode(id="add")
     return Workflow(
-        input_node=input_node,
-        output_node=output_node,
-        inner_nodes=[add],
+        input_node=(
+            input_node := engine.create_input_node(
+                a=FloatValue,
+                b=FloatValue,
+            )
+        ),
+        output_node=(output_node := engine.create_output_node(c=FloatValue)),
+        inner_nodes=[
+            add := engine.create_node(AddNode, id="add"),
+        ],
         edges=[
             Edge.from_nodes(
                 source=input_node,
@@ -187,21 +201,24 @@ def multi_in_single_out_workflow() -> Workflow:
 
 
 @pytest.fixture
-def multi_in_multi_out_workflow() -> Workflow:
+def multi_in_multi_out_workflow(engine: WorkflowEngine) -> Workflow:
     """2 inputs (a, b), 2 outputs (sum, sum_copy). Both outputs are a + b."""
-    input_node = InputNode.from_fields(
-        a=FloatValue,
-        b=FloatValue,
-    )
-    output_node = OutputNode.from_fields(
-        sum=FloatValue,
-        sum_copy=FloatValue,
-    )
-    add = AddNode(id="add")
     return Workflow(
-        input_node=input_node,
-        output_node=output_node,
-        inner_nodes=[add],
+        input_node=(
+            input_node := engine.create_input_node(
+                a=FloatValue,
+                b=FloatValue,
+            )
+        ),
+        output_node=(
+            output_node := engine.create_output_node(
+                sum=FloatValue,
+                sum_copy=FloatValue,
+            )
+        ),
+        inner_nodes=[
+            add := engine.create_node(AddNode, id="add"),
+        ],
         edges=[
             Edge.from_nodes(
                 source=input_node,
@@ -237,13 +254,14 @@ def multi_in_multi_out_workflow() -> Workflow:
 
 
 @pytest.mark.asyncio
-async def test_single_in_single_out(single_in_single_out_workflow: Workflow):
+async def test_single_in_single_out(
+    engine: WorkflowEngine,
+    single_in_single_out_workflow: Workflow,
+):
     """ForEach with 1 input field, 1 output field: scalar sequence, no adapters."""
     context = InMemoryExecutionContext()
-    algorithm = TopologicalExecutionAlgorithm()
-    engine = WorkflowEngine(execution_algorithm=algorithm)
     workflow = _workflow_with_foreach(
-        await engine.validate(single_in_single_out_workflow)
+        engine, await engine.validate(single_in_single_out_workflow)
     )
     result = await engine.execute(
         context=context,
@@ -262,13 +280,14 @@ async def test_single_in_single_out(single_in_single_out_workflow: Workflow):
 
 
 @pytest.mark.asyncio
-async def test_single_in_multi_out(single_in_multi_out_workflow: Workflow):
+async def test_single_in_multi_out(
+    engine: WorkflowEngine,
+    single_in_multi_out_workflow: Workflow,
+):
     """ForEach with 1 input field, 2 output fields: scalar in, GatherDataNode."""
     context = InMemoryExecutionContext()
-    algorithm = TopologicalExecutionAlgorithm()
-    engine = WorkflowEngine(execution_algorithm=algorithm)
     workflow = _workflow_with_foreach(
-        await engine.validate(single_in_multi_out_workflow)
+        engine, await engine.validate(single_in_multi_out_workflow)
     )
     result = await engine.execute(
         context=context,
@@ -288,13 +307,14 @@ async def test_single_in_multi_out(single_in_multi_out_workflow: Workflow):
 
 
 @pytest.mark.asyncio
-async def test_multi_in_single_out(multi_in_single_out_workflow: Workflow):
+async def test_multi_in_single_out(
+    engine: WorkflowEngine,
+    multi_in_single_out_workflow: Workflow,
+):
     """ForEach with 2 input fields, 1 output field: ExpandDataNode, no Gather."""
     context = InMemoryExecutionContext()
-    algorithm = TopologicalExecutionAlgorithm()
-    engine = WorkflowEngine(execution_algorithm=algorithm)
     workflow = _workflow_with_foreach(
-        await engine.validate(multi_in_single_out_workflow)
+        engine, await engine.validate(multi_in_single_out_workflow)
     )
 
     result = await engine.execute(
@@ -320,12 +340,14 @@ async def test_multi_in_single_out(multi_in_single_out_workflow: Workflow):
 
 
 @pytest.mark.asyncio
-async def test_multi_in_multi_out(multi_in_multi_out_workflow: Workflow):
+async def test_multi_in_multi_out(
+    engine: WorkflowEngine,
+    multi_in_multi_out_workflow: Workflow,
+):
     """ForEach with 2 input fields, 2 output fields: both ExpandData and GatherData."""
     context = InMemoryExecutionContext()
-    engine = WorkflowEngine()
     workflow = _workflow_with_foreach(
-        await engine.validate(multi_in_multi_out_workflow)
+        engine, await engine.validate(multi_in_multi_out_workflow)
     )
     result = await engine.execute(
         context=context,
@@ -349,15 +371,14 @@ async def test_multi_in_multi_out(multi_in_multi_out_workflow: Workflow):
 
 
 @pytest.fixture
-def zero_output_single_in_workflow() -> Workflow:
+def zero_output_single_in_workflow(engine: WorkflowEngine) -> Workflow:
     """1 input (x), 0 outputs. Consumes input for side effect (add), produces nothing."""
-    input_node = InputNode.from_fields(x=FloatValue)
-    output_node = OutputNode.empty()
-    add = AddNode(id="add")
     return Workflow(
-        input_node=input_node,
-        output_node=output_node,
-        inner_nodes=[add],
+        input_node=(input_node := engine.create_input_node(x=FloatValue)),
+        output_node=engine.create_output_node(),
+        inner_nodes=[
+            add := engine.create_node(AddNode, id="add"),
+        ],
         edges=[
             Edge.from_nodes(
                 source=input_node,
@@ -376,18 +397,19 @@ def zero_output_single_in_workflow() -> Workflow:
 
 
 @pytest.fixture
-def zero_output_multi_in_workflow() -> Workflow:
+def zero_output_multi_in_workflow(engine: WorkflowEngine) -> Workflow:
     """2 inputs (a, b), 0 outputs. Consumes input for side effect (add), produces nothing."""
-    input_node = InputNode.from_fields(
-        a=FloatValue,
-        b=FloatValue,
-    )
-    output_node = OutputNode.empty()
-    add = AddNode(id="add")
     return Workflow(
-        input_node=input_node,
-        output_node=output_node,
-        inner_nodes=[add],
+        input_node=(
+            input_node := engine.create_input_node(
+                a=FloatValue,
+                b=FloatValue,
+            )
+        ),
+        output_node=engine.create_output_node(),
+        inner_nodes=[
+            add := engine.create_node(AddNode, id="add"),
+        ],
         edges=[
             Edge.from_nodes(
                 source=input_node,
@@ -405,26 +427,30 @@ def zero_output_multi_in_workflow() -> Workflow:
     )
 
 
-async def _test_zero_output_workflow(workflow: Workflow, input_data: dict) -> None:
+async def _test_zero_output_workflow(
+    engine: WorkflowEngine,
+    workflow: Workflow,
+    input_data: dict,
+) -> None:
     """Shared logic for zero-output tests."""
-    for_each = ForEachNode.from_workflow(
+    for_each = engine.create_node(
+        ForEachNode,
         id="for_each",
-        workflow=workflow,
+        params=dict(workflow=workflow),
     )
     validation_context = ValidationContext()
     assert await for_each.output_type(validation_context) is Empty
 
-    engine = WorkflowEngine()
     workflow = await engine.validate(workflow)
 
     input_elem = _input_element_type(workflow)
-    input_node = InputNode.from_fields(
-        sequence=SequenceValue[input_elem],
-    )
-    output_node = OutputNode.empty()
     wf = Workflow(
-        input_node=input_node,
-        output_node=output_node,
+        input_node=(
+            input_node := engine.create_input_node(
+                sequence=SequenceValue[input_elem],
+            )
+        ),
+        output_node=engine.create_output_node(),
         inner_nodes=[for_each],
         edges=[
             Edge.from_nodes(
@@ -437,8 +463,6 @@ async def _test_zero_output_workflow(workflow: Workflow, input_data: dict) -> No
     )
 
     context = InMemoryExecutionContext()
-    algorithm = TopologicalExecutionAlgorithm()
-    engine = WorkflowEngine(execution_algorithm=algorithm)
     result = await engine.execute(
         context=context,
         workflow=wf,
@@ -450,18 +474,26 @@ async def _test_zero_output_workflow(workflow: Workflow, input_data: dict) -> No
 
 
 @pytest.mark.asyncio
-async def test_zero_output_single_in(zero_output_single_in_workflow: Workflow):
+async def test_zero_output_single_in(
+    engine: WorkflowEngine,
+    zero_output_single_in_workflow: Workflow,
+):
     """ForEach: 1 input, 0 outputs. Outputs nothing (Empty)."""
     await _test_zero_output_workflow(
+        engine,
         zero_output_single_in_workflow,
         {"sequence": [1.0, 2.0, 3.0]},
     )
 
 
 @pytest.mark.asyncio
-async def test_zero_output_multi_in(zero_output_multi_in_workflow: Workflow):
+async def test_zero_output_multi_in(
+    engine: WorkflowEngine,
+    zero_output_multi_in_workflow: Workflow,
+):
     """ForEach: 2 inputs, 0 outputs. Outputs nothing (Empty)."""
     await _test_zero_output_workflow(
+        engine,
         zero_output_multi_in_workflow,
         {
             "sequence": [
@@ -473,21 +505,27 @@ async def test_zero_output_multi_in(zero_output_multi_in_workflow: Workflow):
 
 
 @pytest.mark.asyncio
-async def test_zero_output_multi_in_empty(zero_output_multi_in_workflow: Workflow):
+async def test_zero_output_multi_in_empty(
+    engine: WorkflowEngine,
+    zero_output_multi_in_workflow: Workflow,
+):
     """ForEach: 2 inputs, 0 outputs. Outputs nothing (Empty)."""
     await _test_zero_output_workflow(
+        engine,
         zero_output_multi_in_workflow,
         {"sequence": []},
     )
 
 
 @pytest.mark.asyncio
-async def test_for_each_empty(multi_in_single_out_workflow: Workflow):
+async def test_for_each_empty(
+    engine: WorkflowEngine,
+    multi_in_single_out_workflow: Workflow,
+):
     """Empty sequence produces empty results."""
     context = InMemoryExecutionContext()
-    engine = WorkflowEngine()
     workflow = _workflow_with_foreach(
-        await engine.validate(multi_in_single_out_workflow)
+        engine, await engine.validate(multi_in_single_out_workflow)
     )
     result = await engine.execute(
         context=context,

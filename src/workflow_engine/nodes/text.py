@@ -1,6 +1,6 @@
 # workflow_engine/nodes/text.py
 import os
-from typing import ClassVar, Literal, Self, Type
+from typing import ClassVar, Type
 
 from overrides import override
 from pydantic import Field
@@ -44,14 +44,11 @@ class AppendToFileParams(Params):
 
 class AppendToFileNode(Node[AppendToFileInput, AppendToFileOutput, AppendToFileParams]):
     TYPE_INFO: ClassVar[NodeTypeInfo] = NodeTypeInfo.from_parameter_type(
-        name="AppendToFile",
         display_name="Append to File",
         description="Appends a string to the end of a file.",
         version="0.4.0",
         parameter_type=AppendToFileParams,
     )
-
-    type: Literal["AppendToFile"] = "AppendToFile"  # pyright: ignore[reportIncompatibleVariableOverride]
 
     @classmethod
     @override
@@ -78,10 +75,6 @@ class AppendToFileNode(Node[AppendToFileInput, AppendToFileOutput, AppendToFileP
         new_file = TextFileValue(File(path=filename + self.params.suffix.root + ext))
         new_file = await new_file.write_text(context, text=new_text)
         return AppendToFileOutput(file=new_file)
-
-    @classmethod
-    def from_suffix(cls, id: str, suffix: str) -> Self:
-        return cls(id=id, params=AppendToFileParams(suffix=StringValue(suffix)))
 
 
 __all__ = [

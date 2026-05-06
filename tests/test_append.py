@@ -2,37 +2,42 @@ import pytest
 
 from workflow_engine import (
     Edge,
-    File,
     StringValue,
     Workflow,
     WorkflowEngine,
     WorkflowExecutionResultStatus,
 )
 from workflow_engine.contexts import InMemoryExecutionContext
-from workflow_engine.core.io import InputNode, OutputNode
 from workflow_engine.files import TextFileValue
 from workflow_engine.nodes import AppendToFileNode
 
 
 @pytest.fixture
-def workflow():
-    """Helper function to create the append workflow."""
-    input_node = InputNode.from_fields(
-        text=StringValue,
-        file=TextFileValue,
-    )
-    output_node = OutputNode.from_fields(
-        file=TextFileValue,
-    )
-    append = AppendToFileNode.from_suffix(
-        id="append",
-        suffix="_append",
-    )
+def engine() -> WorkflowEngine:
+    return WorkflowEngine()
 
+
+@pytest.fixture
+def workflow(engine: WorkflowEngine):
     return Workflow(
-        input_node=input_node,
-        output_node=output_node,
-        inner_nodes=[append],
+        input_node=(
+            input_node := engine.create_input_node(
+                text=StringValue,
+                file=TextFileValue,
+            )
+        ),
+        output_node=(
+            output_node := engine.create_output_node(
+                file=TextFileValue,
+            )
+        ),
+        inner_nodes=[
+            append := engine.create_node(
+                AppendToFileNode,
+                id="append",
+                params=dict(suffix="_append"),
+            ),
+        ],
         edges=[
             Edge.from_nodes(
                 source=input_node,
@@ -57,12 +62,11 @@ def workflow():
 
 
 @pytest.mark.unit
-async def test_workflow_serialization(workflow: Workflow):
+async def test_workflow_serialization(engine: WorkflowEngine, workflow: Workflow):
     """Test that the append workflow can be serialized and deserialized correctly."""
     # Test round-trip serialization/deserialization
     workflow_json = workflow.model_dump_json()
     # Deserialize workflow, then load via engine to get typed nodes
-    engine = WorkflowEngine()
     deserialized_workflow = await engine.validate(
         Workflow.model_validate_json(workflow_json)
     )
@@ -73,14 +77,13 @@ async def test_workflow_serialization(workflow: Workflow):
 
 
 @pytest.mark.asyncio
-async def test_workflow_execution(workflow: Workflow):
+async def test_workflow_execution(engine: WorkflowEngine, workflow: Workflow):
     """Test that the workflow executes correctly and produces the expected result."""
     context = InMemoryExecutionContext()
-    engine = WorkflowEngine()
 
     # Create input with a text file
     hello_world = "Hello, world!"
-    input_file = TextFileValue(File(path="test.txt"))
+    input_file = TextFileValue.from_path("test.txt")
     input_file = await input_file.write_text(context, text=hello_world)
 
     appended_text = "This text will be appended to the file."

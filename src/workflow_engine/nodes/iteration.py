@@ -3,7 +3,7 @@
 Nodes that iterate over a sequence of items.
 """
 
-from typing import ClassVar, Literal, Self, Type
+from typing import ClassVar, Type
 
 from overrides import override
 from pydantic import Field, PrivateAttr
@@ -14,6 +14,7 @@ from ..core import (
     Empty,
     ExecutionContext,
     InputNode,
+    IntegerValue,
     Node,
     NodeTypeInfo,
     OutputNode,
@@ -25,7 +26,6 @@ from ..core import (
     Workflow,
     WorkflowValue,
 )
-from ..core.io import SchemaParams
 from ..core.values.data import get_field_annotations, get_only_field
 from .data import (
     ExpandDataNode,
@@ -33,6 +33,7 @@ from .data import (
     GatherDataNode,
     GatherSequenceNode,
     SequenceData,
+    SequenceParams,
 )
 
 
@@ -62,14 +63,11 @@ class ForEachNode(Node[SequenceData, SequenceData | Empty, ForEachParams]):
     """
 
     TYPE_INFO: ClassVar[NodeTypeInfo] = NodeTypeInfo.from_parameter_type(
-        name="ForEach",
         display_name="For Each",
         description="Executes the internal workflow for each item in the input sequence.",
         version="1.0.0",
         parameter_type=ForEachParams,
     )
-
-    type: Literal["ForEach"] = "ForEach"  # pyright: ignore[reportIncompatibleVariableOverride]
 
     _workflow: ValidatedWorkflow | None = PrivateAttr(default=None)
 
@@ -133,17 +131,23 @@ class ForEachNode(Node[SequenceData, SequenceData | Empty, ForEachParams]):
 
     def _build_input_output_nodes(
         self,
+        context: ValidationContext,
         workflow: ValidatedWorkflow,
     ) -> tuple[InputNode, OutputNode]:
+        """
+        Uses the Node registry to build the input and output nodes for the ForEachNode.
+
+        If "Input" and "Output" have been overridden, then we will use the
+        overridden node classes.
+        """
+        node_registry = context.node_registry
         input_seq_type = SequenceValue[self._input_element_type(workflow)]
-        input_params = SchemaParams.from_fields(sequence=input_seq_type)
-        input_node = InputNode(id="input", params=input_params)
+        input_node = node_registry.create_input_node(sequence=input_seq_type)
         if self._has_no_output(workflow):
-            output_node = OutputNode.empty()
+            output_node = node_registry.create_output_node()
         else:
             output_seq_type = SequenceValue[self._output_element_type(workflow)]
-            output_params = SchemaParams.from_fields(sequence=output_seq_type)
-            output_node = OutputNode(id="output", params=output_params)
+            output_node = node_registry.create_output_node(sequence=output_seq_type)
         return input_node, output_node
 
     @override
@@ -163,12 +167,16 @@ class ForEachNode(Node[SequenceData, SequenceData | Empty, ForEachParams]):
                 return output_type.empty()
 
         workflow = await self.workflow(context.validation_context)
-        input_node, output_node = self._build_input_output_nodes(workflow)
+        input_node, output_node = self._build_input_output_nodes(
+            context.validation_context,
+            workflow,
+        )
         has_no_output = self._has_no_output(workflow)
         expand_element_type = self._input_element_type(workflow)
-        expand = ExpandSequenceNode.from_length(
+        expand = context.validation_context.node_registry.create_node(
+            ExpandSequenceNode,
             id="expand",
-            length=n,
+            params=SequenceParams(length=IntegerValue(root=n)),
             element_type=expand_element_type,
         )
 
@@ -184,9 +192,10 @@ class ForEachNode(Node[SequenceData, SequenceData | Empty, ForEachParams]):
 
         gather: GatherSequenceNode | None = None
         if not has_no_output:
-            gather = GatherSequenceNode.from_length(
+            gather = context.validation_context.node_registry.create_node(
+                GatherSequenceNode,
                 id="gather",
-                length=n,
+                params=SequenceParams(length=IntegerValue(root=n)),
                 element_type=self._output_element_type(workflow),
             )
             inner_nodes.append(gather)
@@ -204,7 +213,8 @@ class ForEachNode(Node[SequenceData, SequenceData | Empty, ForEachParams]):
             item_workflow = workflow.with_namespace(namespace)
 
             input_adapter = (
-                ExpandDataNode.from_data_type(
+                context.validation_context.node_registry.create_node(
+                    ExpandDataNode,
                     id="input_adapter",
                     data_type=workflow.input_type,
                 ).with_namespace(namespace)
@@ -212,7 +222,8 @@ class ForEachNode(Node[SequenceData, SequenceData | Empty, ForEachParams]):
                 else None
             )
             output_adapter = (
-                GatherDataNode.from_data_type(
+                context.validation_context.node_registry.create_node(
+                    GatherDataNode,
                     id="output_adapter",
                     data_type=workflow.output_type,
                 ).with_namespace(namespace)
@@ -286,10 +297,6 @@ class ForEachNode(Node[SequenceData, SequenceData | Empty, ForEachParams]):
             output_node=output_node,
             edges=edges,
         )
-
-    @classmethod
-    def from_workflow(cls, id: str, workflow: Workflow) -> Self:
-        return cls(id=id, params=ForEachParams(workflow=WorkflowValue(workflow)))
 
 
 __all__ = [

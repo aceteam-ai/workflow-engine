@@ -136,7 +136,7 @@ class Workflow(ImmutableBaseModel):
 
         Walks the workflow graph and:
         1. Looks up concrete node types in node_registry
-        2. Applies migrations via the registry's load_node method
+        2. Applies migrations via the registry's ``load`` method
         3. Validates node inputs and edge types
         4. Returns a new Workflow with typed nodes
 
@@ -150,11 +150,17 @@ class Workflow(ImmutableBaseModel):
             ValueError: If edges reference non-existent fields or nodes are missing required inputs
             TypeError: If edge types are incompatible
         """
+        typed_input_node = context.node_registry.load(self.input_node)
+        if not isinstance(typed_input_node, InputNode):
+            raise ValueError(f"Node {typed_input_node.id} is not an InputNode")
         typed_inner_nodes = await gather(
-            asyncio.to_thread(context.node_registry.load_node, node)
+            asyncio.to_thread(context.node_registry.load, node)
             for node in self.inner_nodes
         )
-        typed_nodes = (self.input_node, *typed_inner_nodes, self.output_node)
+        typed_output_node = context.node_registry.load(self.output_node)
+        if not isinstance(typed_output_node, OutputNode):
+            raise ValueError(f"Node {typed_output_node.id} is not an OutputNode")
+        typed_nodes = (typed_input_node, *typed_inner_nodes, typed_output_node)
 
         async def get_input_output_types(
             node: Node,
@@ -193,9 +199,9 @@ class Workflow(ImmutableBaseModel):
             )
 
         return ValidatedWorkflow(
-            input_node=self.input_node,
+            input_node=typed_input_node,
             inner_nodes=typed_inner_nodes,
-            output_node=self.output_node,
+            output_node=typed_output_node,
             edges=self.edges,
             node_input_types=node_input_types,
             node_output_types=node_output_types,

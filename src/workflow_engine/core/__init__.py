@@ -1,4 +1,11 @@
 # workflow_engine/core/__init__.py
+from .config import (
+    ExecutionAlgorithmConfig,
+    ExecutionAlgorithmImport,
+    NodeImport,
+    NodesConfig,
+    WorkflowEngineConfig,
+)
 from .context import ExecutionContext, ValidationContext
 from .edge import Edge
 from .engine import WorkflowEngine
@@ -71,6 +78,8 @@ __all__ = [
     "Edge",
     "Empty",
     "ExecutionAlgorithm",
+    "ExecutionAlgorithmConfig",
+    "ExecutionAlgorithmImport",
     "ExecutionContext",
     "FieldSchemaMappingValue",
     "File",
@@ -88,8 +97,10 @@ __all__ = [
     "Node",
     "NodeException",
     "NodeExpansionException",
+    "NodeImport",
     "NodeRegistry",
     "NodeTypeInfo",
+    "NodesConfig",
     "NullValue",
     "OutputNode",
     "Params",
@@ -108,6 +119,7 @@ __all__ = [
     "ValueType",
     "Workflow",
     "WorkflowEngine",
+    "WorkflowEngineConfig",
     "WorkflowError",
     "WorkflowErrors",
     "WorkflowErrors",

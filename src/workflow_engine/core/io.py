@@ -1,5 +1,5 @@
 # workflow_engine/core/io.py
-from typing import TYPE_CHECKING, ClassVar, Literal, Self, Type
+from typing import TYPE_CHECKING, ClassVar, Self, Type
 
 from overrides import override
 from pydantic import Field, PrivateAttr
@@ -8,7 +8,6 @@ from .node import Node, NodeTypeInfo, Params
 from .values import (
     Data,
     FieldSchemaMappingValue,
-    ValueSchemaValue,
     ValueType,
 )
 
@@ -30,14 +29,11 @@ class SchemaParams(Params):
 
 class InputNode(Node[Data, Data, SchemaParams]):
     TYPE_INFO: ClassVar[NodeTypeInfo] = NodeTypeInfo.from_parameter_type(
-        name="Input",
         display_name="Input Node",
         description="The unique node that provides the input for the workflow",
         version="1.0.0",
         parameter_type=SchemaParams,
     )
-
-    type: Literal["Input"] = "Input"  # pyright: ignore[reportIncompatibleVariableOverride]
 
     _cached_data_cls: Type[Data] | None = PrivateAttr(default=None)
 
@@ -64,43 +60,14 @@ class InputNode(Node[Data, Data, SchemaParams]):
     ) -> Data:
         return input
 
-    @classmethod
-    def from_fields(
-        cls,
-        **fields: ValueType,
-    ) -> Self:
-        """Create an InputNode with the specified output fields.
-
-        Args:
-            fields: Mapping from field name to Value type (e.g., {"a": IntegerValue})
-        """
-        schema_fields = FieldSchemaMappingValue(
-            {
-                name: ValueSchemaValue(vtype.to_value_schema())
-                for name, vtype in fields.items()
-            }
-        )
-        return cls(
-            id="input",
-            params=SchemaParams(fields=schema_fields),
-        )
-
-    @classmethod
-    def empty(cls) -> Self:
-        """Create an InputNode with no fields."""
-        return cls.from_fields()
-
 
 class OutputNode(Node[Data, Data, SchemaParams]):
     TYPE_INFO: ClassVar[NodeTypeInfo] = NodeTypeInfo.from_parameter_type(
-        name="Output",
         display_name="Output Node",
         description="The unique node that provides the output for the workflow",
         version="1.0.0",
         parameter_type=SchemaParams,
     )
-
-    type: Literal["Output"] = "Output"  # pyright: ignore[reportIncompatibleVariableOverride]
 
     _cached_data_cls: Type[Data] | None = PrivateAttr(default=None)
 
@@ -126,32 +93,6 @@ class OutputNode(Node[Data, Data, SchemaParams]):
         input: Data,
     ) -> Data:
         return input
-
-    @classmethod
-    def from_fields(
-        cls,
-        **fields: ValueType,
-    ) -> Self:
-        """Create an OutputNode with the specified input/output fields.
-
-        Args:
-            fields: Mapping from field name to Value type (e.g., {"result": IntegerValue})
-        """
-        schema_fields = FieldSchemaMappingValue(
-            {
-                name: ValueSchemaValue(vtype.to_value_schema())
-                for name, vtype in fields.items()
-            }
-        )
-        return cls(
-            id="output",
-            params=SchemaParams(fields=schema_fields),
-        )
-
-    @classmethod
-    def empty(cls) -> Self:
-        """Create an OutputNode with no fields."""
-        return cls.from_fields()
 
 
 __all__ = [

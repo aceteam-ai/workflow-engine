@@ -5,7 +5,7 @@ Utility nodes to construct and deconstruct data objects.
 
 from collections.abc import Sequence
 from functools import cached_property
-from typing import ClassVar, Generic, Literal, Self, Type, TypeVar
+from typing import ClassVar, Generic, Self, Type, TypeVar
 
 from overrides import override
 from pydantic import Field
@@ -59,22 +59,14 @@ class SequenceData(Data, Generic[V]):
 class GatherSequenceNode(Node[Data, SequenceData, SequenceParams]):
     """
     Creates a new sequence object of a given length.
-
-    Example:
-        >>> node = GatherSequenceNode.from_length("node_id", 3)
-        >>> node.run(context, input={}).model_dump()
-        {"sequence": [0, 1, 2]}
     """
 
     TYPE_INFO: ClassVar[NodeTypeInfo] = NodeTypeInfo.from_parameter_type(
-        name="GatherSequence",
         display_name="Gather Sequence",
         description="Creates a new sequence object of a given length.",
         version="0.4.0",
         parameter_type=SequenceParams,
     )
-
-    type: Literal["GatherSequence"] = "GatherSequence"  # pyright: ignore[reportIncompatibleVariableOverride]
 
     # The type of the elements in the sequence.
     # For now, this field is only available when the node is constructed
@@ -139,19 +131,6 @@ class GatherSequenceNode(Node[Data, SequenceData, SequenceParams]):
             )
         )
 
-    @classmethod
-    def from_length(
-        cls,
-        id: str,
-        length: int,
-        element_type: ValueType = Value,
-    ) -> Self:
-        return cls(
-            id=id,
-            params=SequenceParams(length=IntegerValue(root=length)),
-            element_type=element_type,
-        )
-
 
 class ExpandSequenceNode(Node[SequenceData, Data, SequenceParams]):
     """
@@ -159,14 +138,11 @@ class ExpandSequenceNode(Node[SequenceData, Data, SequenceParams]):
     """
 
     TYPE_INFO: ClassVar[NodeTypeInfo] = NodeTypeInfo.from_parameter_type(
-        name="ExpandSequence",
         display_name="Expand Sequence",
         description="Extracts a sequence of elements to a data object.",
         version="0.4.0",
         parameter_type=SequenceParams,
     )
-
-    type: Literal["ExpandSequence"] = "ExpandSequence"  # pyright: ignore[reportIncompatibleVariableOverride]
 
     # The type of the element to extract.
     # For now, this field is only available when the node is constructed
@@ -227,19 +203,6 @@ class ExpandSequenceNode(Node[SequenceData, Data, SequenceParams]):
         )
         return output_type(**{self.key(i): input.sequence[i] for i in range(N)})
 
-    @classmethod
-    def from_length(
-        cls,
-        id: str,
-        length: int,
-        element_type: ValueType = Value,
-    ) -> Self:
-        return cls(
-            id=id,
-            params=SequenceParams(length=IntegerValue(root=length)),
-            element_type=element_type,
-        )
-
 
 ################################################################################
 # Mappings
@@ -270,14 +233,11 @@ class GatherMappingNode(Node[Data, MappingData, MappingParams]):
     """
 
     TYPE_INFO: ClassVar[NodeTypeInfo] = NodeTypeInfo.from_parameter_type(
-        name="GatherMapping",
         display_name="GatherMapping",
         description="Creates a new mapping object from the inputs to this node.",
         version="0.4.0",
         parameter_type=MappingParams,
     )
-
-    type: Literal["GatherMapping"] = "GatherMapping"  # pyright: ignore[reportIncompatibleVariableOverride]
 
     # The type of the values in the mapping.
     # For now, this field is only available when the node is constructed
@@ -319,19 +279,6 @@ class GatherMappingNode(Node[Data, MappingData, MappingParams]):
             )
         )
 
-    @classmethod
-    def from_keys(
-        cls,
-        id: str,
-        keys: Sequence[str],
-    ) -> Self:
-        return cls(
-            id=id,
-            params=MappingParams(
-                keys=SequenceValue[StringValue]([StringValue(key) for key in keys])
-            ),
-        )
-
 
 class ExpandMappingNode(Node[MappingData, Data, MappingParams]):
     """
@@ -344,14 +291,11 @@ class ExpandMappingNode(Node[MappingData, Data, MappingParams]):
     """
 
     TYPE_INFO: ClassVar[NodeTypeInfo] = NodeTypeInfo.from_parameter_type(
-        name="ExpandMapping",
         display_name="Expand Mapping",
         description="Extracts values from a mapping object at specific keys.",
         version="0.4.0",
         parameter_type=MappingParams,
     )
-
-    type: Literal["ExpandMapping"] = "ExpandMapping"  # pyright: ignore[reportIncompatibleVariableOverride]
 
     # The type of the values in the mapping.
     # For now, this field is only available when the node is constructed
@@ -387,15 +331,6 @@ class ExpandMappingNode(Node[MappingData, Data, MappingParams]):
     ) -> Data:
         return output_type(**{key.root: input.mapping[key] for key in self.params.keys})
 
-    @classmethod
-    def from_keys(cls, id: str, keys: Sequence[str]) -> Self:
-        return cls(
-            id=id,
-            params=MappingParams(
-                keys=SequenceValue[StringValue]([StringValue(key) for key in keys])
-            ),
-        )
-
 
 ################################################################################
 # Data nodes
@@ -423,14 +358,11 @@ class GatherDataNode(Node[Data, NestedData, Empty]):
     """
 
     TYPE_INFO: ClassVar[NodeTypeInfo] = NodeTypeInfo.from_parameter_type(
-        name="GatherData",
         display_name="GatherData",
         description="A node that gathers a data object from the inputs to this node.",
         version="0.4.0",
         parameter_type=Empty,
     )
-
-    type: Literal["GatherData"] = "GatherData"  # pyright: ignore[reportIncompatibleVariableOverride]
 
     # The type of the element to extract.
     # For now, this field is only available when the node is constructed
@@ -457,14 +389,6 @@ class GatherDataNode(Node[Data, NestedData, Empty]):
     ) -> NestedData:
         return NestedData[self.data_type](data=DataValue[self.data_type](root=input))
 
-    @classmethod
-    def from_data_type(cls, id: str, data_type: Type[Data]) -> Self:
-        return cls(
-            id=id,
-            params=Empty(),
-            data_type=data_type,
-        )
-
 
 class ExpandDataNode(Node[NestedData, Data, Empty]):
     """
@@ -477,14 +401,11 @@ class ExpandDataNode(Node[NestedData, Data, Empty]):
     """
 
     TYPE_INFO: ClassVar[NodeTypeInfo] = NodeTypeInfo.from_parameter_type(
-        name="ExpandData",
         display_name="ExpandData",
         description="A node that expands a nested data object into its individual fields.",
         version="0.4.0",
         parameter_type=Empty,
     )
-
-    type: Literal["ExpandData"] = "ExpandData"  # pyright: ignore[reportIncompatibleVariableOverride]
 
     # The type of the nested data object.
     # For now, this field is only available when the node is constructed
@@ -510,14 +431,6 @@ class ExpandDataNode(Node[NestedData, Data, Empty]):
         input: NestedData,
     ) -> Data:
         return input.data.root
-
-    @classmethod
-    def from_data_type(cls, id: str, data_type: Type[Data]) -> Self:
-        return cls(
-            id=id,
-            params=Empty(),
-            data_type=data_type,
-        )
 
 
 __all__ = [

@@ -11,26 +11,36 @@ from workflow_engine import (
 )
 from workflow_engine.contexts import InMemoryExecutionContext
 from workflow_engine.core import WorkflowError
-from workflow_engine.core.io import InputNode, OutputNode
 from workflow_engine.core.stakeholder import StakeholderLevel
 from workflow_engine.nodes import ConstantStringNode, ErrorNode
 
 
 @pytest.fixture
-def workflow():
-    """Helper function to create the error workflow."""
-    input_node = InputNode.empty()
-    output_node = OutputNode.from_fields(
-        text=StringValue,
-    )
+def engine() -> WorkflowEngine:
+    return WorkflowEngine()
 
-    constant = ConstantStringNode.from_value(id="constant", value="test")
-    error = ErrorNode.from_name(id="error", name="RuntimeError")
 
+@pytest.fixture
+def workflow(engine: WorkflowEngine) -> Workflow:
     return Workflow(
-        input_node=input_node,
-        output_node=output_node,
-        inner_nodes=[constant, error],
+        input_node=engine.create_input_node(),
+        output_node=(
+            output_node := engine.create_output_node(
+                text=StringValue,
+            )
+        ),
+        inner_nodes=[
+            constant := engine.create_node(
+                ConstantStringNode,
+                id="constant",
+                params=dict(value="test"),
+            ),
+            error := engine.create_node(
+                ErrorNode,
+                id="error",
+                params=dict(error_name="RuntimeError"),
+            ),
+        ],
         edges=[
             Edge.from_nodes(
                 source=constant,
@@ -49,7 +59,7 @@ def workflow():
 
 
 @pytest.mark.asyncio
-async def test_workflow_error_handling(workflow: Workflow):
+async def test_workflow_error_handling(engine: WorkflowEngine, workflow: Workflow):
     """Test that the workflow properly handles errors and calls context callbacks."""
     context = InMemoryExecutionContext()
 
@@ -57,8 +67,6 @@ async def test_workflow_error_handling(workflow: Workflow):
     original_on_node_error = context.on_node_error
     mock_on_node_error = AsyncMock(side_effect=original_on_node_error)
     context.on_node_error = mock_on_node_error
-
-    engine = WorkflowEngine()
 
     result = await engine.execute(
         context=context,
