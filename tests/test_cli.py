@@ -79,7 +79,10 @@ class TestSchema:
     def test_check_resolves_concrete(self, runner: CliRunner):
         out = _run(runner, "schema", "check", '{"x-value-type": "JSONValue"}')
         payload = json.loads(out)
+        # `schema check` always emits the expanded form — its purpose is to
+        # demystify the compact x-value-type input.
         assert payload["title"] == "JSONValue"
+        assert "$defs" in payload
 
     def test_check_resolves_generic(self, runner: CliRunner):
         out = _run(
@@ -138,8 +141,11 @@ class TestSchema:
 class TestNode:
     def test_list_uses_config(self, runner: CliRunner, config_path: Path):
         out = _run(runner, "node", "list", "--config", str(config_path))
-        names = {line.split("\t", 1)[0] for line in out.strip().splitlines()}
+        # Each line: "<name>  <display>  <description>" — name is the first token.
+        names = {line.split()[0] for line in out.strip().splitlines() if line.strip()}
         assert {"Input", "Output", "Sum"} == names
+        # Description should be present for built-in nodes.
+        assert "Sums a sequence of numbers." in out
 
     def test_info_returns_metadata(self, runner: CliRunner, config_path: Path):
         out = _run(runner, "node", "info", "Sum", "--config", str(config_path))
@@ -397,6 +403,26 @@ class TestWorkflowEdit:
             ],
         )
         assert result.exit_code != 0
+
+    def test_add_node_rejects_input_or_output_types(
+        self, runner: CliRunner, config_path: Path, populated_workflow: Path
+    ):
+        for type_name in ("Input", "Output"):
+            result = runner.invoke(
+                cli,
+                [
+                    "workflow",
+                    "edit",
+                    "add-node",
+                    str(populated_workflow),
+                    type_name,
+                    f"second-{type_name.lower()}",
+                    "--config",
+                    str(config_path),
+                ],
+            )
+            assert result.exit_code != 0
+            assert "inner node" in result.output
 
     def test_remove_node_drops_associated_edges(
         self, runner: CliRunner, config_path: Path, populated_workflow: Path

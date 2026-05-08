@@ -24,8 +24,11 @@ from workflow_engine.core.edge import Edge
 from workflow_engine.core.engine import WorkflowEngine
 from workflow_engine.core.node import NodeRegistry
 from workflow_engine.core.values import ValueRegistry
+from workflow_engine.core.values.data import Data, DataValue
+from workflow_engine.core.values.mapping import StringMapValue
 from workflow_engine.core.values.schema import validate_value_schema
-from workflow_engine.core.values.value import Value
+from workflow_engine.core.values.sequence import SequenceValue
+from workflow_engine.core.values.value import Value, get_origin_and_args
 from workflow_engine.core.workflow import Workflow
 
 CONFIG_DIR = Path(platformdirs.user_config_dir("wengine", appauthor=False))
@@ -63,6 +66,59 @@ def _load_input(value: str) -> Any:
         return json.loads(text)
     except json.JSONDecodeError as e:
         raise click.ClickException(f"Invalid JSON in {source}: {e}") from e
+
+
+def _compact_value_schema(value_cls: type[Value]) -> dict[str, Any]:
+    """Render a Value subclass as a compact `x-value-type`-shaped schema.
+
+    Concrete types serialize as `{"x-value-type": "<Name>"}`. Generic
+    composites unfold into the standard JSON Schema shape (`type: array`,
+    `type: object` with `additionalProperties`, or full Data layout) with
+    `x-value-type` on the inner Value(s).
+    """
+    origin, args = get_origin_and_args(value_cls)
+    if not args:
+        return {"x-value-type": origin.__name__}
+    if issubclass(origin, SequenceValue):
+        return {"type": "array", "items": _compact_value_schema(args[0])}
+    if issubclass(origin, StringMapValue):
+        return {
+            "type": "object",
+            "additionalProperties": _compact_value_schema(args[0]),
+        }
+    if issubclass(origin, DataValue):
+        inner = args[0]
+        if isinstance(inner, type) and issubclass(inner, Data):
+            return _compact_data_schema(inner)
+    # Unknown generic — fall back to the registered name.
+    return {"x-value-type": value_cls.__name__}
+
+
+def _compact_data_schema(data_cls: type[Data]) -> dict[str, Any]:
+    """Render a Data subclass as a compact object schema."""
+    properties: dict[str, Any] = {}
+    required: list[str] = []
+    for name, info in data_cls.model_fields.items():
+        ann = info.annotation
+        if isinstance(ann, type) and issubclass(ann, Value):
+            prop = _compact_value_schema(ann)
+        else:
+            prop = {"description": f"<unrepresentable annotation: {ann!r}>"}
+        if info.title:
+            prop["title"] = info.title
+        if info.description:
+            prop["description"] = info.description
+        properties[name] = prop
+        if info.is_required():
+            required.append(name)
+    out: dict[str, Any] = {
+        "type": "object",
+        "title": data_cls.__name__,
+        "properties": properties,
+    }
+    if required:
+        out["required"] = required
+    return out
 
 
 async def _build_engine(config_path: Path | None) -> WorkflowEngine:
@@ -141,12 +197,17 @@ async def schema_list(config_path: Path | None):
 @config_option
 @coro
 async def schema_check(schema_arg: str, config_path: Path | None):
-    """Validate an aliased value schema and print the fully-resolved schema.
+    """Validate an aliased value schema and print the fully-expanded JSON schema.
 
     SCHEMA is a JSON literal, @file.json, or - for stdin. Examples:
 
       wengine schema check '{"x-value-type": "JSONValue"}'
       wengine schema check '{"type": "array", "items": {"x-value-type": "StringValue"}}'
+
+    The output is the full Pydantic JSON schema with `$defs`/`$ref` — useful
+    for demystifying a compact `x-value-type` blob into its concrete shape.
+    The other `check` commands (`node`, `workflow`) default to the compact
+    form because their inputs are typed nodes/workflows, not raw schemas.
     """
     # Building the engine surfaces config errors early; schema resolution
     # itself still uses ValueRegistry.DEFAULT today.
@@ -185,12 +246,21 @@ def node():
 @config_option
 @coro
 async def node_list(config_path: Path | None):
-    """List registered node types."""
+    """List registered node types with their display names and descriptions.
+
+    For full per-node metadata (version, parameter schema), use `node info <name>`.
+    """
     engine = await _build_engine(config_path)
+    rows: list[tuple[str, str, str]] = []
     for name, cls in engine.node_registry.items():
         info = getattr(cls, "TYPE_INFO", None)
         display = getattr(info, "display_name", name) if info else name
-        click.echo(f"{name}\t{display}")
+        description = (getattr(info, "description", None) if info else None) or ""
+        rows.append((name, display, description))
+    name_w = max((len(r[0]) for r in rows), default=0)
+    display_w = max((len(r[1]) for r in rows), default=0)
+    for name, display, description in rows:
+        click.echo(f"{name:<{name_w}}  {display:<{display_w}}  {description}".rstrip())
 
 
 @node.command("info")
@@ -221,10 +291,17 @@ async def node_info(name: str, config_path: Path | None):
 @node.command("check")
 @click.argument("name")
 @click.argument("params_arg", metavar="PARAMS", default="{}")
+@click.option(
+    "--expanded",
+    is_flag=True,
+    help="Emit full Pydantic JSON schemas with $defs/$ref instead of the compact x-value-type form.",
+)
 @config_option
 @coro
-async def node_check(name: str, params_arg: str, config_path: Path | None):
-    """Validate a node and print its input and output JSON schemas."""
+async def node_check(
+    name: str, params_arg: str, expanded: bool, config_path: Path | None
+):
+    """Validate a node and print its input and output schemas."""
     engine = await _build_engine(config_path)
     params = _load_input(params_arg)
     instance = engine.create_node(name, id="check", params=params)
@@ -234,13 +311,15 @@ async def node_check(name: str, params_arg: str, config_path: Path | None):
     )
     in_t = await instance.input_type(ctx)
     out_t = await instance.output_type(ctx)
+    if expanded:
+        in_s = in_t.model_json_schema()
+        out_s = out_t.model_json_schema()
+    else:
+        in_s = _compact_data_schema(in_t)
+        out_s = _compact_data_schema(out_t)
     click.echo(
         json.dumps(
-            {
-                "ok": True,
-                "input_schema": in_t.model_json_schema(),
-                "output_schema": out_t.model_json_schema(),
-            },
+            {"ok": True, "input_schema": in_s, "output_schema": out_s},
             indent=2,
             default=str,
         )
@@ -387,19 +466,31 @@ def _parse_handle(spec: str) -> tuple[str, str]:
 
 @workflow.command("check")
 @click.argument("path", type=click.Path(exists=True, dir_okay=False, path_type=Path))
+@click.option(
+    "--expanded",
+    is_flag=True,
+    help="Emit full Pydantic JSON schemas with $defs/$ref instead of the compact x-value-type form.",
+)
 @config_option
 @coro
-async def workflow_check(path: Path, config_path: Path | None):
+async def workflow_check(path: Path, expanded: bool, config_path: Path | None):
     """Validate a workflow and print its input/output schemas."""
     engine = await _build_engine(config_path)
     wf = _load_workflow(path)
     validated = await _validate_or_die(engine, wf)
-    out = {
-        "ok": True,
-        "input_schema": validated.input_type.model_json_schema(),
-        "output_schema": validated.output_type.model_json_schema(),
-    }
-    click.echo(json.dumps(out, indent=2, default=str))
+    if expanded:
+        in_s = validated.input_type.model_json_schema()
+        out_s = validated.output_type.model_json_schema()
+    else:
+        in_s = _compact_data_schema(validated.input_type)
+        out_s = _compact_data_schema(validated.output_type)
+    click.echo(
+        json.dumps(
+            {"ok": True, "input_schema": in_s, "output_schema": out_s},
+            indent=2,
+            default=str,
+        )
+    )
 
 
 @workflow.command("run")
@@ -462,8 +553,8 @@ async def workflow_describe(path: Path, as_json: bool, config_path: Path | None)
     summary: dict[str, Any] = {
         "nodes": nodes_summary,
         "edges": edges_summary,
-        "input_schema": validated.input_type.model_json_schema(),
-        "output_schema": validated.output_type.model_json_schema(),
+        "input_schema": _compact_data_schema(validated.input_type),
+        "output_schema": _compact_data_schema(validated.output_type),
         "execution_order": groups,
     }
 
@@ -537,6 +628,12 @@ async def edit_add_node(
     wf = _load_workflow(path)
     if node_id in wf.nodes_by_id:
         raise click.ClickException(f"Node id {node_id!r} already exists in workflow.")
+    if name in ("Input", "Output"):
+        raise click.ClickException(
+            f"Cannot add the {name!r} node as an inner node. "
+            f"Every workflow has exactly one Input and one Output node — "
+            f"use `update-node`, `add-field`, or `update-field` to modify them."
+        )
     params = _load_input(params_arg)
     try:
         new_node = engine.create_node(name, id=node_id, params=params)
