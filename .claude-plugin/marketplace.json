@@ -1,0 +1,14 @@
+{
+  "name": "aceteam-workflow-engine",
+  "owner": {
+    "name": "Aceteam",
+    "url": "https://github.com/aceteam-ai"
+  },
+  "plugins": [
+    {
+      "name": "wengine",
+      "source": "./plugins/wengine",
+      "description": "Skill for exploring, composing, validating, and running typed workflows via the wengine CLI."
+    }
+  ]
+}

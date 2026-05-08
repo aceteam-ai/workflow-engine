@@ -162,7 +162,7 @@ To cut a new release:
 
 1. **Update `CHANGELOG.md`** — study the commits since the last release tag (`git log <last-tag>..HEAD`), then add a new section at the top (after the header) with the new version, date, and a human-readable summary of what changed. Group entries under `### Added`, `### Changed`, and/or `### Fixed` as appropriate. Follow the existing format.
 
-2. **Run the release script** — must be on a clean, up-to-date `main` branch. The script bumps the version in `pyproject.toml` and `src/workflow_engine/__init__.py`, then runs the full check suite (tests, ruff check, ruff format, pyright) before committing, tagging, pushing, and creating a GitHub release:
+2. **Run the release script** — must be on a clean, up-to-date `main` branch. The script bumps the version in `pyproject.toml`, `src/workflow_engine/__init__.py`, and `plugins/wengine/.claude-plugin/plugin.json` (the wengine skill plugin version is locked to the library version), then runs the full check suite (tests, ruff check, ruff format, pyright) before committing, tagging, pushing, and creating a GitHub release:
 
    ```bash
    ./release.sh --rc      # bump release candidate: 2.0.0rc4 -> 2.0.0rc5
