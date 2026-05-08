@@ -162,7 +162,10 @@ fi
 echo "Updating version to $NEW_VERSION..."
 sed -i "s/^version = \".*\"/version = \"$NEW_VERSION\"/" pyproject.toml
 sed -i "s/^__version__ = \".*\"/__version__ = \"$NEW_VERSION\"/" src/workflow_engine/__init__.py
-sed -i "s/\"version\": \".*\"/\"version\": \"$NEW_VERSION\"/" plugins/wengine/.claude-plugin/plugin.json
+sed -i "s/\"version\": \".*\"/\"version\": \"$NEW_VERSION\"/" \
+    plugins/wengine/.claude-plugin/plugin.json
+sed -i "s/^WENGINE_PINNED_VERSION=\"[^\"]*\"/WENGINE_PINNED_VERSION=\"$NEW_VERSION\"/" \
+    plugins/wengine/skills/wengine/scripts/wengine.sh
 
 # Run tests
 echo "Running tests..."
@@ -179,7 +182,12 @@ uv run pyright
 
 # Commit version bump
 echo "Committing version bump..."
-git add pyproject.toml src/workflow_engine/__init__.py plugins/wengine/.claude-plugin/plugin.json uv.lock
+git add \
+    pyproject.toml \
+    src/workflow_engine/__init__.py \
+    plugins/wengine/.claude-plugin/plugin.json \
+    plugins/wengine/skills/wengine/scripts/wengine.sh \
+    uv.lock
 git commit -m "Bump version to $NEW_VERSION"
 
 # Create and push tag
