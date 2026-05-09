@@ -1,0 +1,10 @@
+# Shared wengine CLI test config — only built-in I/O + arithmetic nodes.
+#
+# tests/test_cli.py always passes --config pointing here for commands that load the
+# engine. Omitting --config would make pytest use whatever lives in the developer's
+# default ~/.config/wengine/config.yaml (and import optional plugins), so tests would
+# not be reproducible across machines or CI.
+nodes:
+  Input: workflow_engine.core.io.InputNode
+  Output: workflow_engine.core.io.OutputNode
+  Sum: workflow_engine.nodes.arithmetic.SumNode
