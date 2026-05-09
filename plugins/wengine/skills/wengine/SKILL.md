@@ -7,13 +7,18 @@ description: Use the `wengine` CLI to explore, compose, validate, and run typed 
 
 `wengine` is a CLI for `aceteam-workflow-engine`. It lets you (a) execute single nodes for ad-hoc work, (b) build and validate DAGs of nodes ("workflows") with full type checking, and (c) run those workflows against typed inputs.
 
+Run it as **`sh scripts/wengine.sh`** from this skill directory (same arguments as `wengine`; see [using scripts in skills](https://agentskills.io/skill-creation/using-scripts)). If `wengine` is already on `PATH`, you may use that name in the examples below instead.
+
 ## Invoking this skill
 
 This is a playbook, not a parameterized template. The user supplies the task in plain language ("use the wengine skill to prototype a workflow that scrapes pricing data from these URLs"), and you carry it out by following the steps below — substituting the user's goal for the abstract task. You don't need to ask for arguments; pull every concrete detail you need from the user prompt and the surrounding context.
 
+Throughout this document, **`wengine`** in command examples means the CLI entrypoint (`sh scripts/wengine.sh` from here, or a global `wengine` if installed).
+
 ## The agent loop
 
 The standard agent loop is:
+
 1. **Explore** with `wengine node run <Name> <params> <input>` to learn what each node produces on real data, writing artifacts to disk that the next node can consume.
 2. **Compose** with `wengine workflow init` + `wengine workflow edit ...` to assemble a saved workflow from steps that worked.
 3. **Run** with `wengine workflow run <path> <input>` to reproduce the pipeline on demand.
@@ -22,7 +27,7 @@ The standard agent loop is:
 
 `wengine` needs a config file that lists the node types it can resolve. The config is YAML and lives at the path printed by `wengine config path` (typically `~/.config/wengine/config.yaml`). Override per-invocation with `--config <path>`.
 
-```bash
+```sh
 # See the default location
 wengine config path
 
@@ -52,7 +57,7 @@ The engine has a typed value system. Every workflow input, every node port, and 
 To reference a value type from a workflow or node param, wrap its name in `x-value-type`:
 
 ```json
-{"x-value-type": "JSONValue"}
+{ "x-value-type": "JSONValue" }
 ```
 
 For generic types, use the standard JSON Schema shape with `x-value-type` on the inner Value:
@@ -70,8 +75,8 @@ For object schemas with named fields, use `properties` + `required`:
   "title": "Person",
   "required": ["name", "age"],
   "properties": {
-    "name": {"x-value-type": "StringValue", "title": "Full Name"},
-    "age":  {"x-value-type": "IntegerValue", "title": "Age"}
+    "name": { "x-value-type": "StringValue", "title": "Full Name" },
+    "age": { "x-value-type": "IntegerValue", "title": "Age" }
   }
 }
 ```
@@ -85,7 +90,7 @@ The engine has a registry of casts between `Value` types. When a workflow runs, 
 Two implications for agents:
 
 - `wengine workflow edit possible-edges` **already includes castable matches**, not just exact-type matches. If a target appears in the list, the edge is wireable as-is.
-- If `add-edge` rejects an edge with a "not assignable to" error, no cast path exists between those types. You need an intermediate node that bridges them, or a different source field. `possible-edges` from the *target* side will tell you which sources are reachable.
+- If `add-edge` rejects an edge with a "not assignable to" error, no cast path exists between those types. You need an intermediate node that bridges them, or a different source field. `possible-edges` from the _target_ side will tell you which sources are reachable.
 
 ## Reading schemas
 
@@ -96,6 +101,7 @@ Pass `--expanded` to any of those commands to get the full Pydantic schema (`$de
 `schema check` is the one exception: it always emits the expanded form, because its purpose is to demystify a compact `x-value-type` blob into its concrete shape.
 
 When reading either form:
+
 - `required` lists mandatory fields; `additionalProperties: false` rejects extras.
 - In the compact form, each property carries its `title`/`description` directly.
 - In the expanded form, follow each property's `$ref` into `$defs` and read the def's `title` (e.g. `"SequenceValue[FloatValue]"`) for the canonical Value type. `$defs` keys are mangled identifiers — read the title, not the key.
@@ -106,7 +112,7 @@ To validate a value against a schema: `wengine schema parse <schema> <value>`.
 
 ### 1. Explore: run individual nodes
 
-```bash
+```sh
 wengine node run <Name> <params-json> <input-json>
 ```
 
@@ -114,7 +120,7 @@ Inputs accept three forms anywhere `<params>` or `<input>` appears: an inline JS
 
 Example:
 
-```bash
+```sh
 wengine node run Sum '{}' '{"values": [1.5, 2.5, 4.0]}'
 # prints {"sum": 8.0} and writes intermediate files under ./local/<uuid>/
 ```
@@ -124,28 +130,28 @@ wengine node run Sum '{}' '{"values": [1.5, 2.5, 4.0]}'
 Before running, three commands make a node legible:
 
 - `wengine node list` — every registered node with its alias, display name, and description (one row per node). The first column is the alias to use everywhere else.
-- `wengine node info <Name>` — full metadata for one node: display name, description, version, and the **parameter schema** (what goes in the `<params>` argument). Read this *first* whenever you need to construct params.
+- `wengine node info <Name>` — full metadata for one node: display name, description, version, and the **parameter schema** (what goes in the `<params>` argument). Read this _first_ whenever you need to construct params.
 - `wengine node check <Name> <params>` — validates the node with concrete params and prints its **resolved input and output schemas** (compact form by default). This is critical for nodes whose I/O shape is dynamic — e.g. variadic `Add`, where setting `num_arguments=3` causes input fields `a`, `b`, `c` to appear. Always run `node check` after settling on params and before constructing inputs.
 
 ### 2. Compose: build a saved workflow
 
-```bash
+```sh
 wengine workflow init my-flow.json
 ```
 
 Then assemble:
 
-| Subcommand | Purpose |
-| --- | --- |
-| `workflow edit add-field <path> <id>.<name> <schema>` | Add a field to the input or output node |
-| `workflow edit update-field <path> <id>.<name> <schema>` | Change an existing field's schema |
-| `workflow edit remove-field <path> <id>.<name>` | Drop a field (and any edges that reference it) |
-| `workflow edit add-node <path> <Name> <id> [params]` | Add an inner node |
-| `workflow edit update-node <path> <id> <params>` | Replace a node's params (works on input/output too) |
-| `workflow edit remove-node <path> <id>` | Remove an inner node and all touching edges |
-| `workflow edit add-edge <path> <src> <tgt>` | Connect two handles, formatted as `nodeId.handle` |
-| `workflow edit remove-edge <path> <src> <tgt>` | Disconnect a specific edge |
-| `workflow edit possible-edges <path> <id>.<handle>` | List handles compatible with the given handle |
+| Subcommand                                               | Purpose                                             |
+| -------------------------------------------------------- | --------------------------------------------------- |
+| `workflow edit add-field <path> <id>.<name> <schema>`    | Add a field to the input or output node             |
+| `workflow edit update-field <path> <id>.<name> <schema>` | Change an existing field's schema                   |
+| `workflow edit remove-field <path> <id>.<name>`          | Drop a field (and any edges that reference it)      |
+| `workflow edit add-node <path> <Name> <id> [params]`     | Add an inner node                                   |
+| `workflow edit update-node <path> <id> <params>`         | Replace a node's params (works on input/output too) |
+| `workflow edit remove-node <path> <id>`                  | Remove an inner node and all touching edges         |
+| `workflow edit add-edge <path> <src> <tgt>`              | Connect two handles, formatted as `nodeId.handle`   |
+| `workflow edit remove-edge <path> <src> <tgt>`           | Disconnect a specific edge                          |
+| `workflow edit possible-edges <path> <id>.<handle>`      | List handles compatible with the given handle       |
 
 Each edit reloads the file, applies the change, runs full validation, and **only writes back on success** — failed edits leave the file untouched.
 
@@ -153,7 +159,7 @@ When `update-node` / `update-field` change a schema such that an existing edge b
 
 `possible-edges` is the fastest way to discover what to wire next:
 
-```bash
+```sh
 # After adding a Sum node named "summer", what can feed its values input?
 wengine workflow edit possible-edges my-flow.json summer.values
 # -> input.nums         (any compatible source on another node)
@@ -161,7 +167,7 @@ wengine workflow edit possible-edges my-flow.json summer.values
 
 ### 3. Inspect and run
 
-```bash
+```sh
 wengine workflow describe my-flow.json            # human-readable summary
 wengine workflow describe my-flow.json --json     # machine-readable
 wengine workflow check my-flow.json               # validate + emit input/output schemas
