@@ -4,11 +4,22 @@ import json
 from pathlib import Path
 
 import pytest
-import yaml
 from click.testing import CliRunner
 
 import workflow_engine.nodes  # noqa: F401  — ensure all value types register before any test freezes the value registry
 from workflow_engine.cli.main import cli
+
+# Commands that load a WorkflowEngine (schema, node, workflow except ``init``) call
+# ``_build_engine``. When ``--config`` is omitted, the CLI loads whatever exists at
+# the user's default config path (``platformdirs.user_config_dir("wengine")`` —
+# typically ``~/.config/wengine/config.yaml`` on Linux). That makes tests depend on
+# machine-local YAML and extra packages (e.g. optional node plugins), so they would
+# pass on one developer machine and fail on CI or another laptop. **Never** exercise
+# those code paths without ``--config`` pointing at a checked-in fixture unless the
+# test is explicitly about the default path (see ``TestConfig.test_path_prints_*``).
+CLI_TEST_CONFIG_PATH = (
+    Path(__file__).resolve().parent / "fixtures" / "wengine_test_config.yaml"
+)
 
 
 @pytest.fixture
@@ -17,21 +28,10 @@ def runner() -> CliRunner:
 
 
 @pytest.fixture
-def config_path(tmp_path: Path) -> Path:
-    """A wengine config that includes the built-in arithmetic + io nodes."""
-    path = tmp_path / "config.yaml"
-    path.write_text(
-        yaml.safe_dump(
-            {
-                "nodes": {
-                    "Input": "workflow_engine.core.io.InputNode",
-                    "Output": "workflow_engine.core.io.OutputNode",
-                    "Sum": "workflow_engine.nodes.arithmetic.SumNode",
-                }
-            }
-        )
-    )
-    return path
+def config_path() -> Path:
+    """Minimal wengine config (built-in I/O + Sum only)."""
+    assert CLI_TEST_CONFIG_PATH.is_file(), CLI_TEST_CONFIG_PATH
+    return CLI_TEST_CONFIG_PATH
 
 
 @pytest.fixture
@@ -40,9 +40,53 @@ def base_dir(tmp_path: Path) -> Path:
 
 
 def _run(runner: CliRunner, *args: str) -> str:
+    """Invoke the CLI with exactly these argv fragments; must exit 0.
+
+    Use this only when the command never loads ``WorkflowEngine.from_config``
+    (e.g. ``config path``, ``workflow init``) or when passing an explicit ``--config``
+    in *args*. Do not use for ``schema`` / ``node`` / ``workflow`` (non-init) without
+    ``--config`` — use :func:`run_with_default_config` instead (see module docstring).
+    """
     result = runner.invoke(cli, list(args), catch_exceptions=False)
     assert result.exit_code == 0, f"args={args}\n{result.output}"
     return result.output
+
+
+def invoke_cli(runner: CliRunner, *args: str, catch_exceptions: bool = True):
+    """Invoke the CLI without asserting on exit code.
+
+    Defaults to ``catch_exceptions=True`` so callers can inspect ``exit_code`` when
+    the command raises instead of returning a non-zero exit (e.g. Pydantic errors).
+    """
+    return runner.invoke(cli, list(args), catch_exceptions=catch_exceptions)
+
+
+def run_with_default_config(runner: CliRunner, *args: str) -> str:
+    """Successful CLI run with the repo's test config.
+
+    Appends ``--config`` + :data:`CLI_TEST_CONFIG_PATH` so the engine never reads the
+    developer's default config file (skipping it is not optional for any command that
+    builds an engine — see module docstring).
+    """
+    return _run(runner, *args, "--config", str(CLI_TEST_CONFIG_PATH))
+
+
+def invoke_with_default_config(
+    runner: CliRunner, *args: str, catch_exceptions: bool = True
+):
+    """Like :func:`invoke_cli` but always appends the test ``--config``.
+
+    Same rationale as :func:`run_with_default_config`: omitting ``--config`` would let
+    ``_build_engine`` load ``~/.config/wengine/config.yaml`` (or equivalent), so tests
+    would depend on the environment.
+    """
+    return invoke_cli(
+        runner,
+        *args,
+        "--config",
+        str(CLI_TEST_CONFIG_PATH),
+        catch_exceptions=catch_exceptions,
+    )
 
 
 # ---------- config ----------
@@ -50,6 +94,7 @@ def _run(runner: CliRunner, *args: str) -> str:
 
 class TestConfig:
     def test_path_prints_default_location(self, runner: CliRunner):
+        # Only prints the path — does not load config or build an engine; no --config.
         out = _run(runner, "config", "path")
         assert out.strip().endswith("config.yaml")
 
@@ -70,14 +115,16 @@ class TestSchema:
     def test_list_includes_concrete_types_and_excludes_generics(
         self, runner: CliRunner
     ):
-        out = _run(runner, "schema", "list")
+        out = run_with_default_config(runner, "schema", "list")
         names = set(out.split())
         assert {"IntegerValue", "StringValue", "JSONValue", "FileValue"} <= names
         assert "SequenceValue" not in names
         assert "StringMapValue" not in names
 
     def test_check_resolves_concrete(self, runner: CliRunner):
-        out = _run(runner, "schema", "check", '{"x-value-type": "JSONValue"}')
+        out = run_with_default_config(
+            runner, "schema", "check", '{"x-value-type": "JSONValue"}'
+        )
         payload = json.loads(out)
         # `schema check` always emits the expanded form — its purpose is to
         # demystify the compact x-value-type input.
@@ -85,7 +132,7 @@ class TestSchema:
         assert "$defs" in payload
 
     def test_check_resolves_generic(self, runner: CliRunner):
-        out = _run(
+        out = run_with_default_config(
             runner,
             "schema",
             "check",
@@ -96,11 +143,17 @@ class TestSchema:
         assert payload["type"] == "array"
 
     def test_parse_round_trips_value(self, runner: CliRunner):
-        out = _run(runner, "schema", "parse", '{"x-value-type": "IntegerValue"}', "42")
+        out = run_with_default_config(
+            runner,
+            "schema",
+            "parse",
+            '{"x-value-type": "IntegerValue"}',
+            "42",
+        )
         assert json.loads(out) == 42
 
     def test_parse_round_trips_array(self, runner: CliRunner):
-        out = _run(
+        out = run_with_default_config(
             runner,
             "schema",
             "parse",
@@ -110,27 +163,26 @@ class TestSchema:
         assert json.loads(out) == ["a", "b"]
 
     def test_parse_rejects_bad_value(self, runner: CliRunner):
-        result = runner.invoke(
-            cli,
-            ["schema", "parse", '{"x-value-type": "IntegerValue"}', '"not-an-int"'],
+        result = invoke_with_default_config(
+            runner,
+            "schema",
+            "parse",
+            '{"x-value-type": "IntegerValue"}',
+            '"not-an-int"',
         )
         assert result.exit_code != 0
 
     def test_invalid_json_input_reports_clean_error(self, runner: CliRunner):
-        result = runner.invoke(cli, ["schema", "check", "{not json"])
+        result = invoke_with_default_config(runner, "schema", "check", "{not json")
         assert result.exit_code != 0
         # Should be a click error, not a Python traceback.
         assert "Traceback" not in result.output
         assert "Invalid JSON" in result.output
 
-    def test_check_accepts_config_flag(self, runner: CliRunner, config_path: Path):
-        out = _run(
-            runner,
-            "schema",
-            "check",
-            '{"x-value-type": "JSONValue"}',
-            "--config",
-            str(config_path),
+    def test_check_accepts_config_flag(self, runner: CliRunner):
+        """Same as other schema checks: default test config via ``run_with_default_config``."""
+        out = run_with_default_config(
+            runner, "schema", "check", '{"x-value-type": "JSONValue"}'
         )
         assert json.loads(out)["title"] == "JSONValue"
 
@@ -139,29 +191,27 @@ class TestSchema:
 
 
 class TestNode:
-    def test_list_uses_config(self, runner: CliRunner, config_path: Path):
-        out = _run(runner, "node", "list", "--config", str(config_path))
+    def test_list_uses_config(self, runner: CliRunner):
+        out = run_with_default_config(runner, "node", "list")
         # Each line: "<name>  <display>  <description>" — name is the first token.
         names = {line.split()[0] for line in out.strip().splitlines() if line.strip()}
         assert {"Input", "Output", "Sum"} == names
         # Description should be present for built-in nodes.
         assert "Sums a sequence of numbers." in out
 
-    def test_info_returns_metadata(self, runner: CliRunner, config_path: Path):
-        out = _run(runner, "node", "info", "Sum", "--config", str(config_path))
+    def test_info_returns_metadata(self, runner: CliRunner):
+        out = run_with_default_config(runner, "node", "info", "Sum")
         payload = json.loads(out)
         assert payload["name"] == "Sum"
         assert payload["display_name"] == "Sum"
         assert payload["version"] == "0.4.0"
 
-    def test_info_unknown_node_errors(self, runner: CliRunner, config_path: Path):
-        result = runner.invoke(
-            cli, ["node", "info", "Nonexistent", "--config", str(config_path)]
-        )
+    def test_info_unknown_node_errors(self, runner: CliRunner):
+        result = invoke_with_default_config(runner, "node", "info", "Nonexistent")
         assert result.exit_code != 0
 
-    def test_check_emits_io_schemas(self, runner: CliRunner, config_path: Path):
-        out = _run(runner, "node", "check", "Sum", "--config", str(config_path))
+    def test_check_emits_io_schemas(self, runner: CliRunner):
+        out = run_with_default_config(runner, "node", "check", "Sum")
         payload = json.loads(out)
         assert payload["ok"] is True
         # SumNode input is a SequenceValue[FloatValue] under "values"
@@ -169,18 +219,14 @@ class TestNode:
         # Output is a single "sum" field
         assert "sum" in payload["output_schema"]["properties"]
 
-    def test_run_executes_node(
-        self, runner: CliRunner, config_path: Path, base_dir: Path
-    ):
-        out = _run(
+    def test_run_executes_node(self, runner: CliRunner, base_dir: Path):
+        out = run_with_default_config(
             runner,
             "node",
             "run",
             "Sum",
             "{}",
             '{"values": [1.0, 2.0, 3.5]}',
-            "--config",
-            str(config_path),
             "--base-dir",
             str(base_dir),
         )
@@ -256,52 +302,31 @@ class TestWorkflow:
     def test_init_then_check_validates_blank(self, runner: CliRunner, tmp_path: Path):
         wf = tmp_path / "blank.json"
         _run(runner, "workflow", "init", str(wf))
-        out = _run(runner, "workflow", "check", str(wf))
+        out = run_with_default_config(runner, "workflow", "check", str(wf))
         assert json.loads(out)["ok"] is True
 
-    def test_check_real_workflow(
-        self, runner: CliRunner, config_path: Path, tmp_path: Path
-    ):
+    def test_check_real_workflow(self, runner: CliRunner, tmp_path: Path):
         wf = tmp_path / "sum.json"
         _write_sum_workflow(wf)
-        out = _run(runner, "workflow", "check", str(wf), "--config", str(config_path))
+        out = run_with_default_config(runner, "workflow", "check", str(wf))
         payload = json.loads(out)
         assert payload["ok"] is True
         assert "nums" in payload["input_schema"]["properties"]
         assert "total" in payload["output_schema"]["properties"]
 
-    def test_describe_human_includes_edges(
-        self, runner: CliRunner, config_path: Path, tmp_path: Path
-    ):
+    def test_describe_human_includes_edges(self, runner: CliRunner, tmp_path: Path):
         wf = tmp_path / "sum.json"
         _write_sum_workflow(wf)
-        out = _run(
-            runner,
-            "workflow",
-            "describe",
-            str(wf),
-            "--config",
-            str(config_path),
-        )
+        out = run_with_default_config(runner, "workflow", "describe", str(wf))
         assert "input.nums" in out
         assert "summer.values" in out
         assert "summer.sum" in out
         assert "output.total" in out
 
-    def test_describe_json_has_full_summary(
-        self, runner: CliRunner, config_path: Path, tmp_path: Path
-    ):
+    def test_describe_json_has_full_summary(self, runner: CliRunner, tmp_path: Path):
         wf = tmp_path / "sum.json"
         _write_sum_workflow(wf)
-        out = _run(
-            runner,
-            "workflow",
-            "describe",
-            str(wf),
-            "--json",
-            "--config",
-            str(config_path),
-        )
+        out = run_with_default_config(runner, "workflow", "describe", str(wf), "--json")
         payload = json.loads(out)
         ids = {n["id"] for n in payload["nodes"]}
         assert ids == {"input", "summer", "output"}
@@ -311,20 +336,17 @@ class TestWorkflow:
     def test_run_executes_workflow(
         self,
         runner: CliRunner,
-        config_path: Path,
         base_dir: Path,
         tmp_path: Path,
     ):
         wf = tmp_path / "sum.json"
         _write_sum_workflow(wf)
-        out = _run(
+        out = run_with_default_config(
             runner,
             "workflow",
             "run",
             str(wf),
             '{"nums": [1.5, 2.5, 4.0]}',
-            "--config",
-            str(config_path),
             "--base-dir",
             str(base_dir),
         )
@@ -369,9 +391,9 @@ def populated_workflow(tmp_path: Path) -> Path:
 
 class TestWorkflowEdit:
     def test_add_node_appends_to_inner_nodes(
-        self, runner: CliRunner, config_path: Path, populated_workflow: Path
+        self, runner: CliRunner, populated_workflow: Path
     ):
-        _run(
+        run_with_default_config(
             runner,
             "workflow",
             "edit",
@@ -379,55 +401,45 @@ class TestWorkflowEdit:
             str(populated_workflow),
             "Sum",
             "summer",
-            "--config",
-            str(config_path),
         )
         payload = json.loads(populated_workflow.read_text())
         assert [n["id"] for n in payload["inner_nodes"]] == ["summer"]
         assert payload["inner_nodes"][0]["type"] == "Sum"
 
     def test_add_node_rejects_duplicate_id(
-        self, runner: CliRunner, config_path: Path, populated_workflow: Path
+        self, runner: CliRunner, populated_workflow: Path
     ):
-        result = runner.invoke(
-            cli,
-            [
-                "workflow",
-                "edit",
-                "add-node",
-                str(populated_workflow),
-                "Sum",
-                "input",  # collides with InputNode id
-                "--config",
-                str(config_path),
-            ],
+        result = invoke_with_default_config(
+            runner,
+            "workflow",
+            "edit",
+            "add-node",
+            str(populated_workflow),
+            "Sum",
+            "input",  # collides with InputNode id
         )
         assert result.exit_code != 0
 
     def test_add_node_rejects_input_or_output_types(
-        self, runner: CliRunner, config_path: Path, populated_workflow: Path
+        self, runner: CliRunner, populated_workflow: Path
     ):
         for type_name in ("Input", "Output"):
-            result = runner.invoke(
-                cli,
-                [
-                    "workflow",
-                    "edit",
-                    "add-node",
-                    str(populated_workflow),
-                    type_name,
-                    f"second-{type_name.lower()}",
-                    "--config",
-                    str(config_path),
-                ],
+            result = invoke_with_default_config(
+                runner,
+                "workflow",
+                "edit",
+                "add-node",
+                str(populated_workflow),
+                type_name,
+                f"second-{type_name.lower()}",
             )
             assert result.exit_code != 0
             assert "inner node" in result.output
 
     def test_remove_node_drops_associated_edges(
-        self, runner: CliRunner, config_path: Path, populated_workflow: Path
+        self, runner: CliRunner, populated_workflow: Path
     ):
-        _run(
+        run_with_default_config(
             runner,
             "workflow",
             "edit",
@@ -435,10 +447,8 @@ class TestWorkflowEdit:
             str(populated_workflow),
             "Sum",
             "summer",
-            "--config",
-            str(config_path),
         )
-        _run(
+        run_with_default_config(
             runner,
             "workflow",
             "edit",
@@ -446,18 +456,9 @@ class TestWorkflowEdit:
             str(populated_workflow),
             "input.nums",
             "summer.values",
-            "--config",
-            str(config_path),
         )
-        out = _run(
-            runner,
-            "workflow",
-            "edit",
-            "remove-node",
-            str(populated_workflow),
-            "summer",
-            "--config",
-            str(config_path),
+        out = run_with_default_config(
+            runner, "workflow", "edit", "remove-node", str(populated_workflow), "summer"
         )
         assert "1 associated edge" in out
         payload = json.loads(populated_workflow.read_text())
@@ -465,27 +466,23 @@ class TestWorkflowEdit:
         assert payload["edges"] == []
 
     def test_remove_node_refuses_to_remove_input_or_output(
-        self, runner: CliRunner, config_path: Path, populated_workflow: Path
+        self, runner: CliRunner, populated_workflow: Path
     ):
         for nid in ("input", "output"):
-            result = runner.invoke(
-                cli,
-                [
-                    "workflow",
-                    "edit",
-                    "remove-node",
-                    str(populated_workflow),
-                    nid,
-                    "--config",
-                    str(config_path),
-                ],
+            result = invoke_with_default_config(
+                runner,
+                "workflow",
+                "edit",
+                "remove-node",
+                str(populated_workflow),
+                nid,
             )
             assert result.exit_code != 0
 
     def test_add_edge_validates_types(
-        self, runner: CliRunner, config_path: Path, populated_workflow: Path
+        self, runner: CliRunner, populated_workflow: Path
     ):
-        _run(
+        run_with_default_config(
             runner,
             "workflow",
             "edit",
@@ -493,22 +490,16 @@ class TestWorkflowEdit:
             str(populated_workflow),
             "Sum",
             "summer",
-            "--config",
-            str(config_path),
         )
         # Wrong direction: SequenceValue[FloatValue] cannot cast to FloatValue
-        result = runner.invoke(
-            cli,
-            [
-                "workflow",
-                "edit",
-                "add-edge",
-                str(populated_workflow),
-                "input.nums",
-                "output.total",
-                "--config",
-                str(config_path),
-            ],
+        result = invoke_with_default_config(
+            runner,
+            "workflow",
+            "edit",
+            "add-edge",
+            str(populated_workflow),
+            "input.nums",
+            "output.total",
         )
         assert result.exit_code != 0
         # And the file should be untouched
@@ -516,9 +507,9 @@ class TestWorkflowEdit:
         assert payload["edges"] == []
 
     def test_remove_edge_works_and_errors_when_missing(
-        self, runner: CliRunner, config_path: Path, populated_workflow: Path
+        self, runner: CliRunner, populated_workflow: Path
     ):
-        _run(
+        run_with_default_config(
             runner,
             "workflow",
             "edit",
@@ -526,10 +517,8 @@ class TestWorkflowEdit:
             str(populated_workflow),
             "Sum",
             "summer",
-            "--config",
-            str(config_path),
         )
-        _run(
+        run_with_default_config(
             runner,
             "workflow",
             "edit",
@@ -537,10 +526,8 @@ class TestWorkflowEdit:
             str(populated_workflow),
             "input.nums",
             "summer.values",
-            "--config",
-            str(config_path),
         )
-        _run(
+        run_with_default_config(
             runner,
             "workflow",
             "edit",
@@ -548,29 +535,23 @@ class TestWorkflowEdit:
             str(populated_workflow),
             "input.nums",
             "summer.values",
-            "--config",
-            str(config_path),
         )
         # Removing again should fail
-        result = runner.invoke(
-            cli,
-            [
-                "workflow",
-                "edit",
-                "remove-edge",
-                str(populated_workflow),
-                "input.nums",
-                "summer.values",
-                "--config",
-                str(config_path),
-            ],
+        result = invoke_with_default_config(
+            runner,
+            "workflow",
+            "edit",
+            "remove-edge",
+            str(populated_workflow),
+            "input.nums",
+            "summer.values",
         )
         assert result.exit_code != 0
 
     def test_possible_edges_finds_compatible_input(
-        self, runner: CliRunner, config_path: Path, populated_workflow: Path
+        self, runner: CliRunner, populated_workflow: Path
     ):
-        _run(
+        run_with_default_config(
             runner,
             "workflow",
             "edit",
@@ -578,25 +559,21 @@ class TestWorkflowEdit:
             str(populated_workflow),
             "Sum",
             "summer",
-            "--config",
-            str(config_path),
         )
-        out = _run(
+        out = run_with_default_config(
             runner,
             "workflow",
             "edit",
             "possible-edges",
             str(populated_workflow),
             "summer.values",
-            "--config",
-            str(config_path),
         )
         assert "input.nums" in out
 
     def test_possible_edges_finds_compatible_output(
-        self, runner: CliRunner, config_path: Path, populated_workflow: Path
+        self, runner: CliRunner, populated_workflow: Path
     ):
-        _run(
+        run_with_default_config(
             runner,
             "workflow",
             "edit",
@@ -604,25 +581,21 @@ class TestWorkflowEdit:
             str(populated_workflow),
             "Sum",
             "summer",
-            "--config",
-            str(config_path),
         )
-        out = _run(
+        out = run_with_default_config(
             runner,
             "workflow",
             "edit",
             "possible-edges",
             str(populated_workflow),
             "summer.sum",
-            "--config",
-            str(config_path),
         )
         assert "output.total" in out
 
     def test_possible_edges_excludes_already_wired(
-        self, runner: CliRunner, config_path: Path, populated_workflow: Path
+        self, runner: CliRunner, populated_workflow: Path
     ):
-        _run(
+        run_with_default_config(
             runner,
             "workflow",
             "edit",
@@ -630,10 +603,8 @@ class TestWorkflowEdit:
             str(populated_workflow),
             "Sum",
             "summer",
-            "--config",
-            str(config_path),
         )
-        _run(
+        run_with_default_config(
             runner,
             "workflow",
             "edit",
@@ -641,32 +612,27 @@ class TestWorkflowEdit:
             str(populated_workflow),
             "input.nums",
             "summer.values",
-            "--config",
-            str(config_path),
         )
         # input.nums (an output handle) is now wired into summer.values; that
         # already-wired target should NOT appear in its candidate list anymore.
-        out = _run(
+        out = run_with_default_config(
             runner,
             "workflow",
             "edit",
             "possible-edges",
             str(populated_workflow),
             "input.nums",
-            "--config",
-            str(config_path),
         )
         assert "summer.values" not in out
 
     def test_full_construction_then_run(
         self,
         runner: CliRunner,
-        config_path: Path,
         populated_workflow: Path,
         base_dir: Path,
     ):
         # Build a Sum-pipeline by editing and run it.
-        _run(
+        run_with_default_config(
             runner,
             "workflow",
             "edit",
@@ -674,10 +640,8 @@ class TestWorkflowEdit:
             str(populated_workflow),
             "Sum",
             "summer",
-            "--config",
-            str(config_path),
         )
-        _run(
+        run_with_default_config(
             runner,
             "workflow",
             "edit",
@@ -685,10 +649,8 @@ class TestWorkflowEdit:
             str(populated_workflow),
             "input.nums",
             "summer.values",
-            "--config",
-            str(config_path),
         )
-        _run(
+        run_with_default_config(
             runner,
             "workflow",
             "edit",
@@ -696,28 +658,22 @@ class TestWorkflowEdit:
             str(populated_workflow),
             "summer.sum",
             "output.total",
-            "--config",
-            str(config_path),
         )
-        out = _run(
+        out = run_with_default_config(
             runner,
             "workflow",
             "run",
             str(populated_workflow),
             '{"nums": [10.0, 20.0, 30.0]}',
-            "--config",
-            str(config_path),
             "--base-dir",
             str(base_dir),
         )
         assert json.loads(out)["output"] == {"total": 60.0}
 
-    def test_update_node_modifies_input_fields(
-        self, runner: CliRunner, config_path: Path, tmp_path: Path
-    ):
+    def test_update_node_modifies_input_fields(self, runner: CliRunner, tmp_path: Path):
         wf = tmp_path / "wf.json"
         _run(runner, "workflow", "init", str(wf))
-        _run(
+        run_with_default_config(
             runner,
             "workflow",
             "edit",
@@ -725,8 +681,6 @@ class TestWorkflowEdit:
             str(wf),
             "input",
             '{"fields": {"x": {"x-value-type": "IntegerValue"}}}',
-            "--config",
-            str(config_path),
         )
         payload = json.loads(wf.read_text())
         assert payload["input_node"]["params"]["fields"] == {
@@ -734,39 +688,31 @@ class TestWorkflowEdit:
         }
 
     def test_update_node_unknown_id_errors(
-        self, runner: CliRunner, config_path: Path, populated_workflow: Path
+        self, runner: CliRunner, populated_workflow: Path
     ):
-        result = runner.invoke(
-            cli,
-            [
-                "workflow",
-                "edit",
-                "update-node",
-                str(populated_workflow),
-                "ghost",
-                "{}",
-                "--config",
-                str(config_path),
-            ],
+        result = invoke_with_default_config(
+            runner,
+            "workflow",
+            "edit",
+            "update-node",
+            str(populated_workflow),
+            "ghost",
+            "{}",
         )
         assert result.exit_code != 0
 
     def test_update_node_bad_params_reports_clean_error(
-        self, runner: CliRunner, config_path: Path, populated_workflow: Path
+        self, runner: CliRunner, populated_workflow: Path
     ):
         before = populated_workflow.read_text()
-        result = runner.invoke(
-            cli,
-            [
-                "workflow",
-                "edit",
-                "update-node",
-                str(populated_workflow),
-                "input",
-                '{"fields": "not a dict"}',
-                "--config",
-                str(config_path),
-            ],
+        result = invoke_with_default_config(
+            runner,
+            "workflow",
+            "edit",
+            "update-node",
+            str(populated_workflow),
+            "input",
+            '{"fields": "not a dict"}',
         )
         assert result.exit_code != 0
         assert "Traceback" not in result.output
@@ -774,11 +720,11 @@ class TestWorkflowEdit:
         assert populated_workflow.read_text() == before
 
     def test_update_node_preserves_inner_node_id(
-        self, runner: CliRunner, config_path: Path, populated_workflow: Path
+        self, runner: CliRunner, populated_workflow: Path
     ):
         # Only relevant to test inner-node update path (different from input/output)
         # Sum has Empty params, so update with {} keeps it valid.
-        _run(
+        run_with_default_config(
             runner,
             "workflow",
             "edit",
@@ -786,10 +732,8 @@ class TestWorkflowEdit:
             str(populated_workflow),
             "Sum",
             "summer",
-            "--config",
-            str(config_path),
         )
-        _run(
+        run_with_default_config(
             runner,
             "workflow",
             "edit",
@@ -797,19 +741,15 @@ class TestWorkflowEdit:
             str(populated_workflow),
             "summer",
             "{}",
-            "--config",
-            str(config_path),
         )
         payload = json.loads(populated_workflow.read_text())
         ids = [n["id"] for n in payload["inner_nodes"]]
         assert ids == ["summer"]
 
-    def test_add_field_to_input(
-        self, runner: CliRunner, config_path: Path, tmp_path: Path
-    ):
+    def test_add_field_to_input(self, runner: CliRunner, tmp_path: Path):
         wf = tmp_path / "wf.json"
         _run(runner, "workflow", "init", str(wf))
-        _run(
+        run_with_default_config(
             runner,
             "workflow",
             "edit",
@@ -817,8 +757,6 @@ class TestWorkflowEdit:
             str(wf),
             "input.x",
             '{"x-value-type": "IntegerValue"}',
-            "--config",
-            str(config_path),
         )
         payload = json.loads(wf.read_text())
         assert payload["input_node"]["params"]["fields"] == {
@@ -826,27 +764,23 @@ class TestWorkflowEdit:
         }
 
     def test_add_field_rejects_duplicate(
-        self, runner: CliRunner, config_path: Path, populated_workflow: Path
+        self, runner: CliRunner, populated_workflow: Path
     ):
-        result = runner.invoke(
-            cli,
-            [
-                "workflow",
-                "edit",
-                "add-field",
-                str(populated_workflow),
-                "input.nums",
-                '{"x-value-type": "IntegerValue"}',
-                "--config",
-                str(config_path),
-            ],
+        result = invoke_with_default_config(
+            runner,
+            "workflow",
+            "edit",
+            "add-field",
+            str(populated_workflow),
+            "input.nums",
+            '{"x-value-type": "IntegerValue"}',
         )
         assert result.exit_code != 0
 
     def test_update_field_replaces_schema(
-        self, runner: CliRunner, config_path: Path, populated_workflow: Path
+        self, runner: CliRunner, populated_workflow: Path
     ):
-        _run(
+        run_with_default_config(
             runner,
             "workflow",
             "edit",
@@ -854,8 +788,6 @@ class TestWorkflowEdit:
             str(populated_workflow),
             "input.nums",
             '{"x-value-type": "IntegerValue"}',
-            "--config",
-            str(config_path),
         )
         payload = json.loads(populated_workflow.read_text())
         assert payload["input_node"]["params"]["fields"]["nums"] == {
@@ -863,27 +795,23 @@ class TestWorkflowEdit:
         }
 
     def test_update_field_rejects_unknown(
-        self, runner: CliRunner, config_path: Path, populated_workflow: Path
+        self, runner: CliRunner, populated_workflow: Path
     ):
-        result = runner.invoke(
-            cli,
-            [
-                "workflow",
-                "edit",
-                "update-field",
-                str(populated_workflow),
-                "input.ghost",
-                '{"x-value-type": "IntegerValue"}',
-                "--config",
-                str(config_path),
-            ],
+        result = invoke_with_default_config(
+            runner,
+            "workflow",
+            "edit",
+            "update-field",
+            str(populated_workflow),
+            "input.ghost",
+            '{"x-value-type": "IntegerValue"}',
         )
         assert result.exit_code != 0
 
     def test_remove_field_drops_referencing_edges(
-        self, runner: CliRunner, config_path: Path, populated_workflow: Path
+        self, runner: CliRunner, populated_workflow: Path
     ):
-        _run(
+        run_with_default_config(
             runner,
             "workflow",
             "edit",
@@ -891,10 +819,8 @@ class TestWorkflowEdit:
             str(populated_workflow),
             "Sum",
             "summer",
-            "--config",
-            str(config_path),
         )
-        _run(
+        run_with_default_config(
             runner,
             "workflow",
             "edit",
@@ -902,18 +828,14 @@ class TestWorkflowEdit:
             str(populated_workflow),
             "input.nums",
             "summer.values",
-            "--config",
-            str(config_path),
         )
-        out = _run(
+        out = run_with_default_config(
             runner,
             "workflow",
             "edit",
             "remove-field",
             str(populated_workflow),
             "input.nums",
-            "--config",
-            str(config_path),
         )
         assert "1 associated edge" in out
         payload = json.loads(populated_workflow.read_text())
@@ -921,9 +843,9 @@ class TestWorkflowEdit:
         assert payload["input_node"]["params"]["fields"] == {}
 
     def test_field_commands_reject_inner_node(
-        self, runner: CliRunner, config_path: Path, populated_workflow: Path
+        self, runner: CliRunner, populated_workflow: Path
     ):
-        _run(
+        run_with_default_config(
             runner,
             "workflow",
             "edit",
@@ -931,30 +853,24 @@ class TestWorkflowEdit:
             str(populated_workflow),
             "Sum",
             "summer",
-            "--config",
-            str(config_path),
         )
-        result = runner.invoke(
-            cli,
-            [
-                "workflow",
-                "edit",
-                "add-field",
-                str(populated_workflow),
-                "summer.foo",
-                '{"x-value-type": "IntegerValue"}',
-                "--config",
-                str(config_path),
-            ],
+        result = invoke_with_default_config(
+            runner,
+            "workflow",
+            "edit",
+            "add-field",
+            str(populated_workflow),
+            "summer.foo",
+            '{"x-value-type": "IntegerValue"}',
         )
         assert result.exit_code != 0
         assert "input or output" in result.output
 
     def test_update_field_drops_now_incompatible_edge(
-        self, runner: CliRunner, config_path: Path, populated_workflow: Path
+        self, runner: CliRunner, populated_workflow: Path
     ):
         # Wire a Sum that consumes input.nums (FloatValue array).
-        _run(
+        run_with_default_config(
             runner,
             "workflow",
             "edit",
@@ -962,10 +878,8 @@ class TestWorkflowEdit:
             str(populated_workflow),
             "Sum",
             "summer",
-            "--config",
-            str(config_path),
         )
-        _run(
+        run_with_default_config(
             runner,
             "workflow",
             "edit",
@@ -973,10 +887,8 @@ class TestWorkflowEdit:
             str(populated_workflow),
             "input.nums",
             "summer.values",
-            "--config",
-            str(config_path),
         )
-        _run(
+        run_with_default_config(
             runner,
             "workflow",
             "edit",
@@ -984,22 +896,16 @@ class TestWorkflowEdit:
             str(populated_workflow),
             "summer.sum",
             "output.total",
-            "--config",
-            str(config_path),
         )
         # Now break input.nums type — its edge to summer.values should be dropped.
-        result = runner.invoke(
-            cli,
-            [
-                "workflow",
-                "edit",
-                "update-field",
-                str(populated_workflow),
-                "input.nums",
-                '{"x-value-type": "IntegerValue"}',
-                "--config",
-                str(config_path),
-            ],
+        result = invoke_with_default_config(
+            runner,
+            "workflow",
+            "edit",
+            "update-field",
+            str(populated_workflow),
+            "input.nums",
+            '{"x-value-type": "IntegerValue"}',
         )
         assert result.exit_code == 0, result.output
         # ClickException sends warnings to stderr, but CliRunner combines them by default.
@@ -1013,10 +919,10 @@ class TestWorkflowEdit:
         assert ("summer", "sum", "output", "total") in edge_pairs
 
     def test_update_node_drops_now_incompatible_edge(
-        self, runner: CliRunner, config_path: Path, populated_workflow: Path
+        self, runner: CliRunner, populated_workflow: Path
     ):
         # Same as above but use update-node on the input node.
-        _run(
+        run_with_default_config(
             runner,
             "workflow",
             "edit",
@@ -1024,10 +930,8 @@ class TestWorkflowEdit:
             str(populated_workflow),
             "Sum",
             "summer",
-            "--config",
-            str(config_path),
         )
-        _run(
+        run_with_default_config(
             runner,
             "workflow",
             "edit",
@@ -1035,11 +939,9 @@ class TestWorkflowEdit:
             str(populated_workflow),
             "input.nums",
             "summer.values",
-            "--config",
-            str(config_path),
         )
         # Replace input's fields entirely with an IntegerValue 'nums'.
-        _run(
+        run_with_default_config(
             runner,
             "workflow",
             "edit",
@@ -1047,8 +949,6 @@ class TestWorkflowEdit:
             str(populated_workflow),
             "input",
             '{"fields": {"nums": {"x-value-type": "IntegerValue"}}}',
-            "--config",
-            str(config_path),
         )
         payload = json.loads(populated_workflow.read_text())
         assert payload["edges"] == []
