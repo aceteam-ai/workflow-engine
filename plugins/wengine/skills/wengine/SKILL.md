@@ -7,30 +7,13 @@ description: Use the `wengine` CLI to explore, compose, validate, and run typed 
 
 `wengine` is a CLI for `aceteam-workflow-engine`. It lets you (a) execute single nodes for ad-hoc work, (b) build and validate DAGs of nodes ("workflows") with full type checking, and (c) run those workflows against typed inputs.
 
-## Bundled script
-
-This skill bundles a POSIX `sh` launcher that bootstraps `uv` (if needed), installs the pinned `aceteam-workflow-engine` wheel under `~/.wengine/runtime`, and runs the real CLI. You do not need a global `pip install` or `wengine` on `PATH`.
-
-Per the [agentskills.io convention for scripts](https://agentskills.io/skill-creation/using-scripts), paths are **relative to this skill directory** (the folder that contains `SKILL.md`). The agent should run commands from that directory.
-
-| Script                   | Role                                                                                                |
-| ------------------------ | --------------------------------------------------------------------------------------------------- |
-| **`scripts/wengine.sh`** | CLI entrypoint; pass the same arguments you would pass to `wengine` (subcommands, flags, `--help`). |
-
-Example:
-
-```sh
-sh scripts/wengine.sh --help
-sh scripts/wengine.sh config path
-```
-
-If the environment already has `wengine` on `PATH` from a normal install, you may use `wengine` directly instead of `sh scripts/wengine.sh` in the examples below.
+Run it as **`sh scripts/wengine.sh`** from this skill directory (same arguments as `wengine`; see [using scripts in skills](https://agentskills.io/skill-creation/using-scripts)). If `wengine` is already on `PATH`, you may use that name in the examples below instead.
 
 ## Invoking this skill
 
 This is a playbook, not a parameterized template. The user supplies the task in plain language ("use the wengine skill to prototype a workflow that scrapes pricing data from these URLs"), and you carry it out by following the steps below — substituting the user's goal for the abstract task. You don't need to ask for arguments; pull every concrete detail you need from the user prompt and the surrounding context.
 
-Throughout this document, **`wengine`** in command examples means the CLI itself—use `sh scripts/wengine.sh` from the skill directory when no global `wengine` is available (the common case for agents).
+Throughout this document, **`wengine`** in command examples means the CLI entrypoint (`sh scripts/wengine.sh` from here, or a global `wengine` if installed).
 
 ## The agent loop
 
