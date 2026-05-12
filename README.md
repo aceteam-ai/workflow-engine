@@ -23,11 +23,11 @@ pip install aceteam-workflow-engine
 
 ### Claude Code skill (optional)
 
-This repo also publishes a Claude Code plugin marketplace. If you use Claude Code, install the `wengine` skill so Claude can help you explore, compose, validate, and run workflows:
+The `wengine` skill is distributed through the [AceTeam marketplace](https://github.com/aceteam-ai/marketplace) (its source lives here, in [`plugins/wengine/`](plugins/wengine)). If you use Claude Code, install it so Claude can help you explore, compose, validate, and run workflows:
 
 ```text
-/plugin marketplace add aceteam-ai/workflow-engine
-/plugin install wengine@aceteam-workflow-engine
+/plugin marketplace add aceteam-ai/marketplace
+/plugin install wengine@aceteam
 ```
 
 ## Example
