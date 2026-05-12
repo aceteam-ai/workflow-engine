@@ -189,7 +189,7 @@ hosted engine running workflows submitted by others).
 | ------------------------------------------------ | ---------------------------------------------------------------------- | ----------------------------------------------------- | -------------------------------------------------------------------- |
 | `engine.yaml`                                    | engine project dir                                                     | operator (via `wengine init` / `install`, or by hand) | Maps recognized node names → entry-point refs                        |
 | `pyproject.toml` + `uv.lock`                     | the host project (embedded) **or** the engine project dir (standalone) | operator; `wengine install` mutates them via `uv add` | Which packages are installed, and pinned; **committed to VCS**       |
-| `[project.entry-points."workflow_engine.nodes"]` | inside each node-source package's `pyproject.toml`                     | node publisher                                        | Declares `nodeName → module:Class` for each node the package exposes |
+| `[project.entry-points."aceteam_workflow_engine.nodes"]` | inside each node-source package's `pyproject.toml`                     | node publisher                                        | Declares `nodeName → module:Class` for each node the package exposes |
 | `workflow.json`                                  | wherever workflows live                                                | workflow author                                       | Graph of nodes referenced by bare `type` name                        |
 
 `engine.yaml` and `workflow.json` are both required to interpret a workflow; this
@@ -273,7 +273,7 @@ list of them. The distribution name is the name of the installed package — the
 string you'd `uv remove` — **not** a repo slug (the engine's own distribution is
 `aceteam-workflow-engine`; `aceteam-ai/workflow-engine` is just its GitHub repo,
 which only matters as an argument to the `github:` install shorthand). The
-entry-point names come from each package's `[project.entry-points."workflow_engine.nodes"]`
+entry-point names come from each package's `[project.entry-points."aceteam_workflow_engine.nodes"]`
 table; `wengine` reads that table from installed package metadata (it does **not**
 import the package to discover it).
 
@@ -299,14 +299,18 @@ subtract; the way you subtract is by not putting the distribution on the `"*"`
 list). `wengine init --explicit` expands the catch-all into one explicit entry per
 builtin so you can delete lines.
 
-### Node-source package: `[project.entry-points."workflow_engine.nodes"]`
+### Node-source package: `[project.entry-points."aceteam_workflow_engine.nodes"]`
 
 A node-source package is an ordinary Python distribution. It declares the nodes it
-exposes in its own `pyproject.toml`:
+exposes via [entry points](https://packaging.python.org/en/latest/specifications/entry-points/)
+in its own `pyproject.toml`. The group is `aceteam_workflow_engine.nodes`; each
+entry's name is the node name, and its value is `dotted.module.path:NodeClass` with
+an optional ` [extra1, extra2]` suffix naming the package extras that node needs
+(the standard entry-point [extras syntax](https://packaging.python.org/en/latest/specifications/entry-points/),
+which `importlib.metadata` parses — readable without importing the module).
 
-This is the running example for the rest of the doc. `acme-scrapers` exposes four
-nodes; two of them (`Screenshot`, `CrawlSite`) drive a headless browser and so need
-`playwright`, the other two don't:
+Running example for the rest of the doc: `acme-scrapers` exposes four nodes, two of
+which (`Screenshot`, `CrawlSite`) drive a headless browser and so need `playwright`:
 
 ```toml
 [project]
@@ -324,7 +328,7 @@ dependencies = [
 screenshot = ["playwright>=1.40"]
 crawl-site = ["playwright>=1.40"]
 
-[project.entry-points."workflow_engine.nodes"]
+[project.entry-points."aceteam_workflow_engine.nodes"]
 HttpFetch = "acme_scrapers.http:HttpFetchNode"
 HtmlExtract = "acme_scrapers.html:HtmlExtractNode"
 Screenshot = "acme_scrapers.browser:ScreenshotNode [screenshot]" # needs Playwright, via the `screenshot` extra
@@ -332,7 +336,7 @@ CrawlSite = "acme_scrapers.crawl:CrawlSiteNode [crawl-site]" # also needs Playwr
 ```
 
 That's the entire publisher-side contract: declare dependencies the normal way,
-and list `entryPointName = "module:Class [extras]"` for each node. Notes:
+and list `nodeName = "module:NodeClass [extras]"` for each node. Notes:
 
 - **The entry-point table is the curated surface.** A package may register more node
   classes than it lists (e.g. helper nodes); only the listed ones are
@@ -415,7 +419,7 @@ wengine install ./local/path
 In short, `wengine install <target>` ≈ `uv add <target>` plus an `engine.yaml`
 edit — `wengine` is deliberately thin here. The non-trivial parts it adds: it
 expands the `github:` / `owner/repo` shorthands `uv add` doesn't understand; it
-reads the package's `workflow_engine.nodes` entry-point table _before_ the `uv add`
+reads the package's `aceteam_workflow_engine.nodes` entry-point table _before_ the `uv add`
 (to know what to write, and to run the merged-map collision check); and `--only` /
 `--as` / `--prefix` / `--force` affect only the `engine.yaml` side, never the `uv add`. In full,
 what `wengine install <target>` does (operator-time, trusted), in the discovered
@@ -424,7 +428,7 @@ engine project:
 1. Parse the target; expand the `github:` / `owner/repo` shorthands (resolving a ref
    to a commit and a tarball URL over HTTPS if needed).
 2. **Collect metadata first.** Determine the distribution name and read its
-   `[project.entry-points."workflow_engine.nodes"]` table (from the sdist/wheel
+   `[project.entry-points."aceteam_workflow_engine.nodes"]` table (from the sdist/wheel
    metadata `uv` is about to install, or — for a git/path target — by building the
    package's metadata, which `uv` does without running it). Compute the proposed
    `engine.yaml` change: append to the `"*"` list (default), or the explicit /
@@ -556,7 +560,7 @@ thing to add; for now a workflow is interpreted relative to one engine, and
 3. **`uv` integration** — locate the host `uv` project (embedded) or create/own one
    beside `engine.yaml` (standalone); shell out to `uv add` / `uv remove` / `uv sync`
    and surface their output.
-4. **Entry-point discovery** — read `[project.entry-points."workflow_engine.nodes"]`
+4. **Entry-point discovery** — read `[project.entry-points."aceteam_workflow_engine.nodes"]`
    (each entry's `module:Class` and its `[extras]`) from installed (or
    about-to-be-installed) distribution metadata via `importlib.metadata`, without
    importing the package.
@@ -582,7 +586,7 @@ Chosen over alternatives; the body above has the reasoning.
 - **A node source is a Python package, installed with `uv`.** One resolver, one
   lockfile (`uv.lock`) — not a second dependency manager; no `setup:` scripts. Cross-source
   conflicts therefore fail at `uv add` time, not at runtime.
-- **Nodes are advertised via standard entry points** (`workflow_engine.nodes`),
+- **Nodes are advertised via standard entry points** (`aceteam_workflow_engine.nodes`),
   readable from package metadata without importing; a node's optional deps ride in
   the entry's `[extras]` suffix. `wengine` keeps each distribution's `pkg[extras]`
   line equal to the union of its still-mapped nodes' extras. Recommended: one extra
