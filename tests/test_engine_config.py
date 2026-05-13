@@ -82,6 +82,14 @@ class TestNodesConfigGrammar:
         with pytest.raises(ValidationError):
             NodesConfig.model_validate({"Sum": "aceteam-workflow-engine"})
 
+    def test_rejects_invalid_distribution_name_in_glob(self):
+        with pytest.raises(ValidationError):
+            NodesConfig.model_validate({"*": "not a valid dist name!"})
+
+    def test_rejects_invalid_distribution_name_in_glob_list(self):
+        with pytest.raises(ValidationError):
+            NodesConfig.model_validate({"*": ["aceteam-workflow-engine", "bad name!"]})
+
 
 class TestNodesConfigResolution:
     def test_global_glob_mounts_every_node_bare(self):
@@ -115,6 +123,15 @@ class TestNodesConfigResolution:
         reg = nc.node_registry
         assert reg.get("Sum") is SumNode
         assert reg.get("vendor/legacy:Sum") is SumNode
+
+    def test_same_distribution_different_spellings_is_not_collision(self):
+        # PEP 503: "Aceteam_Workflow.Engine" normalizes to the same name as
+        # "aceteam-workflow-engine". Listing both in `"*"` must not flag every
+        # node as a bare-name collision.
+        nc = NodesConfig.model_validate(
+            {"*": ["aceteam-workflow-engine", "Aceteam_Workflow.Engine"]}
+        )
+        assert nc.node_registry.get("Sum") is SumNode
 
     def test_unmapped_name_is_not_in_registry(self):
         nc = NodesConfig.model_validate({"Sum": "aceteam-workflow-engine:Sum"})
