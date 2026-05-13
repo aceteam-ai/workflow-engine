@@ -46,6 +46,31 @@ dependencies = [
 [project.scripts]
 wengine = "workflow_engine.cli.main:main"
 
+[project.entry-points."aceteam_workflow_engine.nodes"]
+# Builtins. Per docs/plans/node-distribution.md, builtins aren't special:
+# they're advertised through the same entry-point group as third-party
+# packages. `wengine init` seeds `nodes: { "*": [aceteam-workflow-engine] }`
+# which mounts everything below under its bare entry-point name.
+Input = "workflow_engine.core.io:InputNode"
+Output = "workflow_engine.core.io:OutputNode"
+Add = "workflow_engine.nodes.arithmetic:AddNode"
+Factorization = "workflow_engine.nodes.arithmetic:FactorizationNode"
+Sum = "workflow_engine.nodes.arithmetic:SumNode"
+If = "workflow_engine.nodes.conditional:IfNode"
+IfElse = "workflow_engine.nodes.conditional:IfElseNode"
+ConstantBoolean = "workflow_engine.nodes.constant:ConstantBooleanNode"
+ConstantInteger = "workflow_engine.nodes.constant:ConstantIntegerNode"
+ConstantString = "workflow_engine.nodes.constant:ConstantStringNode"
+ExpandData = "workflow_engine.nodes.data:ExpandDataNode"
+ExpandMapping = "workflow_engine.nodes.data:ExpandMappingNode"
+ExpandSequence = "workflow_engine.nodes.data:ExpandSequenceNode"
+GatherData = "workflow_engine.nodes.data:GatherDataNode"
+GatherMapping = "workflow_engine.nodes.data:GatherMappingNode"
+GatherSequence = "workflow_engine.nodes.data:GatherSequenceNode"
+Error = "workflow_engine.nodes.error:ErrorNode"
+ForEach = "workflow_engine.nodes.iteration:ForEachNode"
+AppendToFile = "workflow_engine.nodes.text:AppendToFileNode"
+
 [project.urls]
 Homepage = "https://aceteam.ai/workflow-engine"
 Documentation = "https://github.com/aceteam-ai/workflow-engine/tree/main/docs"

@@ -1,8 +1,8 @@
 # workflow_engine/core/__init__.py
 from .config import (
+    EntryPointRef,
     ExecutionAlgorithmConfig,
     ExecutionAlgorithmImport,
-    NodeImport,
     NodesConfig,
     WorkflowEngineConfig,
 )
@@ -77,6 +77,7 @@ __all__ = [
     "DataValue",
     "Edge",
     "Empty",
+    "EntryPointRef",
     "ExecutionAlgorithm",
     "ExecutionAlgorithmConfig",
     "ExecutionAlgorithmImport",
@@ -97,7 +98,6 @@ __all__ = [
     "Node",
     "NodeException",
     "NodeExpansionException",
-    "NodeImport",
     "NodeRegistry",
     "NodeTypeInfo",
     "NodesConfig",
