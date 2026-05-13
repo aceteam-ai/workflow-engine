@@ -14,7 +14,6 @@ from ..utils.pattern import MODULE_NAME_PATTERN
 from .execution import ExecutionAlgorithm
 from .node import ImmutableNodeRegistry, Node, NodeRegistry
 
-ENGINE_YAML_NAME = "engine.yaml"
 NODES_ENTRY_POINT_GROUP = "aceteam_workflow_engine.nodes"
 
 # engine.yaml `nodes:` key/value grammar.
@@ -321,27 +320,8 @@ class WorkflowEngineConfig(ImmutableBaseModel):
             case _:
                 raise ValueError(f"Unsupported file extension: {path.suffix}")
 
-    @classmethod
-    def find_engine_yaml(cls, start: Path | None = None) -> Path | None:
-        """
-        Walk up from `start` (default: cwd) looking for an `engine.yaml`.
-
-        Mirrors how `uv`/`git`/most package managers discover their project
-        file. Returns the first match, or None if no `engine.yaml` is found
-        before the filesystem root.
-        """
-        cursor = (start or Path.cwd()).resolve()
-        if cursor.is_file():
-            cursor = cursor.parent
-        for directory in (cursor, *cursor.parents):
-            candidate = directory / ENGINE_YAML_NAME
-            if candidate.is_file():
-                return candidate
-        return None
-
 
 __all__ = [
-    "ENGINE_YAML_NAME",
     "NODES_ENTRY_POINT_GROUP",
     "EntryPointRef",
     "ExecutionAlgorithmConfig",

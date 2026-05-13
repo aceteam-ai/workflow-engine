@@ -6,7 +6,6 @@ import pytest
 from pydantic import ValidationError
 
 from workflow_engine.core.config import (
-    ENGINE_YAML_NAME,
     EntryPointRef,
     NodesConfig,
     WorkflowEngineConfig,
@@ -126,14 +125,14 @@ class TestNodesConfigResolution:
 
 class TestWorkflowEngineConfig:
     def test_load_yaml(self, tmp_path: Path):
-        path = tmp_path / ENGINE_YAML_NAME
+        path = tmp_path / "engine.yaml"
         path.write_text('schema_version: 1\nnodes:\n  "*": aceteam-workflow-engine\n')
         config = WorkflowEngineConfig.load(path)
         assert config.schema_version == 1
         assert config.node_registry.get("Sum") is SumNode
 
     def test_load_rejects_wrong_schema_version(self, tmp_path: Path):
-        path = tmp_path / ENGINE_YAML_NAME
+        path = tmp_path / "engine.yaml"
         path.write_text('schema_version: 999\nnodes:\n  "*": aceteam-workflow-engine\n')
         with pytest.raises(ValidationError):
             WorkflowEngineConfig.load(path)
@@ -143,29 +142,3 @@ class TestWorkflowEngineConfig:
             {"nodes": {"*": "aceteam-workflow-engine"}}
         )
         assert config.schema_version == 1
-
-
-class TestFindEngineYaml:
-    def test_finds_in_current_directory(self, tmp_path: Path):
-        (tmp_path / ENGINE_YAML_NAME).write_text("schema_version: 1\nnodes: {}\n")
-        found = WorkflowEngineConfig.find_engine_yaml(start=tmp_path)
-        assert found == (tmp_path / ENGINE_YAML_NAME).resolve()
-
-    def test_walks_up_to_ancestor(self, tmp_path: Path):
-        (tmp_path / ENGINE_YAML_NAME).write_text("schema_version: 1\nnodes: {}\n")
-        deep = tmp_path / "a" / "b" / "c"
-        deep.mkdir(parents=True)
-        found = WorkflowEngineConfig.find_engine_yaml(start=deep)
-        assert found == (tmp_path / ENGINE_YAML_NAME).resolve()
-
-    def test_returns_none_when_absent(self, tmp_path: Path):
-        # tmp_path is somewhere under /tmp; no engine.yaml expected on the way up.
-        found = WorkflowEngineConfig.find_engine_yaml(start=tmp_path)
-        assert found is None
-
-    def test_accepts_file_as_start(self, tmp_path: Path):
-        (tmp_path / ENGINE_YAML_NAME).write_text("schema_version: 1\nnodes: {}\n")
-        marker_file = tmp_path / "some_file.txt"
-        marker_file.write_text("")
-        found = WorkflowEngineConfig.find_engine_yaml(start=marker_file)
-        assert found == (tmp_path / ENGINE_YAML_NAME).resolve()
