@@ -100,7 +100,7 @@ class TestConfig:
 
     def test_show_prints_file_contents(self, runner: CliRunner, config_path: Path):
         out = _run(runner, "config", "show", "--config", str(config_path))
-        assert "workflow_engine.nodes.arithmetic.SumNode" in out
+        assert "aceteam-workflow-engine:Sum" in out
 
     def test_show_errors_when_missing(self, runner: CliRunner, tmp_path: Path):
         missing = tmp_path / "nope.yaml"
