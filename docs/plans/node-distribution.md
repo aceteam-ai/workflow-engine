@@ -185,12 +185,12 @@ hosted engine running workflows submitted by others).
 
 ## Artifacts
 
-| Artifact                                         | Location                                                               | Written by                                            | Purpose                                                              |
-| ------------------------------------------------ | ---------------------------------------------------------------------- | ----------------------------------------------------- | -------------------------------------------------------------------- |
-| `engine.yaml`                                    | engine project dir                                                     | operator (via `wengine init` / `install`, or by hand) | Maps recognized node names → entry-point refs                        |
-| `pyproject.toml` + `uv.lock`                     | the host project (embedded) **or** the engine project dir (standalone) | operator; `wengine install` mutates them via `uv add` | Which packages are installed, and pinned; **committed to VCS**       |
+| Artifact                                                 | Location                                                               | Written by                                            | Purpose                                                              |
+| -------------------------------------------------------- | ---------------------------------------------------------------------- | ----------------------------------------------------- | -------------------------------------------------------------------- |
+| `engine.yaml`                                            | engine project dir                                                     | operator (via `wengine init` / `install`, or by hand) | Maps recognized node names → entry-point refs                        |
+| `pyproject.toml` + `uv.lock`                             | the host project (embedded) **or** the engine project dir (standalone) | operator; `wengine install` mutates them via `uv add` | Which packages are installed, and pinned; **committed to VCS**       |
 | `[project.entry-points."aceteam_workflow_engine.nodes"]` | inside each node-source package's `pyproject.toml`                     | node publisher                                        | Declares `nodeName → module:Class` for each node the package exposes |
-| `workflow.json`                                  | wherever workflows live                                                | workflow author                                       | Graph of nodes referenced by bare `type` name                        |
+| `workflow.json`                                          | wherever workflows live                                                | workflow author                                       | Graph of nodes referenced by bare `type` name                        |
 
 `engine.yaml` and `workflow.json` are both required to interpret a workflow; this
 is intentional (see trust model). They are not assumed to come from the same party.
@@ -305,7 +305,7 @@ A node-source package is an ordinary Python distribution. It declares the nodes 
 exposes via [entry points](https://packaging.python.org/en/latest/specifications/entry-points/)
 in its own `pyproject.toml`. The group is `aceteam_workflow_engine.nodes`; each
 entry's name is the node name, and its value is `dotted.module.path:NodeClass` with
-an optional ` [extra1, extra2]` suffix naming the package extras that node needs
+an optional `[extra1, extra2]` suffix naming the package extras that node needs
 (the standard entry-point [extras syntax](https://packaging.python.org/en/latest/specifications/entry-points/),
 which `importlib.metadata` parses — readable without importing the module).
 
