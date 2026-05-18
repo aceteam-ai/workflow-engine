@@ -83,9 +83,14 @@ class PathTarget(BaseInstallTarget):
 class ForgeTarget(BaseInstallTarget):
     """A `github:` / `gitlab:` shorthand needing HTTPS ref resolution.
 
-    `to_uv_add_args` resolves the ref to a commit SHA over HTTPS, then hands
+    `uv_add_args` resolves the ref to a commit SHA over HTTPS, then hands
     `uv add` a pinned tarball URL. uv downloads the archive and reads its
-    metadata to discover the distribution name.
+    metadata to discover the distribution name. Reading the property issues
+    network requests — the result is cached on the instance after the first
+    read.
+
+    Only the public `github.com` / `gitlab.com` hosts are supported. For
+    self-hosted instances or GitHub Enterprise, use a `git+https://` URL.
     """
 
     forge: ForgeName
