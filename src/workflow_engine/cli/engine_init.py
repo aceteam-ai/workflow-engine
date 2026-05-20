@@ -22,7 +22,7 @@ from .uv_project import ENGINE_YAML_NAMES, UvProject
 
 # The engine's own distribution. Builtins are advertised through the same
 # entry-point group as third-party packages (see the trust model in the design
-# doc); `wengine init` seeds the `"*"` glob that mounts them.
+# doc); fresh `engine.yaml` files seed one explicit entry per builtin.
 BUILTIN_DISTRIBUTION = "aceteam-workflow-engine"
 
 

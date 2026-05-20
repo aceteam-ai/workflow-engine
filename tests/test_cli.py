@@ -958,17 +958,29 @@ class TestWorkflowEdit:
 
 
 class TestInit:
-    def test_creates_engine_yaml(self, runner: CliRunner, monkeypatch):
+    def test_creates_engine_yaml(
+        self, runner: CliRunner, monkeypatch, confine_is_file_to
+    ):
         # Standalone init shells out to `uv add`; stub it so the test stays
-        # offline and deterministic.
+        # offline and deterministic, while still proving we exercised the
+        # standalone path.
         from workflow_engine.cli import uv_project as uv_project_module
 
-        monkeypatch.setattr(uv_project_module, "_run_uv", lambda *a, **k: None)
+        uv_calls = []
+
+        def fake_run_uv(*args, **kwargs):
+            uv_calls.append((args, kwargs))
+            return None
+
+        monkeypatch.setattr(uv_project_module, "_run_uv", fake_run_uv)
 
         with runner.isolated_filesystem():
+            confine_is_file_to(Path.cwd())
             result = invoke_cli(runner, "init")
             assert result.exit_code == 0, result.output
             assert "Created" in result.output
+            assert uv_calls, "expected standalone init to invoke uv"
+            assert Path("pyproject.toml").is_file()
             assert Path("engine.yaml").is_file()
 
     def test_refuses_when_engine_yaml_exists(self, runner: CliRunner, monkeypatch):
