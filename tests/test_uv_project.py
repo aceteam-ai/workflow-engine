@@ -38,7 +38,8 @@ class TestFindEngineYaml:
         assert result is not None
         assert result.name == "engine.yaml"
 
-    def test_returns_none_if_missing(self, tmp_path: Path):
+    def test_returns_none_if_missing(self, tmp_path: Path, confine_is_file_to):
+        confine_is_file_to(tmp_path)
         assert find_engine_yaml(tmp_path) is None
 
 
@@ -53,8 +54,8 @@ class TestFindPyproject:
         nested.mkdir(parents=True)
         assert find_pyproject(nested) == (tmp_path / "pyproject.toml").resolve()
 
-    def test_returns_none_if_missing(self, tmp_path: Path):
-        # tmp_path is somewhere under /tmp — no pyproject above it.
+    def test_returns_none_if_missing(self, tmp_path: Path, confine_is_file_to):
+        confine_is_file_to(tmp_path)
         assert find_pyproject(tmp_path) is None
 
 
