@@ -1,0 +1,31 @@
+# Example engine.yaml. `wengine init` writes one of these for you (seeding an
+# entry per built-in node); this file shows the shape if you want to hand-author
+# or edit it. `wengine` finds it by walking up from the current directory.
+#
+# Each `nodes:` entry maps a recognized name (the `type` used in workflows) to a
+# node advertised by an installed distribution, as "<distribution>:<entryPointName>".
+# `wengine install <package>` appends the entries for a package's nodes.
+
+schema_version: 1
+
+nodes:
+  # Required for any non-trivial workflow:
+  Input: aceteam-workflow-engine:Input
+  Output: aceteam-workflow-engine:Output
+
+  # Built-in nodes from aceteam-workflow-engine:
+  Sum: aceteam-workflow-engine:Sum
+  Add: aceteam-workflow-engine:Add
+  Factorization: aceteam-workflow-engine:Factorization
+  ConstantInteger: aceteam-workflow-engine:ConstantInteger
+  ConstantString: aceteam-workflow-engine:ConstantString
+  ConstantBoolean: aceteam-workflow-engine:ConstantBoolean
+  If: aceteam-workflow-engine:If
+  IfElse: aceteam-workflow-engine:IfElse
+  ExpandData: aceteam-workflow-engine:ExpandData
+  ExpandSequence: aceteam-workflow-engine:ExpandSequence
+  ExpandMapping: aceteam-workflow-engine:ExpandMapping
+
+  # A "*" glob mounts every node a distribution exposes, under its bare name —
+  # handy for pulling in a whole third-party bundle at once:
+  # "*": some-node-package

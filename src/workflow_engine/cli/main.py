@@ -13,29 +13,27 @@ from pathlib import Path
 from typing import Any
 
 import click
-import platformdirs
 import yaml
 
 from workflow_engine import __version__
 from workflow_engine.cli.engine_init import EngineYamlAlreadyExists, init_engine_project
 from workflow_engine.cli.install import InstallError, install
-from workflow_engine.cli.uv_project import EngineYamlNotFound, UvProject
+from workflow_engine.cli.uv_project import (
+    EngineYamlNotFound,
+    UvProject,
+    find_engine_yaml,
+)
 from workflow_engine.contexts.local import LocalContext
 from workflow_engine.core.config import WorkflowEngineConfig
 from workflow_engine.core.context import ValidationContext
 from workflow_engine.core.edge import Edge
 from workflow_engine.core.engine import WorkflowEngine
-from workflow_engine.core.node import NodeRegistry
-from workflow_engine.core.values import ValueRegistry
 from workflow_engine.core.values.data import Data, DataValue
 from workflow_engine.core.values.mapping import StringMapValue
 from workflow_engine.core.values.schema import validate_value_schema
 from workflow_engine.core.values.sequence import SequenceValue
 from workflow_engine.core.values.value import Value, get_origin_and_args
 from workflow_engine.core.workflow import Workflow
-
-CONFIG_DIR = Path(platformdirs.user_config_dir("wengine", appauthor=False))
-DEFAULT_CONFIG_PATH = CONFIG_DIR / "config.yaml"
 
 
 def coro(f):
@@ -124,27 +122,23 @@ def _compact_data_schema(data_cls: type[Data]) -> dict[str, Any]:
     return out
 
 
-async def _build_engine(config_path: Path | None) -> WorkflowEngine:
-    """Build an engine from the given config path, or default registries."""
-    if config_path is not None:
-        config = WorkflowEngineConfig.load(config_path)
-        return await WorkflowEngine.from_config(config)
-    if DEFAULT_CONFIG_PATH.exists():
-        config = WorkflowEngineConfig.load(DEFAULT_CONFIG_PATH)
-        return await WorkflowEngine.from_config(config)
-    return WorkflowEngine(
-        node_registry=NodeRegistry.DEFAULT,
-        value_registry=ValueRegistry.DEFAULT,
-    )
+async def _build_engine() -> WorkflowEngine:
+    """Build an engine from the project's `engine.yaml`.
 
-
-config_option = click.option(
-    "--config",
-    "config_path",
-    type=click.Path(exists=True, dir_okay=False, path_type=Path),
-    default=None,
-    help="Path to a wengine config file (overrides the default location).",
-)
+    Discovers the engine project by walking up from the current directory to the
+    nearest `engine.yaml` (the standard package-manager search). There is no
+    implicit builtin fallback: if no `engine.yaml` is found, the available-node
+    set is undefined, so this is a hard error pointing the operator at
+    `wengine init` (see docs/plans/node-distribution.md).
+    """
+    engine_yaml = find_engine_yaml(Path.cwd())
+    if engine_yaml is None:
+        raise click.ClickException(
+            "No engine.yaml found in this directory or any parent. "
+            "Run `wengine init` to create one."
+        )
+    config = WorkflowEngineConfig.load(engine_yaml)
+    return await WorkflowEngine.from_config(config)
 
 
 @click.group()
@@ -204,30 +198,6 @@ def install_cmd(
     click.echo(f"Installed {dist}")
 
 
-# ---------- config ----------
-
-
-@cli.group()
-def config():
-    """Configuration utilities."""
-
-
-@config.command("path")
-def config_path_cmd():
-    """Print the default config file location."""
-    click.echo(str(DEFAULT_CONFIG_PATH))
-
-
-@config.command("show")
-@config_option
-def config_show(config_path: Path | None):
-    """Print the full contents of the config file."""
-    path = config_path or DEFAULT_CONFIG_PATH
-    if not path.exists():
-        raise click.ClickException(f"Config file does not exist: {path}")
-    click.echo(path.read_text(), nl=False)
-
-
 # ---------- schema ----------
 
 
@@ -237,20 +207,18 @@ def schema():
 
 
 @schema.command("list")
-@config_option
 @coro
-async def schema_list(config_path: Path | None):
+async def schema_list():
     """List all registered value types."""
-    engine = await _build_engine(config_path)
+    engine = await _build_engine()
     for name, _ in engine.value_registry.all_value_classes():
         click.echo(name)
 
 
 @schema.command("check")
 @click.argument("schema_arg", metavar="SCHEMA")
-@config_option
 @coro
-async def schema_check(schema_arg: str, config_path: Path | None):
+async def schema_check(schema_arg: str):
     """Validate an aliased value schema and print the fully-expanded JSON schema.
 
     SCHEMA is a JSON literal, @file.json, or - for stdin. Examples:
@@ -265,7 +233,7 @@ async def schema_check(schema_arg: str, config_path: Path | None):
     """
     # Building the engine surfaces config errors early; schema resolution
     # itself still uses ValueRegistry.DEFAULT today.
-    await _build_engine(config_path)
+    await _build_engine()
     raw = _load_input(schema_arg)
     schema_obj = validate_value_schema(raw)
     cls = schema_obj.to_value_cls()
@@ -275,11 +243,10 @@ async def schema_check(schema_arg: str, config_path: Path | None):
 @schema.command("parse")
 @click.argument("schema_arg", metavar="SCHEMA")
 @click.argument("value_arg", metavar="VALUE")
-@config_option
 @coro
-async def schema_parse(schema_arg: str, value_arg: str, config_path: Path | None):
+async def schema_parse(schema_arg: str, value_arg: str):
     """Parse VALUE as the given SCHEMA. Prints the validated value as JSON."""
-    await _build_engine(config_path)
+    await _build_engine()
     raw_schema = _load_input(schema_arg)
     raw_value = _load_input(value_arg)
     schema_obj = validate_value_schema(raw_schema)
@@ -297,14 +264,13 @@ def node():
 
 
 @node.command("list")
-@config_option
 @coro
-async def node_list(config_path: Path | None):
+async def node_list():
     """List registered node types with their display names and descriptions.
 
     For full per-node metadata (version, parameter schema), use `node info <name>`.
     """
-    engine = await _build_engine(config_path)
+    engine = await _build_engine()
     rows: list[tuple[str, str, str]] = []
     for name, cls in engine.node_registry.items():
         info = getattr(cls, "TYPE_INFO", None)
@@ -319,11 +285,10 @@ async def node_list(config_path: Path | None):
 
 @node.command("info")
 @click.argument("name")
-@config_option
 @coro
-async def node_info(name: str, config_path: Path | None):
+async def node_info(name: str):
     """Show detailed info about a node type."""
-    engine = await _build_engine(config_path)
+    engine = await _build_engine()
     cls = engine.node_registry.get(name)
     if cls is None:
         raise click.ClickException(f"Unknown node type: {name}")
@@ -350,13 +315,10 @@ async def node_info(name: str, config_path: Path | None):
     is_flag=True,
     help="Emit full Pydantic JSON schemas with $defs/$ref instead of the compact x-value-type form.",
 )
-@config_option
 @coro
-async def node_check(
-    name: str, params_arg: str, expanded: bool, config_path: Path | None
-):
+async def node_check(name: str, params_arg: str, expanded: bool):
     """Validate a node and print its input and output schemas."""
-    engine = await _build_engine(config_path)
+    engine = await _build_engine()
     params = _load_input(params_arg)
     instance = engine.create_node(name, id="check", params=params)
     ctx = ValidationContext(
@@ -390,17 +352,15 @@ async def node_check(
     default=Path("./local"),
     help="Base directory for the LocalContext run files.",
 )
-@config_option
 @coro
 async def node_run(
     name: str,
     params_arg: str,
     input_arg: str,
     base_dir: Path,
-    config_path: Path | None,
 ):
     """Run a single node. PARAMS and INPUT are JSON, @file.json, or - for stdin."""
-    engine = await _build_engine(config_path)
+    engine = await _build_engine()
     params = _load_input(params_arg)
     raw_input = _load_input(input_arg)
     instance = engine.create_node(name, id=name, params=params)
@@ -525,11 +485,10 @@ def _parse_handle(spec: str) -> tuple[str, str]:
     is_flag=True,
     help="Emit full Pydantic JSON schemas with $defs/$ref instead of the compact x-value-type form.",
 )
-@config_option
 @coro
-async def workflow_check(path: Path, expanded: bool, config_path: Path | None):
+async def workflow_check(path: Path, expanded: bool):
     """Validate a workflow and print its input/output schemas."""
-    engine = await _build_engine(config_path)
+    engine = await _build_engine()
     wf = _load_workflow(path)
     validated = await _validate_or_die(engine, wf)
     if expanded:
@@ -556,16 +515,14 @@ async def workflow_check(path: Path, expanded: bool, config_path: Path | None):
     default=Path("./local"),
     help="Base directory for the LocalContext run files.",
 )
-@config_option
 @coro
 async def workflow_run(
     path: Path,
     input_arg: str,
     base_dir: Path,
-    config_path: Path | None,
 ):
     """Run a workflow. INPUT is JSON, @file.json, or - for stdin."""
-    engine = await _build_engine(config_path)
+    engine = await _build_engine()
     wf = _load_workflow(path)
     input_data = _load_input(input_arg)
     context = LocalContext(base_dir=str(base_dir))
@@ -576,13 +533,12 @@ async def workflow_run(
 @workflow.command("describe")
 @click.argument("path", type=click.Path(exists=True, dir_okay=False, path_type=Path))
 @click.option("--json", "as_json", is_flag=True, help="Emit machine-readable JSON.")
-@config_option
 @coro
-async def workflow_describe(path: Path, as_json: bool, config_path: Path | None):
+async def workflow_describe(path: Path, as_json: bool):
     """Print a structured summary of the workflow without executing it."""
     import networkx as nx
 
-    engine = await _build_engine(config_path)
+    engine = await _build_engine()
     wf = _load_workflow(path)
     validated = await _validate_or_die(engine, wf)
 
@@ -668,17 +624,15 @@ def workflow_edit():
 @click.argument("name")
 @click.argument("node_id", metavar="ID")
 @click.argument("params_arg", metavar="PARAMS", default="{}")
-@config_option
 @coro
 async def edit_add_node(
     path: Path,
     name: str,
     node_id: str,
     params_arg: str,
-    config_path: Path | None,
 ):
     """Append a new node to inner_nodes."""
-    engine = await _build_engine(config_path)
+    engine = await _build_engine()
     wf = _load_workflow(path)
     if node_id in wf.nodes_by_id:
         raise click.ClickException(f"Node id {node_id!r} already exists in workflow.")
@@ -703,20 +657,18 @@ async def edit_add_node(
 @click.argument("path", type=click.Path(exists=True, dir_okay=False, path_type=Path))
 @click.argument("node_id", metavar="ID")
 @click.argument("params_arg", metavar="PARAMS")
-@config_option
 @coro
 async def edit_update_node(
     path: Path,
     node_id: str,
     params_arg: str,
-    config_path: Path | None,
 ):
     """Replace the params of an existing node (preserving its type and id).
 
     Use this to grow/shrink the input or output node's `fields`, or to retune
     the params of an inner node without removing and re-adding it.
     """
-    engine = await _build_engine(config_path)
+    engine = await _build_engine()
     wf = _load_workflow(path)
     if node_id not in wf.nodes_by_id:
         raise click.ClickException(f"Node id {node_id!r} not found.")
@@ -769,13 +721,10 @@ async def _apply_fields_change(
 @click.argument("path", type=click.Path(exists=True, dir_okay=False, path_type=Path))
 @click.argument("handle")
 @click.argument("schema_arg", metavar="SCHEMA")
-@config_option
 @coro
-async def edit_add_field(
-    path: Path, handle: str, schema_arg: str, config_path: Path | None
-):
+async def edit_add_field(path: Path, handle: str, schema_arg: str):
     """Add a single field to an input/output node. HANDLE is `nodeId.fieldName`."""
-    engine = await _build_engine(config_path)
+    engine = await _build_engine()
     wf = _load_workflow(path)
     node_id, field_name = _parse_handle(handle)
     if node_id not in wf.nodes_by_id:
@@ -799,13 +748,10 @@ async def edit_add_field(
 @click.argument("path", type=click.Path(exists=True, dir_okay=False, path_type=Path))
 @click.argument("handle")
 @click.argument("schema_arg", metavar="SCHEMA")
-@config_option
 @coro
-async def edit_update_field(
-    path: Path, handle: str, schema_arg: str, config_path: Path | None
-):
+async def edit_update_field(path: Path, handle: str, schema_arg: str):
     """Replace the schema of an existing field. HANDLE is `nodeId.fieldName`."""
-    engine = await _build_engine(config_path)
+    engine = await _build_engine()
     wf = _load_workflow(path)
     node_id, field_name = _parse_handle(handle)
     if node_id not in wf.nodes_by_id:
@@ -831,14 +777,13 @@ async def edit_update_field(
 @workflow_edit.command("remove-field")
 @click.argument("path", type=click.Path(exists=True, dir_okay=False, path_type=Path))
 @click.argument("handle")
-@config_option
 @coro
-async def edit_remove_field(path: Path, handle: str, config_path: Path | None):
+async def edit_remove_field(path: Path, handle: str):
     """Remove a field from an input/output node. HANDLE is `nodeId.fieldName`.
 
     Also drops any edges referencing the removed field.
     """
-    engine = await _build_engine(config_path)
+    engine = await _build_engine()
     wf = _load_workflow(path)
     node_id, field_name = _parse_handle(handle)
     if node_id not in wf.nodes_by_id:
@@ -871,11 +816,10 @@ async def edit_remove_field(path: Path, handle: str, config_path: Path | None):
 @workflow_edit.command("remove-node")
 @click.argument("path", type=click.Path(exists=True, dir_okay=False, path_type=Path))
 @click.argument("node_id", metavar="ID")
-@config_option
 @coro
-async def edit_remove_node(path: Path, node_id: str, config_path: Path | None):
+async def edit_remove_node(path: Path, node_id: str):
     """Remove an inner node and any edges that touch it."""
-    engine = await _build_engine(config_path)
+    engine = await _build_engine()
     wf = _load_workflow(path)
     if node_id == wf.input_node.id or node_id == wf.output_node.id:
         raise click.ClickException(
@@ -898,9 +842,8 @@ async def edit_remove_node(path: Path, node_id: str, config_path: Path | None):
 @click.argument("path", type=click.Path(exists=True, dir_okay=False, path_type=Path))
 @click.argument("source")
 @click.argument("target")
-@config_option
 @coro
-async def edit_add_edge(path: Path, source: str, target: str, config_path: Path | None):
+async def edit_add_edge(path: Path, source: str, target: str):
     """Add an edge SOURCE -> TARGET.
 
     SOURCE is `nodeId.handle` and may use a dotted path to address a nested
@@ -908,7 +851,7 @@ async def edit_add_edge(path: Path, source: str, target: str, config_path: Path 
     must be a single segment — the engine doesn't support writes into nested
     target fields.
     """
-    engine = await _build_engine(config_path)
+    engine = await _build_engine()
     wf = _load_workflow(path)
     src_id, src_key = _parse_handle(source)
     tgt_id, tgt_key = _parse_handle(target)
@@ -936,13 +879,10 @@ async def edit_add_edge(path: Path, source: str, target: str, config_path: Path 
 @click.argument("path", type=click.Path(exists=True, dir_okay=False, path_type=Path))
 @click.argument("source")
 @click.argument("target")
-@config_option
 @coro
-async def edit_remove_edge(
-    path: Path, source: str, target: str, config_path: Path | None
-):
+async def edit_remove_edge(path: Path, source: str, target: str):
     """Remove the edge SOURCE -> TARGET. SOURCE may use a dotted nested path."""
-    engine = await _build_engine(config_path)
+    engine = await _build_engine()
     wf = _load_workflow(path)
     src_id, src_key = _parse_handle(source)
     tgt_id, tgt_key = _parse_handle(target)
@@ -971,16 +911,15 @@ async def edit_remove_edge(
 @workflow_edit.command("possible-edges")
 @click.argument("path", type=click.Path(exists=True, dir_okay=False, path_type=Path))
 @click.argument("handle")
-@config_option
 @coro
-async def edit_possible_edges(path: Path, handle: str, config_path: Path | None):
+async def edit_possible_edges(path: Path, handle: str):
     """For HANDLE (nodeId.handle), list compatible counterparts.
 
     If the handle is a node output, lists target inputs it can connect to.
     If it's an input, lists source outputs that can connect to it.
     Already-wired inputs are excluded (each input takes one source).
     """
-    engine = await _build_engine(config_path)
+    engine = await _build_engine()
     wf = _load_workflow(path)
     validated = await _validate_or_die(engine, wf)
 
@@ -1052,6 +991,72 @@ async def edit_possible_edges(path: Path, handle: str, config_path: Path | None)
 
     for m in matches:
         click.echo(m)
+
+
+# ---------- verify ----------
+
+WORKFLOW_SUFFIXES: tuple[str, ...] = (".json", ".yaml", ".yml")
+
+
+def _collect_workflow_files(paths: tuple[Path, ...]) -> list[Path]:
+    """Expand PATHS into a de-duplicated list of candidate workflow files.
+
+    A file is taken as-is; a directory is searched recursively for files with a
+    workflow suffix. Order is preserved, with duplicates (by resolved path)
+    dropped.
+    """
+    collected: list[Path] = []
+    for p in paths:
+        if p.is_dir():
+            for suffix in WORKFLOW_SUFFIXES:
+                collected.extend(sorted(p.rglob(f"*{suffix}")))
+        else:
+            collected.append(p)
+    seen: set[Path] = set()
+    result: list[Path] = []
+    for p in collected:
+        resolved = p.resolve()
+        if resolved not in seen:
+            seen.add(resolved)
+            result.append(p)
+    return result
+
+
+@cli.command("verify")
+@click.argument(
+    "paths",
+    nargs=-1,
+    required=True,
+    type=click.Path(exists=True, path_type=Path),
+)
+@coro
+async def verify_cmd(paths: tuple[Path, ...]):
+    """Re-typecheck workflows against the current engine.yaml node map.
+
+    Each PATH is a workflow file or a directory (searched recursively for
+    *.json / *.yaml / *.yml workflows). Use this after editing engine.yaml — a
+    name remapped to a new distribution or version may no longer satisfy the
+    signatures the workflows rely on. Reports pass/fail per workflow and exits
+    non-zero if any fail.
+    """
+    engine = await _build_engine()
+    targets = _collect_workflow_files(paths)
+    if not targets:
+        raise click.ClickException("No workflow files found in the given paths.")
+    failures = 0
+    for wf_path in targets:
+        try:
+            wf = _load_workflow(wf_path)
+            await engine.validate(wf)
+        except Exception as e:
+            failures += 1
+            click.echo(f"FAIL  {wf_path}: {e}")
+        else:
+            click.echo(f"ok    {wf_path}")
+    total = len(targets)
+    click.echo(f"\n{total - failures}/{total} workflows valid.")
+    if failures:
+        raise SystemExit(1)
 
 
 def main():

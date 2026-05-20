@@ -11,13 +11,11 @@ import workflow_engine.nodes  # noqa: F401  — ensure all value types register 
 from workflow_engine.cli.main import cli
 
 # Commands that load a WorkflowEngine (schema, node, workflow except ``init``) call
-# ``_build_engine``. When ``--config`` is omitted, the CLI loads whatever exists at
-# the user's default config path (``platformdirs.user_config_dir("wengine")`` —
-# typically ``~/.config/wengine/config.yaml`` on Linux). That makes tests depend on
-# machine-local YAML and extra packages (e.g. optional node plugins), so they would
-# pass on one developer machine and fail on CI or another laptop. **Never** exercise
-# those code paths without ``--config`` pointing at a checked-in fixture unless the
-# test is explicitly about the default path (see ``TestConfig.test_path_prints_*``).
+# ``_build_engine``, which discovers the engine project by walking up from the
+# process cwd to the nearest ``engine.yaml``. To keep that resolution reproducible
+# across machines and CI, the autouse :func:`engine_project` fixture runs every test
+# from a temp dir seeded with the minimal config below (built-in I/O + Sum) instead
+# of whatever ``engine.yaml`` happens to live on the developer's machine.
 CLI_TEST_CONFIG_PATH = (
     Path(__file__).resolve().parent / "fixtures" / "wengine_test_config.yaml"
 )
@@ -28,11 +26,19 @@ def runner() -> CliRunner:
     return CliRunner()
 
 
-@pytest.fixture
-def config_path() -> Path:
-    """Minimal wengine config (built-in I/O + Sum only)."""
-    assert CLI_TEST_CONFIG_PATH.is_file(), CLI_TEST_CONFIG_PATH
-    return CLI_TEST_CONFIG_PATH
+@pytest.fixture(autouse=True)
+def engine_project(tmp_path_factory, monkeypatch) -> Path:
+    """Run each test from a temp dir holding the minimal test ``engine.yaml``.
+
+    The CLI finds its engine project by walking up from the process cwd, so
+    chdir-ing into a seeded temp dir is how tests pin a stable node map. Tests
+    that need a project-free cwd (``TestInit``, ``TestInstall``) override this by
+    entering ``runner.isolated_filesystem()``, which chdirs elsewhere.
+    """
+    project_dir = tmp_path_factory.mktemp("engine_project")
+    (project_dir / "engine.yaml").write_text(CLI_TEST_CONFIG_PATH.read_text())
+    monkeypatch.chdir(project_dir)
+    return project_dir
 
 
 @pytest.fixture
@@ -41,13 +47,7 @@ def base_dir(tmp_path: Path) -> Path:
 
 
 def _run(runner: CliRunner, *args: str) -> str:
-    """Invoke the CLI with exactly these argv fragments; must exit 0.
-
-    Use this only when the command never loads ``WorkflowEngine.from_config``
-    (e.g. ``config path``, ``workflow init``) or when passing an explicit ``--config``
-    in *args*. Do not use for ``schema`` / ``node`` / ``workflow`` (non-init) without
-    ``--config`` — use :func:`run_with_default_config` instead (see module docstring).
-    """
+    """Invoke the CLI with exactly these argv fragments; must exit 0."""
     result = runner.invoke(cli, list(args), catch_exceptions=False)
     assert result.exit_code == 0, f"args={args}\n{result.output}"
     return result.output
@@ -63,50 +63,19 @@ def invoke_cli(runner: CliRunner, *args: str, catch_exceptions: bool = True):
 
 
 def run_with_default_config(runner: CliRunner, *args: str) -> str:
-    """Successful CLI run with the repo's test config.
+    """Successful CLI run against the seeded test engine project.
 
-    Appends ``--config`` + :data:`CLI_TEST_CONFIG_PATH` so the engine never reads the
-    developer's default config file (skipping it is not optional for any command that
-    builds an engine — see module docstring).
+    The node map comes from the autouse :func:`engine_project` fixture, so this is
+    just :func:`_run`; the name is kept to flag that the command builds an engine.
     """
-    return _run(runner, *args, "--config", str(CLI_TEST_CONFIG_PATH))
+    return _run(runner, *args)
 
 
 def invoke_with_default_config(
     runner: CliRunner, *args: str, catch_exceptions: bool = True
 ):
-    """Like :func:`invoke_cli` but always appends the test ``--config``.
-
-    Same rationale as :func:`run_with_default_config`: omitting ``--config`` would let
-    ``_build_engine`` load ``~/.config/wengine/config.yaml`` (or equivalent), so tests
-    would depend on the environment.
-    """
-    return invoke_cli(
-        runner,
-        *args,
-        "--config",
-        str(CLI_TEST_CONFIG_PATH),
-        catch_exceptions=catch_exceptions,
-    )
-
-
-# ---------- config ----------
-
-
-class TestConfig:
-    def test_path_prints_default_location(self, runner: CliRunner):
-        # Only prints the path — does not load config or build an engine; no --config.
-        out = _run(runner, "config", "path")
-        assert out.strip().endswith("config.yaml")
-
-    def test_show_prints_file_contents(self, runner: CliRunner, config_path: Path):
-        out = _run(runner, "config", "show", "--config", str(config_path))
-        assert "aceteam-workflow-engine:Sum" in out
-
-    def test_show_errors_when_missing(self, runner: CliRunner, tmp_path: Path):
-        missing = tmp_path / "nope.yaml"
-        result = runner.invoke(cli, ["config", "show", "--config", str(missing)])
-        assert result.exit_code != 0
+    """Like :func:`invoke_cli`, against the seeded test engine project."""
+    return invoke_cli(runner, *args, catch_exceptions=catch_exceptions)
 
 
 # ---------- schema ----------
@@ -180,12 +149,13 @@ class TestSchema:
         assert "Traceback" not in result.output
         assert "Invalid JSON" in result.output
 
-    def test_check_accepts_config_flag(self, runner: CliRunner):
-        """Same as other schema checks: default test config via ``run_with_default_config``."""
-        out = run_with_default_config(
-            runner, "schema", "check", '{"x-value-type": "JSONValue"}'
-        )
-        assert json.loads(out)["title"] == "JSONValue"
+    def test_errors_when_no_engine_yaml(self, runner: CliRunner):
+        """A command that builds an engine fails clearly when no engine.yaml is found."""
+        with runner.isolated_filesystem():
+            result = invoke_cli(runner, "schema", "list")
+        assert result.exit_code != 0
+        assert "No engine.yaml found" in result.output
+        assert "wengine init" in result.output
 
 
 # ---------- node ----------
@@ -1051,3 +1021,42 @@ class TestInstall:
             assert "Installed acme-pkg" in result.output
             nodes = yaml.safe_load(Path("engine.yaml").read_text())["nodes"]
             assert nodes["Foo"] == "acme-pkg:Foo"
+
+
+# ---------- verify ----------
+
+_BLANK_WORKFLOW = {
+    "input_node": {"type": "Input", "id": "input", "params": {"fields": {}}},
+    "output_node": {"type": "Output", "id": "output", "params": {"fields": {}}},
+    "inner_nodes": [],
+    "edges": [],
+}
+
+
+class TestVerify:
+    def test_passing_workflow(self, runner: CliRunner, engine_project: Path):
+        wf = engine_project / "wf.json"
+        wf.write_text(json.dumps(_BLANK_WORKFLOW))
+        out = run_with_default_config(runner, "verify", str(wf))
+        assert "ok" in out
+        assert "1/1 workflows valid." in out
+
+    def test_reports_failure_and_exits_nonzero(
+        self, runner: CliRunner, engine_project: Path
+    ):
+        bad = dict(_BLANK_WORKFLOW)
+        bad["inner_nodes"] = [{"type": "Nonexistent", "id": "x", "params": {}}]
+        wf = engine_project / "bad.json"
+        wf.write_text(json.dumps(bad))
+        result = invoke_cli(runner, "verify", str(wf))
+        assert result.exit_code != 0
+        assert "FAIL" in result.output
+        assert "0/1 workflows valid." in result.output
+
+    def test_scans_directory(self, runner: CliRunner, engine_project: Path):
+        wf_dir = engine_project / "workflows"
+        wf_dir.mkdir()
+        (wf_dir / "a.json").write_text(json.dumps(_BLANK_WORKFLOW))
+        (wf_dir / "b.json").write_text(json.dumps(_BLANK_WORKFLOW))
+        out = run_with_default_config(runner, "verify", str(wf_dir))
+        assert "2/2 workflows valid." in out

@@ -580,8 +580,16 @@ thing to add; for now a workflow is interpreted relative to one engine, and
    are errors), import-and-pull the class lazily on first use, fatal error if the
    distribution is missing. Builds on the existing registry in
    `src/workflow_engine/core/node.py`.
-7. **`wengine nodes list`, `wengine verify`** — follow-ups (`nodes list` is also how
-   the operator publishes the available-node set to workflow authors).
+7. **`wengine nodes list`, `wengine verify`, walk-up discovery** — follow-ups
+   (`nodes list` is also how the operator publishes the available-node set to
+   workflow authors). This step also retires the prototype CLI's machine-global
+   config: every engine-building command (`schema`, `node`, the read/run
+   `workflow` subcommands, `verify`) discovers the project by **walking up from
+   the cwd to the nearest `engine.yaml`** — no `platformdirs` default file, no
+   `--config` override. Not finding one is a hard error pointing at `wengine
+   init` (there is no implicit builtin fallback — see "Resolution and loading").
+   `wengine verify` re-typechecks a set of workflow files (or a directory tree)
+   against the resolved map and exits non-zero on the first signature break.
 
 ---
 
@@ -622,6 +630,12 @@ Chosen over alternatives; the body above has the reasoning.
 - **`nodes:` entry kinds** — explicit (`Name: dist:entryPoint`; enables `--as` /
   overriding a builtin), `"*"` glob (the normal case; stacks), `"prefix:*"` glob (the
   collision escape hatch).
+- **One discovery path: walk up to `engine.yaml`** — engine-building commands find
+  the project by walking up from the cwd to the nearest `engine.yaml`, like `git` /
+  `uv`. No machine-global config file (`platformdirs`) and no `--config` override —
+  those were prototype-CLI scaffolding and are removed. A project that can't be found
+  is a hard error pointing at `wengine init`, consistent with "no implicit builtin
+  fallback" at load time.
 
 ## Open questions
 

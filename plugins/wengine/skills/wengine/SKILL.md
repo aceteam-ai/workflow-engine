@@ -25,27 +25,28 @@ The standard agent loop is:
 
 ## Setup
 
-`wengine` needs a config file that lists the node types it can resolve. The config is YAML and lives at the path printed by `wengine config path` (typically `~/.config/wengine/config.yaml`). Override per-invocation with `--config <path>`.
+`wengine` operates on an engine project: a directory containing an `engine.yaml` whose `nodes:` map lists the node types it can resolve. Every command that builds an engine finds that file by walking up from the current directory (like `git` or `uv`), so run `wengine` from inside the project. There is no global config file and no `--config` flag.
 
 ```sh
-# See the default location
-wengine config path
+# Create an engine.yaml here (seeds one entry per built-in node)
+wengine init
 
-# View the active config
-wengine config show
+# Add a third-party node-source package and map its nodes
+wengine install <package>
 ```
 
-A minimal config looks like:
+A minimal `engine.yaml` looks like:
 
 ```yaml
+schema_version: 1
 nodes:
-  Input: workflow_engine.core.io.InputNode
-  Output: workflow_engine.core.io.OutputNode
-  Sum: workflow_engine.nodes.arithmetic.SumNode
-  # ... add more node imports here, mapping a short alias to a fully-qualified Python class
+  Input: aceteam-workflow-engine:Input
+  Output: aceteam-workflow-engine:Output
+  Sum: aceteam-workflow-engine:Sum
+  # ... each entry maps a recognized name to "<distribution>:<entryPointName>"
 ```
 
-If no config is found, `wengine` falls back to the in-process default registry (mostly just `Input`/`Output`), which is rarely useful — most real work needs a config.
+If no `engine.yaml` is found on the walk up, engine-building commands fail with an error pointing at `wengine init` — there is no implicit fallback registry, so create or `cd` into a project first.
 
 ## Value types and schemas
 
@@ -178,7 +179,7 @@ wengine workflow run   my-flow.json '<input>'     # execute
 
 ## Common gotchas
 
-- **Empty registry surprise**: if `wengine node list` only shows `Input`/`Output`, you forgot a `--config` (or the default config doesn't include the nodes you need). Set the config first.
+- **Empty registry surprise**: if `wengine node list` is missing nodes you need, your `engine.yaml` doesn't map them — `wengine init` seeds the built-ins, and `wengine install <package>` adds third-party node sources. If a command errors with "No engine.yaml found", you're not inside an engine project; run `wengine init` or `cd` into one.
 - **`required` on object schemas**: leaving fields out of `required` makes them default to `null`, which fails validation for non-nullable Values.
 - **Edge handle dotted notation**: `add-edge`, `remove-edge`, `possible-edges`, and field commands all use `nodeId.handle`. Field paths can be nested at the engine level, but the CLI's `add-edge` only supports single-segment keys; for nested source paths edit JSON directly.
 - **Run outputs are on disk**: `node run` and `workflow run` write to `./local/<uuid>/` by default. The `<uuid>` is regenerated each run — use `--base-dir` to anchor a stable location, or chain by feeding `@./local/<known-id>/output/...` as the next input.
