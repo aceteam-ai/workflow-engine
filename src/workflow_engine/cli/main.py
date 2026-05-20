@@ -17,6 +17,7 @@ import platformdirs
 import yaml
 
 from workflow_engine import __version__
+from workflow_engine.cli.engine_init import EngineYamlAlreadyExists, init_engine_project
 from workflow_engine.contexts.local import LocalContext
 from workflow_engine.core.config import WorkflowEngineConfig
 from workflow_engine.core.context import ValidationContext
@@ -148,6 +149,19 @@ config_option = click.option(
 @click.version_option(__version__, prog_name="wengine")
 def cli():
     """Workflow Engine CLI."""
+
+
+# ---------- init ----------
+
+
+@cli.command("init")
+def init_cmd():
+    """Create an engine.yaml (and, standalone, a pyproject.toml) here."""
+    try:
+        engine_yaml = init_engine_project(Path.cwd())
+    except EngineYamlAlreadyExists as e:
+        raise click.ClickException(str(e)) from e
+    click.echo(f"Created {engine_yaml}")
 
 
 # ---------- config ----------

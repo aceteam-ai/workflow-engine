@@ -57,7 +57,7 @@ in the sections below):
 ```sh
 wengine init                                                                    # creates engine.yaml + a pyproject.toml to install into
 wengine install acme-scrapers --only HttpFetch --only HtmlExtract --only Screenshot
-wengine install github:acme/iteration@v2.0.0 --only ForEachV2 --as ForEach       # override the builtin ForEach with a git-hosted node
+wengine install github:acme/iteration@v2.0.0 --only ForEachV2 --as ForEach --force  # override the builtin ForEach (an explicit entry → needs --force)
 wengine install ./vendor/internal-nodes                                          # mount every node it exposes, bare
 wengine install legacy-nodes --prefix vendor/legacy                              # its node names collide with builtins → namespace the whole bundle
 ```
@@ -68,9 +68,12 @@ Resulting `engine.yaml` (the operator's name map):
 schema_version: 1
 
 nodes:
+  # one explicit entry per builtin, seeded by `wengine init` (elided here):
+  #   Add: aceteam-workflow-engine:Add
+  #   ForEach: aceteam-workflow-engine:ForEach   # (overridden below)
+  #   ... etc
   "*":
-    - aceteam-workflow-engine # seeded by `wengine init`
-    - internal-nodes # `wengine install ./vendor/internal-nodes`
+    - internal-nodes # `wengine install ./vendor/internal-nodes` → bulk install appends to the catch-all
   HttpFetch: acme-scrapers:HttpFetch # the three `--only` installs → explicit entries
   HtmlExtract: acme-scrapers:HtmlExtract
   Screenshot: acme-scrapers:Screenshot
@@ -261,7 +264,7 @@ schema_version: 1
 
 nodes: # recognized name → entry-point ref
   "*": # glob: mount every node these distributions expose, under its bare name
-    - aceteam-workflow-engine # this is what `wengine init` seeds
+    - aceteam-workflow-engine # builtins, written here as a hand-authored catch-all (`wengine init` instead emits one explicit entry per builtin)
     - acme-scrapers # stacked on; fine as long as their node names don't collide
   ForEach: acme-iteration:ForEachV2 # explicit: shadow whatever `ForEach` a glob would supply, with the node `acme-iteration` exposes under entry-point name `ForEachV2`
   "vendor/legacy:*": legacy-nodes # prefixed glob: only needed to keep a colliding bundle around — mounts its nodes under vendor/legacy:<Name>
@@ -292,12 +295,12 @@ Glob keys come in two forms, and the plain one is the norm:
   situation: you want to keep a bundle wholesale despite a name clash on the `"*"`
   list and don't want to enumerate explicit entries. It is not the default.
 
-`wengine init` writes `nodes: { "*": [aceteam-workflow-engine] }`. To run a curated
-subset of builtins, replace that with explicit entries for the nodes you want —
-there is no `disable:` list (an explicit entry can only _add_ or _shadow_, not
-subtract; the way you subtract is by not putting the distribution on the `"*"`
-list). `wengine init --explicit` expands the catch-all into one explicit entry per
-builtin so you can delete lines.
+`wengine init` writes one explicit entry per builtin (`Name: aceteam-workflow-engine:Name`),
+not a `"*"` glob — the seeded map states exactly what is mounted, and curating a
+subset is then deleting lines. There is no `disable:` list (an explicit entry can
+only _add_ or _shadow_, not subtract; you subtract by deleting the entry). The
+`"*"` glob form stays valid for anyone who prefers to hand-write a catch-all over
+a distribution, but it is not what `init` emits.
 
 ### Node-source package: `[project.entry-points."aceteam_workflow_engine.nodes"]`
 
@@ -381,7 +384,7 @@ and list `nodeName = "module:NodeClass [extras]"` for each node. Notes:
 ```sh
 wengine install <target> [--only <NodeName> ...] [--as <name>] [--prefix <p>] [--force]
 wengine install            # no target: sync the environment to uv.lock + re-apply the name map
-wengine init [--explicit]  # create engine.yaml (and, standalone, pyproject.toml)
+wengine init               # create engine.yaml (and, standalone, pyproject.toml)
 ```
 
 `<target>` is anything `uv add` accepts, plus two shorthands:
@@ -398,7 +401,7 @@ wengine init [--explicit]  # create engine.yaml (and, standalone, pyproject.toml
 | ------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | _(none)_            | Append the distribution to the `"*"` list — mount all its nodes bare, and request the union of their declared extras. If a bare name would collide, the install errors and points you at `--only` / `--prefix`. |
 | `--only <NodeName>` | Write an explicit entry for just that node instead of touching the `"*"` list, and request only that node's declared extras (repeatable).                                                                       |
-| `--as <name>`       | The recognized name an `--only` node maps to (only valid with a single `--only`). Defaults to the entry-point name. Use it to rename-on-install (e.g. `--only ForEachV2 --as ForEach` to override the builtin). |
+| `--as <name>`       | The recognized name an `--only` node maps to (only valid with a single `--only`). Defaults to the entry-point name. Use it to rename-on-install (e.g. `--only ForEachV2 --as ForEach --force` to override the builtin — since `init` seeds builtins as explicit entries, this is an explicit-vs-explicit clash and needs `--force`). |
 | `--prefix <p>`      | Write a `"<p>:*"` glob instead of touching the `"*"` list — mount the whole bundle under `<p>:<Name>` (with the union of its nodes' extras). The collision escape hatch.                                        |
 | `--force`           | Overwrite an existing explicit `nodes:` entry that points at a different distribution. Without it, such a clash is an error.                                                                                    |
 
@@ -437,9 +440,11 @@ engine project:
    installed (every node, for a bulk / `--prefix` install; just the `--only` ones
    otherwise).
 3. **Check the merged map.** Combine the proposed mappings with the existing
-   `engine.yaml`. A new explicit entry that shadows a glob (e.g. overriding a
-   builtin) is fine. A new explicit entry that collides with an existing _explicit_
-   entry for a different distribution is an error unless `--force`. A bare name that
+   `engine.yaml`. A new explicit entry that shadows a glob is fine. A new explicit
+   entry that collides with an existing _explicit_ entry for a different distribution
+   is an error unless `--force` — this includes overriding a builtin, since `init`
+   seeds builtins as explicit entries (so `--as ForEach` over the seeded `ForEach`
+   needs `--force`). A bare name that
    two glob-mounted distributions would both supply, with no explicit entry to
    disambiguate, is a hard error — abort before touching anything. (This is why
    step 2 reads all the relevant entry-point tables before installing.)
@@ -450,9 +455,10 @@ engine project:
 5. Apply the `engine.yaml` change from step 2 (append to the `"*"` list, or write
    the explicit / `prefix:*` entries).
 
-`wengine init` creates `engine.yaml` with `nodes: { "*": [aceteam-workflow-engine] }`
-(and, in standalone mode, a minimal `pyproject.toml` declaring `aceteam-workflow-engine`
-as a dependency, then runs `uv sync`). `wengine install` with no target runs `uv sync`
+`wengine init` creates `engine.yaml` with one explicit entry per builtin (and, in
+standalone mode, a minimal `pyproject.toml` declaring `aceteam-workflow-engine`
+as a dependency, then runs `uv add aceteam-workflow-engine` to resolve and lock
+it). `wengine install` with no target runs `uv sync`
 and re-derives the registry from `engine.yaml` — the "reconstruct the environment
 from the lockfile" operation, for a fresh checkout or CI.
 
@@ -495,8 +501,8 @@ engine.yaml.nodes[<name>]   →   error
 ```
 
 There is no implicit builtin fallback — if `aceteam-workflow-engine`'s nodes are
-wanted, they are in `engine.yaml` (on the `"*"` list that `wengine init` seeds, or
-as explicit entries). When more than one `nodes:` entry could supply a name,
+wanted, they are in `engine.yaml` (the explicit entries `wengine init` seeds, or
+a hand-authored `"*"` list). When more than one `nodes:` entry could supply a name,
 precedence is **explicit entry > glob entry**; two glob-mounted distributions
 supplying the same bare name is the install-time error described above (and
 `prefix:*` mounts live in their own `prefix:`-keyed space, so they never collide
@@ -568,7 +574,7 @@ thing to add; for now a workflow is interpreted relative to one engine, and
    two-phase install (collect entry-point tables of all affected distributions →
    merge with `engine.yaml` → reject unresolved bare-name collisions among
    glob-mounted distributions → `uv add` → write `nodes:` entries). `wengine init`
-   seeds `nodes: { "*": [aceteam-workflow-engine] }`.
+   seeds one explicit entry per builtin.
 6. **Loader integration** — populate the process node registry from the project's
    `nodes:` map (precedence: explicit entry > glob; bare-name collisions among globs
    are errors), import-and-pull the class lazily on first use, fatal error if the
@@ -592,7 +598,7 @@ Chosen over alternatives; the body above has the reasoning.
   line equal to the union of its still-mapped nodes' extras. Recommended: one extra
   per node, named after it.
 - **Builtins are not special** — `aceteam-workflow-engine`'s nodes are entry points
-  like any others; `wengine init` just seeds the `"*"` glob that mounts them.
+  like any others; `wengine init` seeds one explicit entry per builtin that mounts them.
 - **Two modes** — embedded (operator's existing `uv` project _is_ the engine env) and
   standalone (`wengine init` creates one beside `engine.yaml`).
 - **`uv.lock` committed, environment not** — `uv sync` (or `wengine install` with no
