@@ -18,6 +18,7 @@ import yaml
 from workflow_engine import __version__
 from workflow_engine.cli.engine_init import EngineYamlAlreadyExists, init_engine_project
 from workflow_engine.cli.install import InstallError, install
+from workflow_engine.cli.uninstall import UninstallError, uninstall
 from workflow_engine.cli.uv_project import (
     EngineYamlNotFound,
     UvProject,
@@ -196,6 +197,40 @@ def install_cmd(
     except (InstallError, EngineYamlNotFound) as e:
         raise click.ClickException(str(e)) from e
     click.echo(f"Installed {dist}")
+
+
+# ---------- uninstall ----------
+
+
+@cli.command("uninstall")
+@click.argument("name", required=False)
+@click.option(
+    "--dist",
+    "dist",
+    metavar="NAME",
+    help="Remove every entry for this distribution at once.",
+)
+def uninstall_cmd(name: str | None, dist: str | None):
+    """Remove a mapped node, or (with --dist) a whole distribution.
+
+    `wengine uninstall <NAME>` drops the explicit entry for NAME; the package
+    stays installed if other entries still use it (its extras are re-narrowed).
+    `wengine uninstall --dist <NAME>` removes every entry for a distribution and
+    uninstalls it.
+    """
+    try:
+        result = uninstall(name, dist=dist)
+    except (UninstallError, InstallError, EngineYamlNotFound) as e:
+        raise click.ClickException(str(e)) from e
+    if result.removed_distribution:
+        click.echo(f"Uninstalled {result.distribution}.")
+    elif name is not None:
+        click.echo(
+            f"Unmapped {name} (left {result.distribution} installed; "
+            f"other entries still use it)."
+        )
+    else:
+        click.echo(f"Updated mappings for {result.distribution}.")
 
 
 # ---------- schema ----------
