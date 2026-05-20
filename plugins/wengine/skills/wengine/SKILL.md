@@ -48,6 +48,14 @@ nodes:
 
 If no `engine.yaml` is found on the walk up, engine-building commands fail with an error pointing at `wengine init` — there is no implicit fallback registry, so create or `cd` into a project first.
 
+### Managing the available node set
+
+- `wengine install <target>` adds a node-source package (PyPI, `git+…`, `github:owner/repo`, or `./path`) and maps its nodes into `engine.yaml`. `--only <Node>` maps just one node, `--as <Name>` renames it, `--prefix <p>` namespaces a whole bundle. `wengine install` with no target runs `uv sync` to rebuild the environment from `uv.lock`.
+- `wengine uninstall <Node>` drops a node's mapping (and uninstalls the package if nothing else uses it); `--dist <name>` removes a whole distribution.
+- `wengine verify <path>...` re-typechecks workflows against the current `engine.yaml` — run it after changing the node map to catch workflows a remapped node no longer satisfies.
+
+See `docs/node-distribution.md` for the full model (the trust boundary, glob vs. explicit entries, extras).
+
 ## Value types and schemas
 
 The engine has a typed value system. Every workflow input, every node port, and every output has a `Value` type.
@@ -186,6 +194,6 @@ wengine workflow run   my-flow.json '<input>'     # execute
 
 ## Reference
 
-- Docs: `docs/cli.md` in the `aceteam-workflow-engine` repo.
+- Docs: `docs/cli.md` (command reference) and `docs/node-distribution.md` (the `engine.yaml` / node-source model) in the `aceteam-workflow-engine` repo.
 - Engine concepts: `CLAUDE.md` in the same repo (Workflow / Node / Edge / Value definitions).
 - All commands accept `--help` for full flag listings.

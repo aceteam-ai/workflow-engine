@@ -130,7 +130,7 @@ async def _build_engine() -> WorkflowEngine:
     nearest `engine.yaml` (the standard package-manager search). There is no
     implicit builtin fallback: if no `engine.yaml` is found, the available-node
     set is undefined, so this is a hard error pointing the operator at
-    `wengine init` (see docs/plans/node-distribution.md).
+    `wengine init` (see docs/node-distribution.md).
     """
     engine_yaml = find_engine_yaml(Path.cwd())
     if engine_yaml is None:

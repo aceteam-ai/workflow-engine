@@ -162,7 +162,7 @@ class NodesConfig(ImmutableRootModel[Mapping[str, str | Sequence[str]]]):
     """
     The `nodes:` block of `engine.yaml` — recognized name → entry-point ref.
 
-    Three key shapes (see docs/plans/node-distribution.md):
+    Three key shapes (see docs/node-distribution.md):
 
     - `"*"`: global glob. Value is one distribution name, or a list of them.
       Mounts every node each listed distribution exposes under its bare

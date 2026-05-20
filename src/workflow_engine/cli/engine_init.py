@@ -2,7 +2,7 @@
 
 `wengine init` writes an `engine.yaml` whose name map mounts the builtin nodes,
 and (in standalone mode) sets up the `uv` project that backs it. See
-docs/plans/node-distribution.md.
+docs/node-distribution.md.
 
 The filesystem effects (writing `engine.yaml`, the minimal `pyproject.toml`)
 are separated from the `uv` shell-out, which goes through `UvProject` / the

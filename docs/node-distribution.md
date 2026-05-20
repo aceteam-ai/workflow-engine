@@ -1,10 +1,8 @@
 # Distributed Node Sources
 
-**Status:** Planning
-
-This document describes a system for installing node implementations from arbitrary
+This document describes how node implementations are installed from arbitrary
 locations — published packages, git repositories, and local directories — and
-referencing them from workflows through an operator-controlled name map.
+referenced from workflows through an operator-controlled name map.
 
 The mechanism is deliberately boring: a node source is a normal Python package, it
 is installed with `uv`, and it advertises the nodes it exposes through standard
@@ -12,7 +10,8 @@ is installed with `uv`, and it advertises the nodes it exposes through standard
 (the same plugin pattern pytest, flake8, and spaCy use). `wengine` adds a thin
 layer on top: a name map (`engine.yaml`) the operator controls, and the commands
 that maintain it. The "Worked example" just below shows the whole thing end to end;
-the sections after that specify each piece.
+the sections after that specify each piece. The command surface is documented in
+[the CLI reference](cli.md).
 
 ---
 
@@ -35,7 +34,6 @@ the sections after that specify each piece.
   change that.
 - A second dependency manager. `wengine` drives `uv`; it does not resolve, lock, or
   install Python packages itself.
-- Fixing the many out-of-date docs in `docs/`. Out of scope.
 - A package index / discovery service. Sources are addressed by package name, URL,
   or path, not looked up in a registry.
 
@@ -123,11 +121,10 @@ wengine uninstall Screenshot
 
 Had the operator instead done `wengine install acme-scrapers` (bulk — all four nodes
 on the `"*"` list) and the package used a _shared_ `browser` extra for both
-`Screenshot` and `CrawlSite`, `wengine uninstall Screenshot` would have to either
-drop `acme-scrapers` from the `"*"` list and add explicit entries for the three
-nodes you keep, or leave the bundle whole — and it would keep `[browser]` because
-`CrawlSite` still needs it. Either way `wengine` works it out from the entry-point
-tables; the explicit-`--only` setup above just keeps each step a one-line change.
+`Screenshot` and `CrawlSite`, `wengine uninstall Screenshot` would leave the bundle
+on the `"*"` list and keep `[browser]` because `CrawlSite` still needs it. Either
+way `wengine` works it out from the entry-point tables; the explicit-`--only` setup
+above just keeps each step a one-line change.
 
 ---
 
@@ -153,13 +150,13 @@ names resolve into. Consequences that follow directly:
   snapshot). Such a snapshot would be the author handing the operator code to run.
   Bare-names-only in `workflow.json` _is_ the enforcement mechanism. (A workflow's
   set of required node names is therefore exactly the set of `type` values in it —
-  statically readable, no execution required; validate it against `wengine nodes
-list` on the target engine.)
+  statically readable, no execution required; validate it against `wengine node
+  list` on the target engine.)
 - **Builtins are not special.** Every node except `InputNode` / `OutputNode` is
   opt-in. `aceteam-workflow-engine`'s own nodes are advertised through the same entry-point
   mechanism as third-party ones, and a fresh `engine.yaml` produced by `wengine
-init` simply contains the glob that mounts them (see `engine.yaml` below). An
-  operator may curate that down to the subset they want.
+init` seeds one explicit entry per builtin (see `engine.yaml` below). An operator
+  may curate that down to the subset they want.
 
 Validation therefore has two phases at different trust levels:
 
@@ -216,8 +213,11 @@ same way `engine.yaml` is the readable record of "we offer that name."
 ### Project layout and discovery
 
 `wengine` discovers the engine project by walking up from the current directory
-until it finds an `engine.yaml` (the standard package-manager search). The `uv`
-project it operates on is found the same way `uv` finds it — the nearest
+until it finds an `engine.yaml` (the standard package-manager search, like `git` or
+`uv`). There is no machine-global config and no override flag: you run `wengine`
+from inside (or below) the project directory. If no `engine.yaml` is found, every
+command that builds an engine fails with an error pointing at `wengine init`. The
+`uv` project `wengine` operates on is found the same way `uv` finds it — the nearest
 `pyproject.toml`. In standalone mode (below) `wengine` places both the `engine.yaml`
 and the `pyproject.toml` it owns in the same directory.
 
@@ -343,7 +343,7 @@ and list `nodeName = "module:NodeClass [extras]"` for each node. Notes:
 
 - **The entry-point table is the curated surface.** A package may register more node
   classes than it lists (e.g. helper nodes); only the listed ones are
-  `wengine install`-able and visible to `wengine nodes list`. The table is readable
+  `wengine install`-able and visible to `wengine node list`. The table is readable
   from package metadata without importing the package, so discovery never executes
   provider code.
 - **Common dependencies are package dependencies; heavy/optional ones are tied to
@@ -383,7 +383,7 @@ and list `nodeName = "module:NodeClass [extras]"` for each node. Notes:
 
 ```sh
 wengine install <target> [--only <NodeName> ...] [--as <name>] [--prefix <p>]
-wengine install            # no target: sync the environment to uv.lock + re-apply the name map
+wengine install            # no target: sync the environment to uv.lock
 wengine init               # create engine.yaml (and, standalone, pyproject.toml)
 ```
 
@@ -421,46 +421,53 @@ wengine install ./local/path
 In short, `wengine install <target>` ≈ `uv add <target>` plus an `engine.yaml`
 edit — `wengine` is deliberately thin here. The non-trivial parts it adds: it
 expands the `github:` / `owner/repo` shorthands `uv add` doesn't understand; it
-reads the package's `aceteam_workflow_engine.nodes` entry-point table _before_ the `uv add`
-(to know what to write, and to run the merged-map collision check); and `--only` /
-`--as` / `--prefix` affect only the `engine.yaml` side, never the `uv add`. In full,
-what `wengine install <target>` does (operator-time, trusted), in the discovered
+reads the package's `aceteam_workflow_engine.nodes` entry-point table to know what
+to write and which extras to request; and `--only` / `--as` / `--prefix`
+affect only the `engine.yaml` side, never the `uv add`.
+
+What `wengine install <target>` does (operator-time, trusted), in the discovered
 engine project:
 
 1. Parse the target; expand the `github:` / `owner/repo` shorthands (resolving a ref
    to a commit and a tarball URL over HTTPS if needed).
-2. **Collect metadata first.** Determine the distribution name and read its
-   `[project.entry-points."aceteam_workflow_engine.nodes"]` table (from the sdist/wheel
-   metadata `uv` is about to install, or — for a git/path target — by building the
-   package's metadata, which `uv` does without running it). Compute the proposed
-   `engine.yaml` change: append to the `"*"` list (default), or the explicit /
-   `prefix:*` entries implied by `--only` / `--as` / `--prefix`. Compute the extras
-   to request: the union of the `[extras]` suffixes on the entry points being
-   installed (every node, for a bulk / `--prefix` install; just the `--only` ones
-   otherwise).
-3. **Check the merged map.** Combine the proposed mappings with the existing
-   `engine.yaml`. A new explicit entry that shadows a glob is fine. A new explicit
-   entry that collides with an existing _explicit_ entry for a different distribution
-   is an error — this includes overriding a builtin, since `init` seeds builtins as
-   explicit entries (so to map `--as ForEach` onto a new node you must first remove
-   the seeded `ForEach` entry from `engine.yaml`; `wengine` never overwrites a
-   mapping for you). A bare name that
-   two glob-mounted distributions would both supply, with no explicit entry to
-   disambiguate, is a hard error — abort before touching anything. (This is why
-   step 2 reads all the relevant entry-point tables before installing.)
-4. `uv add <expanded target>[<extras from step 2>]` — `uv` resolves it together with
-   everything already in the project, enforces `requires-python` and all version
-   constraints, installs, and updates `pyproject.toml` + `uv.lock`. A conflict here
-   aborts the install with `uv`'s error.
-5. Apply the `engine.yaml` change from step 2 (append to the `"*"` list, or write
-   the explicit / `prefix:*` entries).
+2. If `--only` / `--as` name explicit recognized names and the distribution name is
+   known up front (a PyPI target), pre-check those against `engine.yaml`: an explicit
+   entry that already maps a name to a _different_ distribution is an error (remove
+   the existing entry first — `wengine` never overwrites a mapping for you). This is
+   the one check that runs **before** anything is touched.
+3. `uv add <expanded target>` — `uv` resolves it together with everything already in
+   the project, enforces `requires-python` and all version constraints, installs, and
+   updates `pyproject.toml` + `uv.lock`. The newly-added distribution is identified
+   by diffing `[project.dependencies]` before and after. A `uv` conflict here aborts
+   with `uv`'s own error.
+4. Read the newly-installed distribution's `aceteam_workflow_engine.nodes` entry-point
+   table from the project environment (via `uv run python`, so it works in standalone
+   mode where that environment is a separate venv). Compute the `engine.yaml` change:
+   append to the `"*"` list (default), or the explicit / `prefix:*` entries implied by
+   `--only` / `--as` / `--prefix`.
+5. Run the remaining collision checks against the just-read metadata — the explicit
+   pre-check again (now authoritative for git/path targets whose name was unknown in
+   step 2), and, for a bulk `"*"` install, a bare-name clash against the other
+   `"*"`-mounted distributions' entry-point tables.
+6. If the mounted nodes declare extras, a second `uv add <dist>[<extras>]` requests
+   their union.
+7. Write the `engine.yaml` change.
+
+> **Why `uv add` comes before the collision checks.** The design ideal is "validate
+> the merged name map, then touch nothing if it fails." `uv` exposes no
+> metadata-without-install mode (no `uv add --dry-run`), so a distribution's
+> entry-point table — needed for the bulk collision check and to know which extras to
+> request — is only readable _after_ `uv add`. Only the step-2 explicit pre-check (for
+> a PyPI target, whose name is known from the requirement string) runs before any
+> write. If a check in step 5 fails, `wengine` rolls the install back with
+> `uv remove` before erroring; `engine.yaml` is written last, so a failure never
+> leaves a mapping pointing at a half-installed distribution.
 
 `wengine init` creates `engine.yaml` with one explicit entry per builtin (and, in
 standalone mode, a minimal `pyproject.toml` declaring `aceteam-workflow-engine`
 as a dependency, then runs `uv add aceteam-workflow-engine` to resolve and lock
-it). `wengine install` with no target runs `uv sync`
-and re-derives the registry from `engine.yaml` — the "reconstruct the environment
-from the lockfile" operation, for a fresh checkout or CI.
+it). `wengine install` with no target runs `uv sync` — the "reconstruct the
+environment from the lockfile" operation, for a fresh checkout or CI.
 
 There is no separate trust prompt: installing a node source is `uv add`, and
 `wengine` does not layer a confirmation on top of `uv`/`pip` that they do not have
@@ -502,16 +509,11 @@ still needs; `wengine install` with no target re-reconciles either way.)
 
 ## Resolution and loading
 
-Node-name lookup, in order:
-
-```text
-engine.yaml.nodes[<name>]   →   error
-```
-
-There is no implicit builtin fallback — if `aceteam-workflow-engine`'s nodes are
-wanted, they are in `engine.yaml` (the explicit entries `wengine init` seeds, or
-a hand-authored `"*"` list). When more than one `nodes:` entry could supply a name,
-precedence is **explicit entry > glob entry**; two glob-mounted distributions
+Node-name lookup goes through `engine.yaml`'s `nodes:` map; a name that isn't there
+is an error. There is no implicit builtin fallback — if `aceteam-workflow-engine`'s
+nodes are wanted, they are in `engine.yaml` (the explicit entries `wengine init`
+seeds, or a hand-authored `"*"` list). When more than one `nodes:` entry could supply
+a name, precedence is **explicit entry > glob entry**; two glob-mounted distributions
 supplying the same bare name is the install-time error described above (and
 `prefix:*` mounts live in their own `prefix:`-keyed space, so they never collide
 with bare names), so at load time the map is already unambiguous.
@@ -550,108 +552,27 @@ When an operator edits `engine.yaml` to point `ForEach` at a different distribut
 or entry point — or bumps that distribution's version in `pyproject.toml` — every
 workflow referencing `ForEach` is silently affected: same name, new code. This is
 intended (it is how you patch a node fleet-wide), but the new `ForEach` must still
-satisfy the old type signature or those workflows break at load. Implied tooling: a
-`wengine verify` that re-typechecks known workflows against the current map after
-an operator change. Not core, but the trust model puts this burden on the operator,
-so the operator needs the tool.
+satisfy the old type signature or those workflows break at load. `wengine verify
+<path>...` re-typechecks a set of workflow files (or a directory tree) against the
+current map and exits non-zero on the first signature break — run it after any such
+edit. The trust model puts this burden on the operator, so the operator has the tool.
 
 Note also that nothing in a `workflow.json` declares the signature it relies on
 (only the `type` names — see trust model). If workflows are ever meant to be
 portable across engines, a forward-declared per-workflow node contract would be the
 thing to add; for now a workflow is interpreted relative to one engine, and
-`wengine verify` / `wengine nodes list` are how you check the fit.
+`wengine verify` / `wengine node list` are how you check the fit.
 
 ---
 
-## Build order
+## Known limitations / future work
 
-1. **`engine.yaml` schema + project discovery** — Pydantic model for `engine.yaml`
-   (with the `nodes:` value grammar and glob keys), and the walk-up search for it.
-2. **Install-target parser** — `<pip target>` plus the `github:` / `gitlab:` /
-   `owner/repo` / `path:` shorthands → a concrete `uv add` argument (resolving a ref
-   to a commit + tarball URL over HTTPS for the forge shorthands). Pure, testable in
-   isolation.
-3. **`uv` integration** — locate the host `uv` project (embedded) or create/own one
-   beside `engine.yaml` (standalone); shell out to `uv add` / `uv remove` / `uv sync`
-   and surface their output.
-4. **Entry-point discovery** — read `[project.entry-points."aceteam_workflow_engine.nodes"]`
-   (each entry's `module:Class` and its `[extras]`) from installed (or
-   about-to-be-installed) distribution metadata via `importlib.metadata`, without
-   importing the package.
-5. **`wengine init` / `wengine install` / `wengine uninstall`** — wire 1–4 together;
-   two-phase install (collect entry-point tables of all affected distributions →
-   merge with `engine.yaml` → reject unresolved bare-name collisions among
-   glob-mounted distributions → `uv add` → write `nodes:` entries). `wengine init`
-   seeds one explicit entry per builtin.
-6. **Loader integration** — populate the process node registry from the project's
-   `nodes:` map (precedence: explicit entry > glob; bare-name collisions among globs
-   are errors), import-and-pull the class lazily on first use, fatal error if the
-   distribution is missing. Builds on the existing registry in
-   `src/workflow_engine/core/node.py`.
-7. **`wengine nodes list`, `wengine verify`, walk-up discovery** — follow-ups
-   (`nodes list` is also how the operator publishes the available-node set to
-   workflow authors). This step also retires the prototype CLI's machine-global
-   config: every engine-building command (`schema`, `node`, the read/run
-   `workflow` subcommands, `verify`) discovers the project by **walking up from
-   the cwd to the nearest `engine.yaml`** — no `platformdirs` default file, no
-   `--config` override. Not finding one is a hard error pointing at `wengine
-   init` (there is no implicit builtin fallback — see "Resolution and loading").
-   `wengine verify` re-typechecks a set of workflow files (or a directory tree)
-   against the resolved map and exits non-zero on the first signature break.
-
----
-
-## Settled decisions
-
-Chosen over alternatives; the body above has the reasoning.
-
-- **A node source is a Python package, installed with `uv`.** One resolver, one
-  lockfile (`uv.lock`) — not a second dependency manager; no `setup:` scripts. Cross-source
-  conflicts therefore fail at `uv add` time, not at runtime.
-- **Nodes are advertised via standard entry points** (`aceteam_workflow_engine.nodes`),
-  readable from package metadata without importing; a node's optional deps ride in
-  the entry's `[extras]` suffix. `wengine` keeps each distribution's `pkg[extras]`
-  line equal to the union of its still-mapped nodes' extras. Recommended: one extra
-  per node, named after it.
-- **Builtins are not special** — `aceteam-workflow-engine`'s nodes are entry points
-  like any others; `wengine init` seeds one explicit entry per builtin that mounts them.
-- **Two modes** — embedded (operator's existing `uv` project _is_ the engine env) and
-  standalone (`wengine init` creates one beside `engine.yaml`).
-- **`uv.lock` committed, environment not** — `uv sync` (or `wengine install` with no
-  target) rebuilds it. No separate `engine.lock`.
-- **No Python pinning, no bespoke version check** — packages declare `requires-python`
-  / `aceteam-workflow-engine>=…`; `uv`'s resolver enforces it.
-- **Forge shorthands need no system `git`** — `github:` / `gitlab:` resolve a ref to a
-  commit over HTTPS and install a pinned tarball; raw `git+…` URLs are handed to `uv`
-  as-is and follow its rules.
-- **Two-phase install** — validate the merged name map (rejecting bare-name collisions
-  among glob-mounted distributions) before `uv add` or any file write.
-- **No lazy install at load/exec time** — a missing distribution is a fatal error
-  pointing at `wengine install`, like a missing Python import; only `wengine install`
-  / `uv sync` touch the network.
-- **No "scoped registry"** — one `wengine` process = one engine project, so the
-  project's `nodes:` map _is_ the scoping. Precedence: explicit entry > glob; a
-  glob/glob clash on a bare name is an error. Deserialization goes through the
-  existing mutable node registry (no Pydantic discriminated union — those can't be
-  extended at runtime).
-- **`path:` sources are never pinned** — editable semantics; the path is the pin.
-- **`nodes:` entry kinds** — explicit (`Name: dist:entryPoint`; enables `--as` /
-  overriding a builtin), `"*"` glob (the normal case; stacks), `"prefix:*"` glob (the
-  collision escape hatch).
-- **One discovery path: walk up to `engine.yaml`** — engine-building commands find
-  the project by walking up from the cwd to the nearest `engine.yaml`, like `git` /
-  `uv`. No machine-global config file (`platformdirs`) and no `--config` override —
-  those were prototype-CLI scaffolding and are removed. A project that can't be found
-  is a hard error pointing at `wengine init`, consistent with "no implicit builtin
-  fallback" at load time.
-
-## Open questions
-
-1. **Glob collision UX.** When two `"*"`-listed distributions both expose a node, the
-   resolutions are "add an explicit entry for that name" or "move one to a
-   `prefix:*` mount" — but the error needs to spell that out, and ideally offer to
-   apply one. Mechanics are settled; the message and the assist are not.
-2. **`disable:` for builtins.** Curating builtins currently means dropping the
-   distribution from the `"*"` list and adding explicit entries for the nodes you
-   keep. A `disable: [SomeNode]` list would be more ergonomic but adds a subtractive
-   operation to the map's semantics; deferred until there's demand.
+- **Glob collision UX.** When two `"*"`-listed distributions both expose a node, the
+  resolutions are "add an explicit entry for that name" or "move one to a `prefix:*`
+  mount." The error reports the clash, but does not yet spell out those fixes or
+  offer to apply one.
+- **No `disable:` list.** Curating builtins means dropping the distribution from the
+  `"*"` list and adding explicit entries for the nodes you keep (or just deleting the
+  seeded explicit entries you don't want). A `disable: [SomeNode]` list would be more
+  ergonomic but adds a subtractive operation to the map's semantics; deferred until
+  there's demand.
