@@ -952,3 +952,32 @@ class TestWorkflowEdit:
         )
         payload = json.loads(populated_workflow.read_text())
         assert payload["edges"] == []
+
+
+# ---------- init ----------
+
+
+class TestInit:
+    def test_creates_engine_yaml(self, runner: CliRunner, monkeypatch):
+        # Standalone init shells out to `uv add`; stub it so the test stays
+        # offline and deterministic.
+        from workflow_engine.cli import uv_project as uv_project_module
+
+        monkeypatch.setattr(uv_project_module, "_run_uv", lambda *a, **k: None)
+
+        with runner.isolated_filesystem():
+            result = invoke_cli(runner, "init")
+            assert result.exit_code == 0, result.output
+            assert "Created" in result.output
+            assert Path("engine.yaml").is_file()
+
+    def test_refuses_when_engine_yaml_exists(self, runner: CliRunner, monkeypatch):
+        from workflow_engine.cli import uv_project as uv_project_module
+
+        monkeypatch.setattr(uv_project_module, "_run_uv", lambda *a, **k: None)
+
+        with runner.isolated_filesystem():
+            Path("engine.yaml").write_text("schema_version: 1\nnodes: {}\n")
+            result = invoke_cli(runner, "init")
+            assert result.exit_code != 0
+            assert "already exists" in result.output
