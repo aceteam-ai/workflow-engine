@@ -18,6 +18,8 @@ import yaml
 
 from workflow_engine import __version__
 from workflow_engine.cli.engine_init import EngineYamlAlreadyExists, init_engine_project
+from workflow_engine.cli.install import InstallError, install
+from workflow_engine.cli.uv_project import EngineYamlNotFound, UvProject
 from workflow_engine.contexts.local import LocalContext
 from workflow_engine.core.config import WorkflowEngineConfig
 from workflow_engine.core.context import ValidationContext
@@ -162,6 +164,48 @@ def init_cmd():
     except EngineYamlAlreadyExists as e:
         raise click.ClickException(str(e)) from e
     click.echo(f"Created {engine_yaml}")
+
+
+# ---------- install ----------
+
+
+@cli.command("install")
+@click.argument("target", required=False)
+@click.option(
+    "--only",
+    "only",
+    multiple=True,
+    metavar="NODE",
+    help="Map just this node (repeatable) instead of the whole bundle.",
+)
+@click.option("--as", "as_name", metavar="NAME", help="Rename a single --only node.")
+@click.option(
+    "--prefix", metavar="P", help="Mount the bundle under a P:<Name> namespace."
+)
+@click.option(
+    "--force", is_flag=True, help="Override an existing explicit entry for a node."
+)
+def install_cmd(
+    target: str | None,
+    only: tuple[str, ...],
+    as_name: str | None,
+    prefix: str | None,
+    force: bool,
+):
+    """Install a node-source distribution and map its nodes.
+
+    With no TARGET, sync the environment to uv.lock (rebuild a checkout).
+    """
+    if target is None:
+        if only or as_name or prefix or force:
+            raise click.ClickException("Options are only valid with an install target.")
+        UvProject.locate(Path.cwd()).sync()
+        return
+    try:
+        dist = install(target, only=only, as_name=as_name, prefix=prefix, force=force)
+    except (InstallError, EngineYamlNotFound) as e:
+        raise click.ClickException(str(e)) from e
+    click.echo(f"Installed {dist}")
 
 
 # ---------- config ----------
