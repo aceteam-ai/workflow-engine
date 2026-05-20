@@ -115,8 +115,12 @@ class UvProject:
         if self.mode == "embedded":
             return
         path = self.root / "pyproject.toml"
-        if path.exists():
+        if path.is_file():
             return
+        if path.exists():
+            raise RuntimeError(
+                f"Invalid standalone uv project state: {path!s} exists but is not a file."
+            )
         path.write_text(_MINIMAL_PYPROJECT)
 
     def add(self, args: Sequence[str]) -> None:
