@@ -42,15 +42,14 @@ def builtin_entry_point_names() -> tuple[str, ...]:
     )
 
 
-def initial_nodes_config(*, explicit: bool) -> Mapping[str, str | Sequence[str]]:
+def initial_nodes_config() -> Mapping[str, str]:
     """The `nodes:` block a fresh `engine.yaml` starts with.
 
-    By default a single `"*"` glob mounting every builtin under its bare name.
-    With `explicit=True`, one explicit `Name: <dist>:<Name>` entry per builtin,
-    so an operator can curate by deleting lines.
+    One explicit `Name: <dist>:<Name>` entry per builtin. We seed explicit
+    entries rather than a `"*"` glob so the name map states exactly what is
+    mounted — curating is then deleting lines. The glob form stays valid in the
+    schema for anyone who prefers to hand-write it.
     """
-    if not explicit:
-        return {"*": [BUILTIN_DISTRIBUTION]}
     return {
         name: f"{BUILTIN_DISTRIBUTION}:{name}" for name in builtin_entry_point_names()
     }
@@ -65,7 +64,7 @@ def render_engine_yaml(nodes: Mapping[str, str | Sequence[str]]) -> str:
     )
 
 
-def init_engine_project(target_dir: Path, *, explicit: bool = False) -> Path:
+def init_engine_project(target_dir: Path) -> Path:
     """Initialize a new engine project rooted at `target_dir`.
 
     Writes `engine.yaml`, then sets up the backing `uv` project: in standalone
@@ -85,7 +84,7 @@ def init_engine_project(target_dir: Path, *, explicit: bool = False) -> Path:
             )
 
     engine_yaml = target_dir / ENGINE_YAML_NAMES[0]
-    engine_yaml.write_text(render_engine_yaml(initial_nodes_config(explicit=explicit)))
+    engine_yaml.write_text(render_engine_yaml(initial_nodes_config()))
 
     project = UvProject.locate(target_dir)
     if project.mode == "standalone":

@@ -155,16 +155,10 @@ def cli():
 
 
 @cli.command("init")
-@click.option(
-    "--explicit",
-    is_flag=True,
-    help="Seed one explicit entry per builtin node instead of a '*' glob, "
-    "so you can curate the set by deleting lines.",
-)
-def init_cmd(explicit: bool):
+def init_cmd():
     """Create an engine.yaml (and, standalone, a pyproject.toml) here."""
     try:
-        engine_yaml = init_engine_project(Path.cwd(), explicit=explicit)
+        engine_yaml = init_engine_project(Path.cwd())
     except EngineYamlAlreadyExists as e:
         raise click.ClickException(str(e)) from e
     click.echo(f"Created {engine_yaml}")

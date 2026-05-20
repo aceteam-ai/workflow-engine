@@ -48,12 +48,8 @@ class TestBuiltinEntryPoints:
 
 
 class TestInitialNodesConfig:
-    def test_default_is_global_glob(self):
-        nodes = initial_nodes_config(explicit=False)
-        assert nodes == {"*": [BUILTIN_DISTRIBUTION]}
-
-    def test_explicit_one_entry_per_builtin(self):
-        nodes = initial_nodes_config(explicit=True)
+    def test_one_explicit_entry_per_builtin(self):
+        nodes = initial_nodes_config()
         assert "*" not in nodes
         assert nodes["Input"] == f"{BUILTIN_DISTRIBUTION}:Input"
         assert set(nodes) == set(builtin_entry_point_names())
@@ -62,14 +58,10 @@ class TestInitialNodesConfig:
 class TestRenderEngineYaml:
     def test_round_trips_through_config(self):
         # The rendered document must parse as a valid engine.yaml.
-        text = render_engine_yaml(initial_nodes_config(explicit=False))
+        text = render_engine_yaml(initial_nodes_config())
         parsed = yaml.safe_load(text)
         assert parsed["schema_version"] == 1
         WorkflowEngineConfig.model_validate(parsed)
-
-    def test_explicit_round_trips(self):
-        text = render_engine_yaml(initial_nodes_config(explicit=True))
-        WorkflowEngineConfig.model_validate(yaml.safe_load(text))
 
 
 class TestInitEngineProject:
@@ -80,7 +72,7 @@ class TestInitEngineProject:
         confine_is_file_to(tmp_path)
         calls = _patch_run_uv(monkeypatch)
 
-        engine_yaml = init_engine_project(tmp_path, explicit=False)
+        engine_yaml = init_engine_project(tmp_path)
 
         assert engine_yaml == (tmp_path / "engine.yaml").resolve()
         assert engine_yaml.is_file()
@@ -95,7 +87,7 @@ class TestInitEngineProject:
         (tmp_path / "pyproject.toml").write_text("[project]\nname = 'host'\n")
         calls = _patch_run_uv(monkeypatch)
 
-        engine_yaml = init_engine_project(tmp_path, explicit=False)
+        engine_yaml = init_engine_project(tmp_path)
 
         assert engine_yaml.is_file()
         assert calls == []
@@ -108,7 +100,7 @@ class TestInitEngineProject:
         confine_is_file_to(tmp_path)
         _patch_run_uv(monkeypatch)
 
-        engine_yaml = init_engine_project(tmp_path, explicit=True)
+        engine_yaml = init_engine_project(tmp_path)
         WorkflowEngineConfig.load(engine_yaml)
 
     def test_refuses_existing_yaml(self, tmp_path: Path, monkeypatch):
