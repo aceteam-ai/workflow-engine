@@ -28,22 +28,20 @@ The `uv` shell-outs reuse `UvProject` (whose `_run_uv` tests monkeypatch); the
 metadata read goes through the module-private `_uv_run_python`.
 """
 
-from __future__ import annotations
-
 import json
 import re
 import subprocess
 import tomllib
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
 from pathlib import Path
 
 import yaml
 from packaging.requirements import Requirement
 from packaging.utils import canonicalize_name
 
-from workflow_engine.core.config import NODES_ENTRY_POINT_GROUP
-
+from ..core.config import NODES_ENTRY_POINT_GROUP
+from ..utils.iter import only as _only
+from ..utils.model import ImmutableBaseModel
 from .install_target import InstallTarget, PyPITarget, parse_install_target
 from .uv_project import UvProject
 
@@ -54,12 +52,11 @@ class InstallError(Exception):
     """A `wengine install` failed for an operator-actionable reason."""
 
 
-@dataclass(frozen=True)
-class MountedNode:
+class MountedNode(ImmutableBaseModel):
     """A node entry point being mounted, with the package extras it declares."""
 
     entry_point_name: str
-    extras: tuple[str, ...]
+    extras: Sequence[str]
 
 
 # ---------- pure helpers ----------
@@ -90,19 +87,15 @@ def added_distribution(before: Sequence[str], after: Sequence[str]) -> str:
     read as new. Raises `InstallError` if not exactly one name was added.
     """
     before_names = {canonicalize_name(distribution_name(d)) for d in before}
-    new = [
-        d for d in after if canonicalize_name(distribution_name(d)) not in before_names
-    ]
-    # De-dup by canonical name (a re-add that only changed extras/version on an
-    # already-present dep contributes nothing new).
-    new_names = {canonicalize_name(distribution_name(d)) for d in new}
+    after_names = {canonicalize_name(distribution_name(d)) for d in after}
+    new_names = after_names - before_names
     if len(new_names) != 1:
         raise InstallError(
             f"Expected exactly one new distribution in pyproject.toml after the "
             f"install, found {sorted(new_names)}. Project dependencies may have "
             f"been edited concurrently."
         )
-    return distribution_name(new[0])
+    return distribution_name(_only(new_names))
 
 
 def with_extras(requirement: str, extras: Sequence[str]) -> str:
@@ -112,7 +105,7 @@ def with_extras(requirement: str, extras: Sequence[str]) -> str:
     return str(req)
 
 
-def extras_union(nodes: Sequence[MountedNode]) -> tuple[str, ...]:
+def extras_union(nodes: Sequence[MountedNode]) -> Sequence[str]:
     """The sorted union of every mounted node's declared extras."""
     out: set[str] = set()
     for node in nodes:
@@ -121,15 +114,16 @@ def extras_union(nodes: Sequence[MountedNode]) -> tuple[str, ...]:
 
 
 def resolve_only_mounts(
-    available: Sequence[MountedNode], only: Sequence[str]
-) -> list[MountedNode]:
+    available: Sequence[MountedNode],
+    only: Sequence[str],
+) -> Sequence[MountedNode]:
     """The subset of `available` named by `--only`, preserving `only` order.
 
     Raises `InstallError` if a requested name isn't exposed by the distribution.
     """
     by_name = {node.entry_point_name: node for node in available}
     out: list[MountedNode] = []
-    for name in only:
+    for name in _only(only):
         node = by_name.get(name)
         if node is None:
             raise InstallError(
@@ -149,14 +143,14 @@ def plan_explicit_names(only: Sequence[str], as_name: str | None) -> dict[str, s
     if as_name is not None and len(only) != 1:
         raise InstallError("--as is only valid with exactly one --only.")
     if as_name is not None:
-        return {as_name: only[0]}
+        return {as_name: _only(only)}
     return {name: name for name in only}
 
 
 # ---------- engine.yaml mutation ----------
 
 
-def load_nodes_block(engine_yaml: Path) -> dict[str, object]:
+def load_nodes_block(engine_yaml: Path) -> Mapping[str, object]:
     """The raw `nodes:` mapping from `engine.yaml` (for mutation)."""
     data = yaml.safe_load(engine_yaml.read_text()) or {}
     nodes = data.get("nodes") or {}
@@ -179,15 +173,15 @@ def write_nodes_block(engine_yaml: Path, nodes: Mapping[str, object]) -> None:
     )
 
 
-def _glob_distributions(nodes: Mapping[str, object], key: str) -> list[str]:
+def _glob_distributions(nodes: Mapping[str, object], key: str) -> Sequence[str]:
     """The distribution list under a glob key (`"*"` or `"<prefix>:*"`)."""
     value = nodes.get(key)
     if value is None:
-        return []
+        return ()
     if isinstance(value, str):
-        return [value]
-    if isinstance(value, list):
-        return [str(v) for v in value]
+        return (value,)
+    if isinstance(value, Sequence):
+        return tuple(str(v) for v in value)
     raise InstallError(f"Glob entry {key!r} has an unexpected value: {value!r}.")
 
 
@@ -218,13 +212,13 @@ def check_explicit_collisions(
             )
 
 
-def glob_neighbors(nodes: Mapping[str, object], target_dist: str) -> list[str]:
+def glob_neighbors(nodes: Mapping[str, object], target_dist: str) -> Sequence[str]:
     """The other distributions on the `"*"` glob (excluding `target_dist`)."""
-    return [
+    return tuple(
         dist
         for dist in _glob_distributions(nodes, "*")
         if canonicalize_name(dist) != canonicalize_name(target_dist)
-    ]
+    )
 
 
 def check_glob_collision(
@@ -265,13 +259,15 @@ def merge_explicit(
 
 
 def merge_glob(
-    nodes: Mapping[str, object], dist: str, key: str = "*"
-) -> dict[str, object]:
+    nodes: Mapping[str, object],
+    dist: str,
+    key: str = "*",
+) -> Mapping[str, object]:
     """Append `dist` to the glob list under `key` (`"*"` or `"<prefix>:*"`)."""
     out = dict(nodes)
     existing = _glob_distributions(out, key)
     if not any(canonicalize_name(d) == canonicalize_name(dist) for d in existing):
-        existing = [*existing, dist]
+        existing = (*existing, dist)
     out[key] = existing
     return out
 
@@ -313,13 +309,16 @@ def _uv_run_python(root: Path, code: str, *args: str) -> str:
     return result.stdout
 
 
-def read_distribution_entry_points(root: Path, dist: str) -> list[MountedNode]:
+def read_distribution_entry_points(
+    root: Path,
+    dist: str,
+) -> Sequence[MountedNode]:
     """The node entry points `dist` advertises, read from the project env."""
     raw = _uv_run_python(root, _READ_ENTRY_POINTS, NODES_ENTRY_POINT_GROUP, dist)
-    return [
-        MountedNode(entry_point_name=item["name"], extras=tuple(item["extras"]))
+    return tuple(
+        MountedNode(entry_point_name=item["name"], extras=item["extras"])
         for item in json.loads(raw)
-    ]
+    )
 
 
 # ---------- orchestration ----------
@@ -409,4 +408,7 @@ def install(
     return dist
 
 
-__all__ = ["InstallError", "install"]
+__all__ = [
+    "InstallError",
+    "install",
+]
