@@ -469,18 +469,26 @@ themselves. Operators who want a review gate already have one — code review on
 
 ### Uninstalling
 
-`wengine uninstall <NodeName>` removes the `engine.yaml` entry, then reconciles
-`pyproject.toml`:
+`wengine uninstall <NodeName>` removes the `engine.yaml` entry first, then
+reconciles `pyproject.toml`:
 
 - If other nodes from the same distribution are still mapped, it recomputes that
   distribution's extra set — the union of the `[extras]` of the _still-mapped_ nodes
-  — and, if it shrank, runs `uv add <distribution>[<new set>]` (which lets `uv` drop
-  any now-unneeded transitive deps). So uninstalling `Screenshot` rewrites
-  `acme-scrapers[screenshot]` → `acme-scrapers` only if no remaining mapped node
-  needs the `screenshot` extra (or, with a shared `browser` extra, no remaining node
-  needs `browser` — e.g. `CrawlSite` is gone too); `wengine` reads the entry-point
-  tables, so it always knows the answer.
+  — and, if it shrank, rewrites that distribution's `[project.dependencies]` extras
+  to the new set and runs `uv sync` (which lets `uv` drop any now-unneeded transitive
+  deps). So uninstalling `Screenshot` rewrites `acme-scrapers[screenshot]` →
+  `acme-scrapers` only if no remaining mapped node needs the `screenshot` extra (or,
+  with a shared `browser` extra, no remaining node needs `browser` — e.g. `CrawlSite`
+  is gone too); `wengine` reads the entry-point tables, so it always knows the answer.
+  (It edits the dependency line rather than `uv add <distribution>[<new set>]`
+  because `uv add` only _merges_ extras — it has no reset — and `uv remove`+re-add
+  would wipe the distribution's `[tool.uv.sources]` entry; editing the line in place
+  leaves the source mapping untouched and works the same for git/path/PyPI sources.)
 - If no entry references the distribution at all anymore, it runs `uv remove <distribution>`.
+
+`engine.yaml` is rewritten before `pyproject.toml` so that a failed `uv` step
+leaves only superfluous extras behind, never an unmapped-but-still-needed node or
+a removed-but-still-referenced distribution.
 
 A distribution reachable through several `engine.yaml` entries (the `"*"` list plus
 an explicit override, say) needs all of them gone before that last step fires;

@@ -6,6 +6,18 @@
 
 If no `engine.yaml` is found on the walk up, those commands fail with an error pointing at `wengine init`. Commands that only write a file (`workflow init`) or create the project (`wengine init`) do not require an existing `engine.yaml`. Users edit `engine.yaml` directly — the CLI has no per-key edit operations for it.
 
+### `wengine init`
+
+Creates an `engine.yaml` in the current directory, its `nodes:` map seeded with one explicit entry per built-in node. In standalone mode it also creates the `pyproject.toml` that backs the project's environment. Errors if an `engine.yaml` already exists.
+
+### `wengine install [<target>] [--only NODE]... [--as NAME] [--prefix P] [--force]`
+
+Installs a node-source distribution and maps its nodes into `engine.yaml` (roughly `uv add <target>` plus a name-map edit). `--only` maps just the named node(s); `--as` renames a single `--only` node; `--prefix` mounts the bundle under a `P:<Name>` namespace; `--force` overrides an existing explicit entry. With no `<target>`, it syncs the environment to `uv.lock` (rebuilds a checkout). See docs/plans/node-distribution.md for the full flow.
+
+### `wengine uninstall <name>` / `wengine uninstall --dist <name>`
+
+Removes a node mapping and reconciles `pyproject.toml` — the inverse of `install`. By node name, it drops that name's explicit entry; the distribution stays installed if other entries still reference it (its extras are re-narrowed to the union of the still-mapped nodes), otherwise it is `uv remove`d. `--dist <name>` removes every entry for a distribution at once (explicit entries plus its membership in any glob) and then uninstalls it.
+
 ## `wengine schema`
 
 ### `wengine schema list`
