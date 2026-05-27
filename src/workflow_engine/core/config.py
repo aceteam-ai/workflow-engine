@@ -5,6 +5,8 @@ from importlib.metadata import EntryPoint, entry_points
 from pathlib import Path
 from typing import Annotated, Any, Awaitable, Callable, Literal, Self, cast
 
+from packaging.requirements import Requirement
+from packaging.utils import NormalizedName, canonicalize_name
 from pydantic import Field, model_validator
 
 from ..utils.asynchronous import is_coroutine
@@ -35,19 +37,48 @@ DistributionName = Annotated[str, Field(pattern=rf"^{_DIST_NAME}$")]
 EntryPointRefStr = Annotated[str, Field(pattern=rf"^{_DIST_NAME}:{_NODE_NAME}$")]
 
 
-def _normalize_dist(name: str) -> str:
-    """PEP 503-style normalization for distribution-name comparison."""
-    return re.sub(r"[-_.]+", "-", name).lower()
+class Distribution(ImmutableRootModel[DistributionName]):
+    """A distribution name compared by its canonical (PEP 503) form.
+
+    Two spellings of the same project (`Acme.Scrapers` vs `acme-scrapers`) are
+    equal and hash alike, so collision checks and set math need no ad-hoc
+    normalization. `str(dist)` / `.root` give back the original spelling, which
+    is what gets written into and read from `engine.yaml`.
+    """
+
+    @classmethod
+    def from_requirement(cls, requirement: str) -> "Distribution":
+        """Parse a PEP 508 requirement into a `Distribution`.
+
+        Strips any extras and version specifiers (`acme[x]>=1.4` → `acme`), so
+        callers holding a raw requirement string don't have to split it first.
+        """
+        return cls(Requirement(requirement).name)
+
+    @property
+    def canonical(self) -> NormalizedName:
+        return canonicalize_name(self.root)
+
+    def __eq__(self, other: object) -> bool:
+        if isinstance(other, Distribution):
+            return self.canonical == other.canonical
+        return NotImplemented
+
+    def __hash__(self) -> int:
+        return hash(self.canonical)
+
+    def __str__(self) -> str:
+        return self.root
 
 
 def _iter_node_entry_points(distribution: str) -> Sequence[EntryPoint]:
     """Return every entry point in the nodes group from the given distribution."""
-    target = _normalize_dist(distribution)
+    target = Distribution(distribution)
     matches: list[EntryPoint] = []
     for ep in entry_points(group=NODES_ENTRY_POINT_GROUP):
         if ep.dist is None:
             continue
-        if _normalize_dist(ep.dist.name) == target:
+        if Distribution(ep.dist.name) == target:
             matches.append(ep)
     return matches
 
@@ -197,38 +228,38 @@ class NodesConfig(ImmutableRootModel[Mapping[str, str | Sequence[str]]]):
         """Resolve the full name → Node-class map (eager; precedence-aware)."""
         resolved: dict[str, type[Node]] = {}
 
-        # 1. Global "*" glob. Compare distributions by their PEP 503-normalized
+        # 1. Global "*" glob. Compare distributions by their canonical (PEP 503)
         # name so different spellings of the same distribution (e.g.
         # `Acme_Pkg` vs `acme-pkg`) don't read as a collision.
-        seen: dict[str, str] = {}
+        seen: dict[str, Distribution] = {}
         for dist in self.global_glob_distributions:
-            normalized = _normalize_dist(dist)
+            distribution = Distribution(dist)
             for ep in _iter_node_entry_points(dist):
                 prior = seen.get(ep.name)
-                if prior is not None and prior != normalized:
+                if prior is not None and prior != distribution:
                     raise ValueError(
                         f"Bare-name collision: {ep.name!r} is exposed by both "
-                        f"{prior!r} and {dist!r} on the '*' glob. Add an "
+                        f"{prior.root!r} and {dist!r} on the '*' glob. Add an "
                         f"explicit entry for {ep.name!r} or move one "
                         f"distribution to a prefix:* mount."
                     )
-                seen[ep.name] = normalized
+                seen[ep.name] = distribution
                 resolved[ep.name] = _load_node_class(ep)
 
         # 2. Prefixed globs (own keyspace).
         for prefix, dists in self.prefix_glob_distributions.items():
-            prefix_seen: dict[str, str] = {}
+            prefix_seen: dict[str, Distribution] = {}
             for dist in dists:
-                normalized = _normalize_dist(dist)
+                distribution = Distribution(dist)
                 for ep in _iter_node_entry_points(dist):
                     prior = prefix_seen.get(ep.name)
-                    if prior is not None and prior != normalized:
+                    if prior is not None and prior != distribution:
                         raise ValueError(
                             f"Bare-name collision under prefix {prefix!r}: "
-                            f"{ep.name!r} is exposed by both {prior!r} and "
+                            f"{ep.name!r} is exposed by both {prior.root!r} and "
                             f"{dist!r}."
                         )
-                    prefix_seen[ep.name] = normalized
+                    prefix_seen[ep.name] = distribution
                     resolved[f"{prefix}:{ep.name}"] = _load_node_class(ep)
 
         # 3. Explicit entries override globs.
@@ -341,6 +372,7 @@ class WorkflowEngineConfig(ImmutableBaseModel):
 
 __all__ = [
     "NODES_ENTRY_POINT_GROUP",
+    "Distribution",
     "EntryPointRef",
     "ExecutionAlgorithmConfig",
     "ExecutionAlgorithmImport",

@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 
 import pytest
+import yaml
 from click.testing import CliRunner
 
 import workflow_engine.nodes  # noqa: F401  — ensure all value types register before any test freezes the value registry
@@ -993,3 +994,60 @@ class TestInit:
             result = invoke_cli(runner, "init")
             assert result.exit_code != 0
             assert "already exists" in result.output
+
+
+# ---------- install ----------
+
+
+class TestInstall:
+    def test_no_target_syncs(self, runner: CliRunner, monkeypatch):
+        from workflow_engine.cli import uv_project as uv_project_module
+
+        calls: list[list[str]] = []
+        monkeypatch.setattr(
+            uv_project_module, "_run_uv", lambda args, **k: calls.append(list(args))
+        )
+
+        with runner.isolated_filesystem():
+            Path("engine.yaml").write_text("schema_version: 1\nnodes: {}\n")
+            Path("pyproject.toml").write_text('[project]\nname = "x"\nversion = "0"\n')
+            result = invoke_cli(runner, "install")
+            assert result.exit_code == 0, result.output
+            assert ["sync"] in calls
+
+    def test_options_without_target_error(self, runner: CliRunner):
+        with runner.isolated_filesystem():
+            Path("engine.yaml").write_text("schema_version: 1\nnodes: {}\n")
+            Path("pyproject.toml").write_text('[project]\nname = "x"\nversion = "0"\n')
+            result = invoke_cli(runner, "install", "--prefix", "p")
+            assert result.exit_code != 0
+            assert "install target" in result.output
+
+    def test_install_maps_node(self, runner: CliRunner, monkeypatch):
+        import json
+
+        from workflow_engine.cli import install as install_module
+        from workflow_engine.cli import uv_project as uv_project_module
+
+        def fake_run_uv(args, **k):
+            if args[0] == "add":
+                Path("pyproject.toml").write_text(
+                    f'[project]\nname = "x"\nversion = "0"\n'
+                    f'dependencies = ["{args[-1]}"]\n'
+                )
+
+        monkeypatch.setattr(uv_project_module, "_run_uv", fake_run_uv)
+        monkeypatch.setattr(
+            install_module,
+            "_uv_run_python",
+            lambda root, code, *a: json.dumps([{"name": "Foo", "extras": []}]),
+        )
+
+        with runner.isolated_filesystem():
+            Path("engine.yaml").write_text("schema_version: 1\nnodes: {}\n")
+            Path("pyproject.toml").write_text('[project]\nname = "x"\nversion = "0"\n')
+            result = invoke_cli(runner, "install", "acme-pkg", "--only", "Foo")
+            assert result.exit_code == 0, result.output
+            assert "Installed acme-pkg" in result.output
+            nodes = yaml.safe_load(Path("engine.yaml").read_text())["nodes"]
+            assert nodes["Foo"] == "acme-pkg:Foo"

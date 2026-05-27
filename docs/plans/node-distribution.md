@@ -57,7 +57,7 @@ in the sections below):
 ```sh
 wengine init                                                                    # creates engine.yaml + a pyproject.toml to install into
 wengine install acme-scrapers --only HttpFetch --only HtmlExtract --only Screenshot
-wengine install github:acme/iteration@v2.0.0 --only ForEachV2 --as ForEach --force  # override the builtin ForEach (an explicit entry → needs --force)
+wengine install github:acme/iteration@v2.0.0 --only ForEachV2 --as ForEach  # map ForEach → ForEachV2 (remove the builtin ForEach entry from engine.yaml first)
 wengine install ./vendor/internal-nodes                                          # mount every node it exposes, bare
 wengine install legacy-nodes --prefix vendor/legacy                              # its node names collide with builtins → namespace the whole bundle
 ```
@@ -382,7 +382,7 @@ and list `nodeName = "module:NodeClass [extras]"` for each node. Notes:
 ## The `wengine install` target
 
 ```sh
-wengine install <target> [--only <NodeName> ...] [--as <name>] [--prefix <p>] [--force]
+wengine install <target> [--only <NodeName> ...] [--as <name>] [--prefix <p>]
 wengine install            # no target: sync the environment to uv.lock + re-apply the name map
 wengine init               # create engine.yaml (and, standalone, pyproject.toml)
 ```
@@ -401,9 +401,8 @@ wengine init               # create engine.yaml (and, standalone, pyproject.toml
 | ------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | _(none)_            | Append the distribution to the `"*"` list — mount all its nodes bare, and request the union of their declared extras. If a bare name would collide, the install errors and points you at `--only` / `--prefix`. |
 | `--only <NodeName>` | Write an explicit entry for just that node instead of touching the `"*"` list, and request only that node's declared extras (repeatable).                                                                       |
-| `--as <name>`       | The recognized name an `--only` node maps to (only valid with a single `--only`). Defaults to the entry-point name. Use it to rename-on-install (e.g. `--only ForEachV2 --as ForEach --force` to override the builtin — since `init` seeds builtins as explicit entries, this is an explicit-vs-explicit clash and needs `--force`). |
+| `--as <name>`       | The recognized name an `--only` node maps to (only valid with a single `--only`). Defaults to the entry-point name. Use it to rename-on-install (e.g. `--only ForEachV2 --as ForEach` to map `ForEach` onto the new node — since `init` seeds builtins as explicit entries, you must first remove the seeded `ForEach` entry from `engine.yaml`, otherwise the explicit-vs-explicit clash is an error). |
 | `--prefix <p>`      | Write a `"<p>:*"` glob instead of touching the `"*"` list — mount the whole bundle under `<p>:<Name>` (with the union of its nodes' extras). The collision escape hatch.                                        |
-| `--force`           | Overwrite an existing explicit `nodes:` entry that points at a different distribution. Without it, such a clash is an error.                                                                                    |
 
 Examples:
 
@@ -424,7 +423,7 @@ edit — `wengine` is deliberately thin here. The non-trivial parts it adds: it
 expands the `github:` / `owner/repo` shorthands `uv add` doesn't understand; it
 reads the package's `aceteam_workflow_engine.nodes` entry-point table _before_ the `uv add`
 (to know what to write, and to run the merged-map collision check); and `--only` /
-`--as` / `--prefix` / `--force` affect only the `engine.yaml` side, never the `uv add`. In full,
+`--as` / `--prefix` affect only the `engine.yaml` side, never the `uv add`. In full,
 what `wengine install <target>` does (operator-time, trusted), in the discovered
 engine project:
 
@@ -442,9 +441,10 @@ engine project:
 3. **Check the merged map.** Combine the proposed mappings with the existing
    `engine.yaml`. A new explicit entry that shadows a glob is fine. A new explicit
    entry that collides with an existing _explicit_ entry for a different distribution
-   is an error unless `--force` — this includes overriding a builtin, since `init`
-   seeds builtins as explicit entries (so `--as ForEach` over the seeded `ForEach`
-   needs `--force`). A bare name that
+   is an error — this includes overriding a builtin, since `init` seeds builtins as
+   explicit entries (so to map `--as ForEach` onto a new node you must first remove
+   the seeded `ForEach` entry from `engine.yaml`; `wengine` never overwrites a
+   mapping for you). A bare name that
    two glob-mounted distributions would both supply, with no explicit entry to
    disambiguate, is a hard error — abort before touching anything. (This is why
    step 2 reads all the relevant entry-point tables before installing.)

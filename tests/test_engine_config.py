@@ -6,6 +6,7 @@ import pytest
 from pydantic import ValidationError
 
 from workflow_engine.core.config import (
+    Distribution,
     EntryPointRef,
     NodesConfig,
     WorkflowEngineConfig,
@@ -13,6 +14,25 @@ from workflow_engine.core.config import (
 from workflow_engine.core.io import InputNode, OutputNode
 from workflow_engine.nodes.arithmetic import AddNode, SumNode
 from workflow_engine.nodes.iteration import ForEachNode
+
+
+class TestDistribution:
+    def test_equality_is_canonical(self):
+        assert Distribution("Acme.Scrapers") == Distribution("acme-scrapers")
+
+    def test_hashes_alike_in_sets(self):
+        assert len({Distribution("Acme.Scrapers"), Distribution("acme-scrapers")}) == 1
+
+    def test_str_keeps_original_spelling(self):
+        assert str(Distribution("Acme.Scrapers")) == "Acme.Scrapers"
+
+    def test_not_equal_to_bare_string(self):
+        assert Distribution("acme") != "acme"
+
+    def test_from_requirement_strips_extras_and_version(self):
+        assert Distribution.from_requirement("acme-scrapers[x]>=1.4") == Distribution(
+            "acme-scrapers"
+        )
 
 
 class TestEntryPointRef:
