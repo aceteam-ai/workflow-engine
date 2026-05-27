@@ -1039,7 +1039,6 @@ class TestVerify:
         wf.write_text(json.dumps(_BLANK_WORKFLOW))
         out = run_with_default_config(runner, "verify", str(wf))
         assert "ok" in out
-        assert "1/1 workflows valid." in out
 
     def test_reports_failure_and_exits_nonzero(
         self, runner: CliRunner, engine_project: Path
@@ -1050,13 +1049,10 @@ class TestVerify:
         wf.write_text(json.dumps(bad))
         result = invoke_cli(runner, "verify", str(wf))
         assert result.exit_code != 0
-        assert "FAIL" in result.output
-        assert "0/1 workflows valid." in result.output
+        assert "Nonexistent" in result.output
 
-    def test_scans_directory(self, runner: CliRunner, engine_project: Path):
+    def test_rejects_directory(self, runner: CliRunner, engine_project: Path):
         wf_dir = engine_project / "workflows"
         wf_dir.mkdir()
-        (wf_dir / "a.json").write_text(json.dumps(_BLANK_WORKFLOW))
-        (wf_dir / "b.json").write_text(json.dumps(_BLANK_WORKFLOW))
-        out = run_with_default_config(runner, "verify", str(wf_dir))
-        assert "2/2 workflows valid." in out
+        result = invoke_cli(runner, "verify", str(wf_dir))
+        assert result.exit_code != 0

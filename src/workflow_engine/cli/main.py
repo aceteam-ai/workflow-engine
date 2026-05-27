@@ -995,68 +995,27 @@ async def edit_possible_edges(path: Path, handle: str):
 
 # ---------- verify ----------
 
-WORKFLOW_SUFFIXES: tuple[str, ...] = (".json", ".yaml", ".yml")
-
-
-def _collect_workflow_files(paths: tuple[Path, ...]) -> list[Path]:
-    """Expand PATHS into a de-duplicated list of candidate workflow files.
-
-    A file is taken as-is; a directory is searched recursively for files with a
-    workflow suffix. Order is preserved, with duplicates (by resolved path)
-    dropped.
-    """
-    collected: list[Path] = []
-    for p in paths:
-        if p.is_dir():
-            for suffix in WORKFLOW_SUFFIXES:
-                collected.extend(sorted(p.rglob(f"*{suffix}")))
-        else:
-            collected.append(p)
-    seen: set[Path] = set()
-    result: list[Path] = []
-    for p in collected:
-        resolved = p.resolve()
-        if resolved not in seen:
-            seen.add(resolved)
-            result.append(p)
-    return result
-
 
 @cli.command("verify")
 @click.argument(
-    "paths",
-    nargs=-1,
-    required=True,
-    type=click.Path(exists=True, path_type=Path),
+    "path",
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
 )
 @coro
-async def verify_cmd(paths: tuple[Path, ...]):
-    """Re-typecheck workflows against the current engine.yaml node map.
+async def verify_cmd(path: Path):
+    """Re-typecheck a workflow against the current engine.yaml node map.
 
-    Each PATH is a workflow file or a directory (searched recursively for
-    *.json / *.yaml / *.yml workflows). Use this after editing engine.yaml — a
-    name remapped to a new distribution or version may no longer satisfy the
-    signatures the workflows rely on. Reports pass/fail per workflow and exits
-    non-zero if any fail.
+    PATH is a single workflow file. Use this after editing engine.yaml — a name
+    remapped to a new distribution or version may no longer satisfy the
+    signatures the workflow relies on. Exits non-zero if it fails to validate.
     """
     engine = await _build_engine()
-    targets = _collect_workflow_files(paths)
-    if not targets:
-        raise click.ClickException("No workflow files found in the given paths.")
-    failures = 0
-    for wf_path in targets:
-        try:
-            wf = _load_workflow(wf_path)
-            await engine.validate(wf)
-        except Exception as e:
-            failures += 1
-            click.echo(f"FAIL  {wf_path}: {e}")
-        else:
-            click.echo(f"ok    {wf_path}")
-    total = len(targets)
-    click.echo(f"\n{total - failures}/{total} workflows valid.")
-    if failures:
-        raise SystemExit(1)
+    try:
+        wf = _load_workflow(path)
+        await engine.validate(wf)
+    except Exception as e:
+        raise click.ClickException(f"{path}: {e}") from e
+    click.echo(f"ok    {path}")
 
 
 def main():

@@ -179,8 +179,8 @@ Supports `--json` for machine-readable output (stable shape, suitable for agent 
 
 Run a workflow by loading it from `path`.
 
-## `wengine verify <path>...`
+## `wengine verify <path>`
 
-Re-typechecks workflows against the current `engine.yaml` node map. Each `<path>` is a workflow file or a directory (searched recursively for `*.json` / `*.yaml` / `*.yml` workflows).
+Re-typechecks a single workflow file against the current `engine.yaml` node map.
 
-This is the operator's check after editing `engine.yaml`: remapping a node name to a different distribution or version, or bumping that distribution, silently changes the code behind a `type` without changing the workflows that use it. If the new node no longer satisfies the old type signature, the affected workflows break at load — `verify` surfaces that across a whole set at once. It prints `ok` / `FAIL` per workflow with a summary line, and exits non-zero if any fail.
+This is the operator's check after editing `engine.yaml`: remapping a node name to a different distribution or version, or bumping that distribution, silently changes the code behind a `type` without changing the workflow that uses it. If the new node no longer satisfies the old type signature, the workflow breaks at load — `verify` surfaces that. It prints `ok` on success, and exits non-zero with the error if the workflow fails to validate.
