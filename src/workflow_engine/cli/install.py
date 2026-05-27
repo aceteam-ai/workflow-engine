@@ -28,6 +28,7 @@ The `uv` shell-outs reuse `UvProject` (whose `_run_uv` tests monkeypatch); the
 metadata read goes through the module-private `_uv_run_python`.
 """
 
+import io
 import json
 import re
 import subprocess
@@ -35,17 +36,27 @@ import tomllib
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 
-import yaml
 from packaging.requirements import Requirement
-from packaging.utils import canonicalize_name
+from pydantic import ValidationError
+from ruamel.yaml import YAML
 
-from ..core.config import NODES_ENTRY_POINT_GROUP
+from ..core.config import Distribution, NodesConfig
 from ..utils.iter import only as _only
 from ..utils.model import ImmutableBaseModel
 from .install_target import InstallTarget, PyPITarget, parse_install_target
 from .uv_project import UvProject
 
 _PREFIX_RE = re.compile(r"^[A-Za-z0-9_][A-Za-z0-9_/\-]*$")
+
+# Round-trip YAML: preserves comments, key order, and formatting that a
+# hand-edited `engine.yaml` carries across a `wengine install` rewrite.
+_yaml = YAML()
+_yaml.preserve_quotes = True
+
+# A `nodes:` entry is either an explicit `"dist:entryPoint"` string or, for a
+# glob key (`"*"` / `"<prefix>:*"`), a list of distribution names. This mirrors
+# the value shape `NodesConfig` validates.
+NodeEntry = str | list[str]
 
 
 class InstallError(Exception):
@@ -62,13 +73,6 @@ class MountedNode(ImmutableBaseModel):
 # ---------- pure helpers ----------
 
 
-def distribution_name(requirement: str) -> str:
-    """The distribution name from a PEP 508 requirement string (extras/version
-    stripped). `uv` writes well-formed requirements, so this just defers to
-    `packaging`."""
-    return Requirement(requirement).name
-
-
 def read_pyproject_dependencies(root: Path) -> list[str]:
     """The `[project.dependencies]` list from `root`'s `pyproject.toml`."""
     path = root / "pyproject.toml"
@@ -79,28 +83,28 @@ def read_pyproject_dependencies(root: Path) -> list[str]:
     return list(project.get("dependencies", []))
 
 
-def added_distribution(before: Sequence[str], after: Sequence[str]) -> str:
-    """The distribution name newly present in `after` but not `before`.
+def added_distribution(before: Sequence[str], after: Sequence[str]) -> Distribution:
+    """The distribution newly present in `after` but not `before`.
 
     Both are `[project.dependencies]` snapshots. Comparison is by canonical
     (PEP 503) name, so a re-spelled version of an existing dependency doesn't
     read as new. Raises `InstallError` if not exactly one name was added.
     """
-    before_names = {canonicalize_name(distribution_name(d)) for d in before}
-    after_names = {canonicalize_name(distribution_name(d)) for d in after}
-    new_names = after_names - before_names
-    if len(new_names) != 1:
+    before_dists = {Distribution.from_requirement(d) for d in before}
+    after_dists = {Distribution.from_requirement(d) for d in after}
+    new_dists = after_dists - before_dists
+    if len(new_dists) != 1:
         raise InstallError(
             f"Expected exactly one new distribution in pyproject.toml after the "
-            f"install, found {sorted(new_names)}. Project dependencies may have "
-            f"been edited concurrently."
+            f"install, found {sorted(d.root for d in new_dists)}. Project "
+            f"dependencies may have been edited concurrently."
         )
-    return distribution_name(_only(new_names))
+    return _only(new_dists)
 
 
-def with_extras(requirement: str, extras: Sequence[str]) -> str:
-    """Return `requirement` with `extras` merged into its `[…]` suffix."""
-    req = Requirement(requirement)
+def with_extras(dist: Distribution, extras: Sequence[str]) -> str:
+    """A `uv add` requirement string for `dist` carrying `extras`."""
+    req = Requirement(dist.root)
     req.extras |= set(extras)
     return str(req)
 
@@ -123,7 +127,7 @@ def resolve_only_mounts(
     """
     by_name = {node.entry_point_name: node for node in available}
     out: list[MountedNode] = []
-    for name in _only(only):
+    for name in only:
         node = by_name.get(name)
         if node is None:
             raise InstallError(
@@ -147,85 +151,131 @@ def plan_explicit_names(only: Sequence[str], as_name: str | None) -> dict[str, s
     return {name: name for name in only}
 
 
+def check_recognized_name_grammar(names: Sequence[str]) -> None:
+    """Reject recognized names that aren't valid `engine.yaml` node keys.
+
+    Validates each key through `NodesConfig` (with a placeholder ref value), so
+    a bad `--as` name fails before any `uv` call rather than at the post-install
+    write. Raises `InstallError` on the first invalid name.
+    """
+    for name in names:
+        try:
+            NodesConfig.model_validate({name: "placeholder:Placeholder"})
+        except ValidationError as e:
+            raise InstallError(
+                f"Invalid node name {name!r}: must be a valid '<Name>' or "
+                f"'<prefix>:<Name>' key."
+            ) from e
+
+
 # ---------- engine.yaml mutation ----------
 
 
-def load_nodes_block(engine_yaml: Path) -> Mapping[str, object]:
-    """The raw `nodes:` mapping from `engine.yaml` (for mutation)."""
-    data = yaml.safe_load(engine_yaml.read_text()) or {}
-    nodes = data.get("nodes") or {}
-    if not isinstance(nodes, dict):
-        raise InstallError(f"{engine_yaml}: 'nodes' is not a mapping.")
-    return dict(nodes)
+def _read_document(engine_yaml: Path) -> Mapping[str, object]:
+    """The full `engine.yaml` document as a round-trip mapping (comments kept)."""
+    data = _yaml.load(engine_yaml.read_text())
+    return data if data is not None else {}
 
 
-def write_nodes_block(engine_yaml: Path, nodes: Mapping[str, object]) -> None:
-    """Write `nodes` back into `engine.yaml`, preserving `schema_version`.
+def load_nodes_block(engine_yaml: Path) -> dict[str, NodeEntry]:
+    """The validated `nodes:` mapping from `engine.yaml` (for mutation).
 
-    Note: this round-trips through `yaml.safe_load`/`safe_dump`, so any comments
-    a hand-edited `engine.yaml` carried are lost. Files produced by `wengine`
-    have none.
+    Validates the block against `NodesConfig` — the engine's own model for the
+    `nodes:` grammar — so a malformed block (non-mapping, bad key, or a value
+    that is neither an entry-point ref nor a glob list) is rejected here rather
+    than tripping a helper downstream. Other top-level keys are left untouched.
     """
-    data = yaml.safe_load(engine_yaml.read_text()) or {}
-    data["nodes"] = dict(nodes)
-    engine_yaml.write_text(
-        yaml.safe_dump(data, sort_keys=False, default_flow_style=False)
-    )
+    raw = dict(_read_document(engine_yaml)).get("nodes") or {}
+    try:
+        config = NodesConfig.model_validate(raw)
+    except ValidationError as e:
+        raise InstallError(f"{engine_yaml}: invalid nodes block ({e}).") from e
+    return {
+        key: value if isinstance(value, str) else [str(v) for v in value]
+        for key, value in config.root.items()
+    }
 
 
-def _glob_distributions(nodes: Mapping[str, object], key: str) -> Sequence[str]:
+def write_nodes_block(engine_yaml: Path, nodes: Mapping[str, NodeEntry]) -> None:
+    """Write `nodes` back into `engine.yaml`, preserving the rest of the document.
+
+    The new block is validated through `NodesConfig` first. The write edits the
+    round-trip document in place — surviving keys keep their comments and
+    formatting — and only then re-serializes, so hand-written annotations on
+    untouched entries are not lost.
+    """
+    try:
+        NodesConfig.model_validate(dict(nodes))
+    except ValidationError as e:
+        raise InstallError(
+            f"{engine_yaml}: refusing to write invalid nodes block ({e})."
+        ) from e
+
+    document = _read_document(engine_yaml)
+    doc = dict(document) if not isinstance(document, dict) else document
+    existing = doc.get("nodes")
+    if isinstance(existing, dict):
+        for key in [k for k in existing if k not in nodes]:
+            del existing[key]
+        for key, value in nodes.items():
+            existing[key] = value
+    else:
+        doc["nodes"] = dict(nodes)
+
+    buffer = io.StringIO()
+    _yaml.dump(doc, buffer)
+    engine_yaml.write_text(buffer.getvalue())
+
+
+def _glob_distributions(nodes: Mapping[str, NodeEntry], key: str) -> list[str]:
     """The distribution list under a glob key (`"*"` or `"<prefix>:*"`)."""
     value = nodes.get(key)
     if value is None:
-        return ()
+        return []
     if isinstance(value, str):
-        return (value,)
-    if isinstance(value, Sequence):
-        return tuple(str(v) for v in value)
-    raise InstallError(f"Glob entry {key!r} has an unexpected value: {value!r}.")
+        return [value]
+    return [str(v) for v in value]
 
 
 def check_explicit_collisions(
-    nodes: Mapping[str, object],
+    nodes: Mapping[str, NodeEntry],
     recognized_names: Sequence[str],
-    target_dist: str,
-    *,
-    force: bool,
+    target_dist: Distribution,
 ) -> None:
     """Reject explicit entries that clash with a different distribution.
 
     An existing *explicit* entry for `name` pointing at another distribution is
-    a hard error unless `--force`. (Builtins are explicit entries, so overriding
-    one lands here.) An existing entry for the *same* distribution is a no-op.
+    a hard error. (Builtins are explicit entries, so overriding one lands here.)
+    An existing entry for the *same* distribution is a no-op. We never silently
+    overwrite a mapping — the operator must remove the old entry first.
     """
-    if force:
-        return
     for name in recognized_names:
         existing = nodes.get(name)
         if not isinstance(existing, str):
             continue  # absent, or a glob list — not an explicit clash
-        existing_dist = existing.split(":", 1)[0]
-        if canonicalize_name(existing_dist) != canonicalize_name(target_dist):
+        if Distribution(existing.split(":", 1)[0]) != target_dist:
             raise InstallError(
-                f"{name!r} is already mapped to {existing!r}. Pass --force to "
-                f"override it with {target_dist!r}."
+                f"{name!r} is already mapped to {existing!r}. Remove that entry "
+                f"from engine.yaml first to map it to {target_dist.root!r} instead."
             )
 
 
-def glob_neighbors(nodes: Mapping[str, object], target_dist: str) -> Sequence[str]:
+def glob_neighbors(
+    nodes: Mapping[str, NodeEntry], target_dist: Distribution
+) -> list[Distribution]:
     """The other distributions on the `"*"` glob (excluding `target_dist`)."""
-    return tuple(
+    return [
         dist
-        for dist in _glob_distributions(nodes, "*")
-        if canonicalize_name(dist) != canonicalize_name(target_dist)
-    )
+        for d in _glob_distributions(nodes, "*")
+        if (dist := Distribution(d)) != target_dist
+    ]
 
 
 def check_glob_collision(
-    nodes: Mapping[str, object],
-    target_dist: str,
+    nodes: Mapping[str, NodeEntry],
+    target_dist: Distribution,
     ep_names: Sequence[str],
-    neighbor_entry_points: Mapping[str, Sequence[str]],
+    neighbor_entry_points: Mapping[Distribution, Sequence[str]],
 ) -> None:
     """Reject a bulk install whose bare names clash with another glob dist.
 
@@ -242,32 +292,33 @@ def check_glob_collision(
         }
         if clashes:
             raise InstallError(
-                f"Bare-name collision on {sorted(clashes)}: both {target_dist!r} "
-                f"and {other_dist!r} expose them on the '*' glob. Use --only with "
-                f"an explicit name, or --prefix to namespace one bundle."
+                f"Bare-name collision on {sorted(clashes)}: both "
+                f"{target_dist.root!r} and {other_dist.root!r} expose them on the "
+                f"'*' glob. Use --only with an explicit name, or --prefix to "
+                f"namespace one bundle."
             )
 
 
 def merge_explicit(
-    nodes: Mapping[str, object], dist: str, names: Mapping[str, str]
-) -> dict[str, object]:
+    nodes: Mapping[str, NodeEntry], dist: Distribution, names: Mapping[str, str]
+) -> dict[str, NodeEntry]:
     """Add/overwrite explicit `recognized: dist:entryPoint` entries."""
-    out = dict(nodes)
+    out: dict[str, NodeEntry] = dict(nodes)
     for recognized, entry_point in names.items():
-        out[recognized] = f"{dist}:{entry_point}"
+        out[recognized] = f"{dist.root}:{entry_point}"
     return out
 
 
 def merge_glob(
-    nodes: Mapping[str, object],
-    dist: str,
+    nodes: Mapping[str, NodeEntry],
+    dist: Distribution,
     key: str = "*",
-) -> Mapping[str, object]:
+) -> dict[str, NodeEntry]:
     """Append `dist` to the glob list under `key` (`"*"` or `"<prefix>:*"`)."""
-    out = dict(nodes)
+    out: dict[str, NodeEntry] = dict(nodes)
     existing = _glob_distributions(out, key)
-    if not any(canonicalize_name(d) == canonicalize_name(dist) for d in existing):
-        existing = (*existing, dist)
+    if not any(Distribution(d) == dist for d in existing):
+        existing.append(dist.root)
     out[key] = existing
     return out
 
@@ -276,16 +327,18 @@ def merge_glob(
 
 # Dumps the node entry-point table (name + declared extras) for one distribution
 # as JSON. Run under the *project's* interpreter so it sees a standalone venv,
-# not the one `wengine` itself runs under.
+# not the one `wengine` itself runs under — and so it reads the entry-point
+# group name from the project's own `workflow_engine`, rather than `wengine`
+# reaching across the `core` boundary for a constant it only needs here.
 _READ_ENTRY_POINTS = """
 import json, sys
 from importlib.metadata import entry_points
 from packaging.utils import canonicalize_name
+from workflow_engine.core.config import NODES_ENTRY_POINT_GROUP
 
-group, dist = sys.argv[1], sys.argv[2]
-target = canonicalize_name(dist)
+target = canonicalize_name(sys.argv[1])
 out = []
-for ep in entry_points(group=group):
+for ep in entry_points(group=NODES_ENTRY_POINT_GROUP):
     if ep.dist is not None and canonicalize_name(ep.dist.name) == target:
         out.append({"name": ep.name, "extras": list(ep.extras)})
 print(json.dumps(out))
@@ -311,10 +364,10 @@ def _uv_run_python(root: Path, code: str, *args: str) -> str:
 
 def read_distribution_entry_points(
     root: Path,
-    dist: str,
+    dist: Distribution,
 ) -> Sequence[MountedNode]:
     """The node entry points `dist` advertises, read from the project env."""
-    raw = _uv_run_python(root, _READ_ENTRY_POINTS, NODES_ENTRY_POINT_GROUP, dist)
+    raw = _uv_run_python(root, _READ_ENTRY_POINTS, dist.root)
     return tuple(
         MountedNode(entry_point_name=item["name"], extras=item["extras"])
         for item in json.loads(raw)
@@ -330,10 +383,9 @@ def install(
     only: Sequence[str] = (),
     as_name: str | None = None,
     prefix: str | None = None,
-    force: bool = False,
     start: Path | None = None,
-) -> str:
-    """Install `target` and map its nodes in `engine.yaml`. Returns the dist name.
+) -> Distribution:
+    """Install `target` and map its nodes in `engine.yaml`. Returns the dist.
 
     See the module docstring for the full flow and its caveats.
     """
@@ -353,9 +405,13 @@ def install(
     # (PyPI). For git/path/forge the name is only known post-install, so the
     # authoritative explicit check runs after `uv add` below.
     explicit_names = plan_explicit_names(only, as_name) if only else {}
+    # The recognized names (notably a free-form `--as`) are known before any
+    # `uv` call, so validate their grammar now — otherwise an invalid name only
+    # trips `write_nodes_block` after the package is already installed.
+    check_recognized_name_grammar(tuple(explicit_names))
     if explicit_names and isinstance(parsed, PyPITarget):
-        pre_dist = distribution_name(parsed.requirement)
-        check_explicit_collisions(nodes, list(explicit_names), pre_dist, force=force)
+        pre_dist = Distribution.from_requirement(parsed.requirement)
+        check_explicit_collisions(nodes, tuple(explicit_names), pre_dist)
 
     # Step 3: install (with any user-typed extras already in uv_add_args).
     before = read_pyproject_dependencies(project.root)
@@ -370,7 +426,7 @@ def install(
         # Steps 5-7 differ by install kind.
         if only:
             mounts = resolve_only_mounts(available, only)
-            check_explicit_collisions(nodes, list(explicit_names), dist, force=force)
+            check_explicit_collisions(nodes, tuple(explicit_names), dist)
             new_nodes = merge_explicit(nodes, dist, explicit_names)
         elif prefix is not None:
             mounts = available  # whole bundle, own keyspace — no glob check
@@ -397,11 +453,12 @@ def install(
         # Roll back the install we can no longer map cleanly. A uv failure
         # mid-flow (e.g. the extras re-add not resolving) lands here too, so
         # the project doesn't keep a dist it never mapped.
-        project.remove(dist)
+        project.remove(dist.root)
         if isinstance(e, InstallError):
             raise
         raise InstallError(
-            f"Installed {dist!r} but could not finish mapping it ({e}); rolled back."
+            f"Installed {dist.root!r} but could not finish mapping it ({e}); "
+            f"rolled back."
         ) from e
 
     write_nodes_block(project.engine_yaml, new_nodes)

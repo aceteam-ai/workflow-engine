@@ -1019,7 +1019,7 @@ class TestInstall:
         with runner.isolated_filesystem():
             Path("engine.yaml").write_text("schema_version: 1\nnodes: {}\n")
             Path("pyproject.toml").write_text('[project]\nname = "x"\nversion = "0"\n')
-            result = invoke_cli(runner, "install", "--force")
+            result = invoke_cli(runner, "install", "--prefix", "p")
             assert result.exit_code != 0
             assert "install target" in result.output
 

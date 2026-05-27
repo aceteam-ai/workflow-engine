@@ -182,27 +182,23 @@ def init_cmd():
 @click.option(
     "--prefix", metavar="P", help="Mount the bundle under a P:<Name> namespace."
 )
-@click.option(
-    "--force", is_flag=True, help="Override an existing explicit entry for a node."
-)
 def install_cmd(
     target: str | None,
     only: tuple[str, ...],
     as_name: str | None,
     prefix: str | None,
-    force: bool,
 ):
     """Install a node-source distribution and map its nodes.
 
     With no TARGET, sync the environment to uv.lock (rebuild a checkout).
     """
     if target is None:
-        if only or as_name or prefix or force:
+        if only or as_name or prefix:
             raise click.ClickException("Options are only valid with an install target.")
         UvProject.locate(Path.cwd()).sync()
         return
     try:
-        dist = install(target, only=only, as_name=as_name, prefix=prefix, force=force)
+        dist = install(target, only=only, as_name=as_name, prefix=prefix)
     except (InstallError, EngineYamlNotFound) as e:
         raise click.ClickException(str(e)) from e
     click.echo(f"Installed {dist}")
