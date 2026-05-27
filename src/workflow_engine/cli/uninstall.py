@@ -31,12 +31,12 @@ from __future__ import annotations
 
 import subprocess
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass
 from pathlib import Path
 
 from packaging.requirements import Requirement
 
 from ..core.config import Distribution
+from ..utils.model import ImmutableBaseModel
 from .install import (
     MountedNode,
     NodeEntry,
@@ -53,8 +53,7 @@ class UninstallError(Exception):
     """A `wengine uninstall` failed for an operator-actionable reason."""
 
 
-@dataclass(frozen=True)
-class UninstallResult:
+class UninstallResult(ImmutableBaseModel):
     """What `uninstall` did, for the CLI to report."""
 
     distribution: Distribution
