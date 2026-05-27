@@ -68,16 +68,19 @@ def _is_glob_key(key: str) -> bool:
     return key == "*" or key.endswith(":*")
 
 
-def _glob_dists(value: NodeEntry) -> list[str]:
+def _glob_dists(value: NodeEntry) -> Sequence[str]:
     """The distribution list under a glob value (a name or a list of names)."""
     if isinstance(value, str):
-        return [value]
-    if isinstance(value, list):
-        return [str(v) for v in value]
+        return (value,)
+    if isinstance(value, Sequence):
+        return tuple(str(v) for v in value)
     raise UninstallError(f"Glob entry has an unexpected value: {value!r}.")
 
 
-def distribution_for_node(nodes: Mapping[str, NodeEntry], name: str) -> Distribution:
+def distribution_for_node(
+    nodes: Mapping[str, NodeEntry],
+    name: str,
+) -> Distribution:
     """The distribution an *explicit* `name` entry points at.
 
     Raises `UninstallError` if `name` has no explicit entry (it may be supplied
@@ -92,7 +95,10 @@ def distribution_for_node(nodes: Mapping[str, NodeEntry], name: str) -> Distribu
     return Distribution(value.split(":", 1)[0])
 
 
-def references_distribution(nodes: Mapping[str, NodeEntry], dist: Distribution) -> bool:
+def references_distribution(
+    nodes: Mapping[str, NodeEntry],
+    dist: Distribution,
+) -> bool:
     """Whether any `nodes:` entry still references `dist`."""
     for key, value in nodes.items():
         if _is_glob_key(key):
@@ -105,8 +111,9 @@ def references_distribution(nodes: Mapping[str, NodeEntry], dist: Distribution) 
 
 
 def remove_distribution_entries(
-    nodes: Mapping[str, NodeEntry], dist: Distribution
-) -> dict[str, NodeEntry]:
+    nodes: Mapping[str, NodeEntry],
+    dist: Distribution,
+) -> Mapping[str, NodeEntry]:
     """Drop every explicit entry and glob membership referencing `dist`.
 
     A glob key whose list empties out is dropped entirely.
@@ -151,7 +158,9 @@ def remaining_mapped_extras(
 
 
 def narrow_dependency_extras(
-    root: Path, dist: Distribution, extras: Sequence[str]
+    root: Path,
+    dist: Distribution,
+    extras: Sequence[str],
 ) -> bool:
     """Rewrite `dist`'s `[project.dependencies]` entry to exactly `extras`.
 
