@@ -1,18 +1,10 @@
 # Workflow Engine `wengine` CLI
 
-## `wengine config`
+## The engine project (`engine.yaml`)
 
-Config is stored as a YAML file at a default location determined by `platformdirs`. Users edit it directly — the CLI does not provide per-key edit operations.
+`wengine` operates on a single engine project, defined by an `engine.yaml` file (its `nodes:` map is the set of available node types — see docs/plans/node-distribution.md). Every command that builds an engine — everything under `schema`, `node`, the read/run subcommands of `workflow`, and `verify` — discovers that file by **walking up from the current directory to the nearest `engine.yaml`** (the standard package-manager search). There is no override flag and no machine-global config: you run `wengine` from inside (or below) the project directory, exactly like `git` or `uv`.
 
-### `wengine config path`
-
-Prints the default config file location, so users know where to edit it.
-
-### `wengine config show`
-
-Prints the full contents of the config file (default location, or the file given via `--config`).
-
-All commands that build an engine (everything under `schema`, `node`, and the read/run subcommands of `workflow`) accept an optional `--config=<path>` flag to override the default config location. `workflow init` does not — it only writes a file.
+If no `engine.yaml` is found on the walk up, those commands fail with an error pointing at `wengine init`. Commands that only write a file (`workflow init`) or create the project (`wengine init`) do not require an existing `engine.yaml`. Users edit `engine.yaml` directly — the CLI has no per-key edit operations for it.
 
 ## `wengine schema`
 
@@ -186,3 +178,9 @@ Supports `--json` for machine-readable output (stable shape, suitable for agent 
 ### `wengine workflow run <path> <input>`
 
 Run a workflow by loading it from `path`.
+
+## `wengine verify <path>`
+
+Re-typechecks a single workflow file against the current `engine.yaml` node map.
+
+This is the operator's check after editing `engine.yaml`: remapping a node name to a different distribution or version, or bumping that distribution, silently changes the code behind a `type` without changing the workflow that uses it. If the new node no longer satisfies the old type signature, the workflow breaks at load — `verify` surfaces that. It prints `ok` on success, and exits non-zero with the error if the workflow fails to validate.
