@@ -2,7 +2,7 @@
 
 ## The engine project (`engine.yaml`)
 
-`wengine` operates on a single engine project, defined by an `engine.yaml` file (its `nodes:` map is the set of available node types — see docs/plans/node-distribution.md). Every command that builds an engine — everything under `schema`, `node`, the read/run subcommands of `workflow`, and `verify` — discovers that file by **walking up from the current directory to the nearest `engine.yaml`** (the standard package-manager search). There is no override flag and no machine-global config: you run `wengine` from inside (or below) the project directory, exactly like `git` or `uv`.
+`wengine` operates on a single engine project, defined by an `engine.yaml` file (its `nodes:` map is the set of available node types — see docs/node-distribution.md). Every command that builds an engine — everything under `schema`, `node`, the read/run subcommands of `workflow`, and `verify` — discovers that file by **walking up from the current directory to the nearest `engine.yaml`** (the standard package-manager search). There is no override flag and no machine-global config: you run `wengine` from inside (or below) the project directory, exactly like `git` or `uv`.
 
 If no `engine.yaml` is found on the walk up, those commands fail with an error pointing at `wengine init`. Commands that only write a file (`workflow init`) or create the project (`wengine init`) do not require an existing `engine.yaml`. Users edit `engine.yaml` directly — the CLI has no per-key edit operations for it.
 
@@ -10,9 +10,9 @@ If no `engine.yaml` is found on the walk up, those commands fail with an error p
 
 Creates an `engine.yaml` in the current directory, its `nodes:` map seeded with one explicit entry per built-in node. In standalone mode it also creates the `pyproject.toml` that backs the project's environment. Errors if an `engine.yaml` already exists.
 
-### `wengine install [<target>] [--only NODE]... [--as NAME] [--prefix P] [--force]`
+### `wengine install [<target>] [--only NODE]... [--as NAME] [--prefix P]`
 
-Installs a node-source distribution and maps its nodes into `engine.yaml` (roughly `uv add <target>` plus a name-map edit). `--only` maps just the named node(s); `--as` renames a single `--only` node; `--prefix` mounts the bundle under a `P:<Name>` namespace; `--force` overrides an existing explicit entry. With no `<target>`, it syncs the environment to `uv.lock` (rebuilds a checkout). See docs/plans/node-distribution.md for the full flow.
+Installs a node-source distribution and maps its nodes into `engine.yaml` (roughly `uv add <target>` plus a name-map edit). `--only` maps just the named node(s); `--as` renames a single `--only` node; `--prefix` mounts the bundle under a `P:<Name>` namespace. An explicit entry that already maps a name to a different distribution is an error — remove it first; `wengine` never overwrites a mapping. With no `<target>`, it syncs the environment to `uv.lock` (rebuilds a checkout). See docs/node-distribution.md for the full flow.
 
 ### `wengine uninstall <name>` / `wengine uninstall --dist <name>`
 

@@ -150,6 +150,8 @@ uv run pytest  # Runs both unit and integration tests
 - [Contexts](docs/contexts.md) - Storage backends and lifecycle hooks
 - [Migrations](docs/MIGRATIONS.md) - Node versioning and migration system
 - [Workflow Loading](docs/WORKFLOW_LOADING.md) - Safe workflow loading with migration
+- [CLI](docs/cli.md) - The `wengine` command-line reference
+- [Node Distribution](docs/node-distribution.md) - Installing nodes from packages, git, and paths via `engine.yaml`
 - [Examples](./examples)
 - [Changelog](CHANGELOG.md)
 - [Contributing](CONTRIBUTING.md)
