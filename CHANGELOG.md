@@ -4,6 +4,30 @@ All notable changes to this project will be documented in this file.
 
 This project uses [PEP 440](https://peps.python.org/pep-0440/) versioning with release candidates (rcN) for pre-release versions.
 
+## [2.0.0rc12] - 2026-05-29
+
+### Added
+- **Distributed node sources** — install node implementations from published packages, git repositories, forge shorthands, and local directories, and reference them from workflows through an operator-controlled `engine.yaml` name map built on Python entry points (#136, #137, #138, #139, #142, #143, #144, #145, #146):
+  - `wengine init` scaffolds an `engine.yaml` (and, in standalone mode, a backing `uv` project) seeded with the builtin nodes (#142).
+  - `wengine install <target>` adds a node-source distribution with `uv` and maps its nodes. Targets accept PEP 508 PyPI requirements, `git+` URLs, `github:` / `gitlab:` (and bare `owner/repo`) shorthands resolved over HTTPS to pinned tarballs, and local `./path` editable installs. `--only`, `--as`, and `--prefix` control how nodes are mounted; a bare `wengine install` syncs the environment to `uv.lock` (#138, #139, #143).
+  - `wengine uninstall <name>` / `--dist <name>` removes a name mapping (or a whole distribution), reconciling the distribution's `pyproject.toml` extras and `uv` to match what remains mapped (#145).
+  - `wengine verify` validates a workflow against the resolved engine, with walk-up discovery of the nearest `engine.yaml` (#144).
+  - `engine.yaml` schema with entry-point-based node refs: glob mounts (`"*"`, `"<prefix>:*"`) and explicit `<distribution>:<entryPoint>` entries that override globs (#137).
+- POSIX `wengine.sh` shim that bootstraps a private `uv` venv and runs the version-pinned CLI, packaged with the `wengine` Claude Code plugin (#133).
+- Compact value-type schemas, richer `node list` output, and an Input/Output guard in the CLI (#130).
+
+### Changed
+- The `wengine` skill is now distributed as a Claude Code plugin through the shared `aceteam-ai/marketplace` rather than a self-published marketplace (#131, #135).
+- Standardized on `ruamel.yaml` for all YAML handling and dropped `pyyaml` as a direct dependency; `engine.yaml` reads and writes now preserve comments and key order (#143, #148).
+
+### Fixed
+- Prevent the user's own `wengine` config from leaking into the test environment (#134).
+
+### Internal
+- Renamed `write_nodes_block` → `replace_nodes_block` to make its full-block-replacement contract explicit (#149).
+- Design doc for distributed node sources, later graduated into a reference doc (#136, #146).
+- Dependency bumps: `urllib3` 2.6.3 → 2.7.0 (#141), `idna` 3.11 → 3.15 (#140).
+
 ## [2.0.0rc11] - 2026-05-06
 
 ### Added
