@@ -25,7 +25,7 @@
 set -eu
 
 # Version of the library we install from PyPI (must match plugin releases).
-WENGINE_PINNED_VERSION="2.0.0rc11"
+WENGINE_PINNED_VERSION="2.0.0rc12"
 
 # What to install from PyPI when WENGINE_EDITABLE_PATH is unset.
 WENGINE_PACKAGE_SPEC="${WENGINE_PACKAGE_SPEC:-aceteam-workflow-engine==${WENGINE_PINNED_VERSION}}"
