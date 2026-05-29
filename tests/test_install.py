@@ -24,9 +24,9 @@ from workflow_engine.cli.install import (
     merge_glob,
     plan_explicit_names,
     read_pyproject_dependencies,
+    replace_nodes_block,
     resolve_only_mounts,
     with_extras,
-    write_nodes_block,
 )
 from workflow_engine.core.config import Distribution
 
@@ -181,10 +181,25 @@ class TestNodesBlockIO:
         )
         nodes = load_nodes_block(engine_yaml)
         nodes["New"] = "acme:New"
-        write_nodes_block(engine_yaml, nodes)
+        replace_nodes_block(engine_yaml, nodes)
         reloaded = yaml.safe_load(engine_yaml.read_text())
         assert reloaded["schema_version"] == 1
         assert reloaded["nodes"]["New"] == "acme:New"
+
+    def test_replaces_block_dropping_omitted_entries(self, tmp_path: Path):
+        # replace_nodes_block writes the *complete* block: a partial mapping
+        # drops the entries it omits. Callers must load → mutate → write back.
+        engine_yaml = tmp_path / "engine.yaml"
+        engine_yaml.write_text(
+            "schema_version: 1\n"
+            "nodes:\n"
+            "  Sum: aceteam-workflow-engine:Sum\n"
+            "  Product: aceteam-workflow-engine:Product\n"
+        )
+        replace_nodes_block(engine_yaml, {"Sum": "aceteam-workflow-engine:Sum"})
+        reloaded = yaml.safe_load(engine_yaml.read_text())
+        assert "Product" not in reloaded["nodes"]  # omitted → dropped
+        assert reloaded["nodes"]["Sum"] == "aceteam-workflow-engine:Sum"
 
     def test_preserves_comments_and_unknown_keys(self, tmp_path: Path):
         engine_yaml = tmp_path / "engine.yaml"
@@ -198,7 +213,7 @@ class TestNodesBlockIO:
         )
         nodes = load_nodes_block(engine_yaml)
         nodes["New"] = "acme:New"
-        write_nodes_block(engine_yaml, nodes)
+        replace_nodes_block(engine_yaml, nodes)
         text = engine_yaml.read_text()
         assert "# top comment" in text
         assert "# inline" in text  # comment on a surviving entry is kept

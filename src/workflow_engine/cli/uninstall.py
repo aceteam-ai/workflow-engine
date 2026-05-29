@@ -44,7 +44,7 @@ from .install import (
     load_nodes_block,
     read_distribution_entry_points,
     read_pyproject_dependencies,
-    write_nodes_block,
+    replace_nodes_block,
 )
 from .uv_project import UvProject
 
@@ -222,7 +222,7 @@ def uninstall(
 
     # Write the name map first (see the module docstring on ordering), then
     # reconcile pyproject to match what is still mapped.
-    write_nodes_block(project.engine_yaml, new_nodes)
+    replace_nodes_block(project.engine_yaml, new_nodes)
 
     if references_distribution(new_nodes, target):
         # Still mapped — re-narrow its extras to the union of what remains.
