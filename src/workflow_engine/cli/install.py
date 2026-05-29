@@ -196,8 +196,14 @@ def load_nodes_block(engine_yaml: Path) -> dict[str, NodeEntry]:
     }
 
 
-def write_nodes_block(engine_yaml: Path, nodes: Mapping[str, NodeEntry]) -> None:
-    """Write `nodes` back into `engine.yaml`, preserving the rest of the document.
+def replace_nodes_block(engine_yaml: Path, nodes: Mapping[str, NodeEntry]) -> None:
+    """Replace the entire `nodes:` block of `engine.yaml` with `nodes`.
+
+    `nodes` must be the *complete* desired block: any existing `nodes:` entry
+    not present in `nodes` is dropped. The intended use is to load the current
+    block with `load_nodes_block`, mutate it, and pass the whole thing back —
+    passing a partial mapping silently deletes the omitted entries. Other
+    top-level keys of the document are untouched either way.
 
     The new block is validated through `NodesConfig` first. The write edits the
     round-trip document in place — surviving keys keep their comments and
@@ -407,7 +413,7 @@ def install(
     explicit_names = plan_explicit_names(only, as_name) if only else {}
     # The recognized names (notably a free-form `--as`) are known before any
     # `uv` call, so validate their grammar now — otherwise an invalid name only
-    # trips `write_nodes_block` after the package is already installed.
+    # trips `replace_nodes_block` after the package is already installed.
     check_recognized_name_grammar(tuple(explicit_names))
     if explicit_names and isinstance(parsed, PyPITarget):
         pre_dist = Distribution.from_requirement(parsed.requirement)
@@ -461,7 +467,7 @@ def install(
             f"rolled back."
         ) from e
 
-    write_nodes_block(project.engine_yaml, new_nodes)
+    replace_nodes_block(project.engine_yaml, new_nodes)
     return dist
 
 
