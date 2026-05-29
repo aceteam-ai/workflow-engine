@@ -14,9 +14,8 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 
-import yaml
-
 from workflow_engine.core.config import _iter_node_entry_points
+from workflow_engine.utils.serialization import dumps_yaml
 
 from .uv_project import ENGINE_YAML_NAMES, UvProject
 
@@ -57,11 +56,7 @@ def initial_nodes_config() -> Mapping[str, str]:
 
 def render_engine_yaml(nodes: Mapping[str, str | Sequence[str]]) -> str:
     """Render a full `engine.yaml` document for the given `nodes:` block."""
-    return yaml.safe_dump(
-        {"schema_version": 1, "nodes": dict(nodes)},
-        sort_keys=False,
-        default_flow_style=False,
-    )
+    return dumps_yaml({"schema_version": 1, "nodes": dict(nodes)})
 
 
 def init_engine_project(target_dir: Path) -> Path:
