@@ -13,7 +13,6 @@ from pathlib import Path
 from typing import Any
 
 import click
-import yaml
 
 from workflow_engine import __version__
 from workflow_engine.cli.engine_init import EngineYamlAlreadyExists, init_engine_project
@@ -35,6 +34,7 @@ from workflow_engine.core.values.schema import validate_value_schema
 from workflow_engine.core.values.sequence import SequenceValue
 from workflow_engine.core.values.value import Value, get_origin_and_args
 from workflow_engine.core.workflow import Workflow
+from workflow_engine.utils.serialization import dumps_yaml
 
 
 def coro(f):
@@ -439,14 +439,13 @@ def workflow():
 def _load_workflow(path: Path) -> Workflow:
     text = path.read_text()
     if path.suffix in (".yaml", ".yml"):
-        data = yaml.safe_load(text)
-        return Workflow.model_validate(data)
+        return Workflow.model_validate_yaml(text)
     return Workflow.model_validate_json(text)
 
 
 def _save_workflow(path: Path, wf: Workflow) -> None:
     if path.suffix in (".yaml", ".yml"):
-        path.write_text(yaml.safe_dump(wf.model_dump(mode="json"), sort_keys=False))
+        path.write_text(wf.model_dump_yaml())
     else:
         path.write_text(wf.model_dump_json(indent=2) + "\n")
 
@@ -640,7 +639,7 @@ def workflow_init(path: Path, force: bool):
     }
     path.parent.mkdir(parents=True, exist_ok=True)
     if path.suffix in (".yaml", ".yml"):
-        path.write_text(yaml.safe_dump(blank, sort_keys=False))
+        path.write_text(dumps_yaml(blank))
     else:
         path.write_text(json.dumps(blank, indent=2) + "\n")
     click.echo(f"Wrote blank workflow to {path}")

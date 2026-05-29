@@ -1,21 +1,22 @@
 from collections.abc import Mapping
+from io import StringIO
 from tomllib import load as load_toml
 from tomllib import loads as loads_toml
 from typing import Any, Self, TextIO
 
 from pydantic import BaseModel
 from pydantic.config import ExtraValues
+from ruamel.yaml import YAML
 from tomli_w import dump as dump_toml
 from tomli_w import dumps as dumps_toml
-from yaml import dump as _yaml_dump
-from yaml import load as _yaml_load
 
-try:
-    from yaml import CSafeDumper as YamlDumper
-    from yaml import CSafeLoader as YamlLoader
-except ImportError:
-    from yaml import SafeDumper as YamlDumper
-    from yaml import SafeLoader as YamlLoader
+# Plain-data YAML (not round-trip): loads to / dumps from native Python types,
+# the right mode for model serialization where there are no comments to keep.
+# Block style, and key sorting disabled so a model's field order (and a dict's
+# insertion order) survive a dump — matching pyyaml's `sort_keys=False`.
+_yaml = YAML(typ="safe")
+_yaml.default_flow_style = False
+_yaml.representer.sort_base_mapping_type_on_output = False
 
 
 class PydanticTomlMixin:
@@ -62,19 +63,21 @@ class PydanticTomlMixin:
 
 
 def load_yaml(stream: TextIO) -> Any:
-    return _yaml_load(stream, Loader=YamlLoader)
+    return _yaml.load(stream)
 
 
 def loads_yaml(s: str) -> Any:
-    return _yaml_load(s, Loader=YamlLoader)
+    return _yaml.load(s)
 
 
 def dump_yaml(data: Any, stream: TextIO) -> None:
-    _yaml_dump(data, stream, Dumper=YamlDumper)
+    _yaml.dump(data, stream)
 
 
 def dumps_yaml(data: Any) -> str:
-    return _yaml_dump(data, Dumper=YamlDumper)
+    buffer = StringIO()
+    _yaml.dump(data, buffer)
+    return buffer.getvalue()
 
 
 class PydanticYamlMixin:
