@@ -65,7 +65,7 @@ from workflow_engine import ShouldRetry
 from datetime import timedelta
 
 class MyNode(Node[MyInput, MyOutput, Empty]):
-    async def run(self, context, input):
+    async def run(self, *, context, input_type, output_type, input):
         try:
             return await call_external_api(input)
         except RateLimitError:

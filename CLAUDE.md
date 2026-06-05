@@ -60,30 +60,38 @@ src/workflow_engine/
 
 ### Key Patterns
 
-**Node Definition**: Nodes use a discriminator pattern with `type: Literal["NodeName"]` for polymorphic serialization:
+**Node Definition**: A node is a `Node[Input, Output, Params]` subclass. The `type` discriminator is derived automatically from the class name (`MyNode` → `"My"`, the `Node` suffix is stripped) — do **not** declare a `type` field. Static-typed nodes override the `static_input_type` / `static_output_type` classmethods; nodes whose schema depends on their params override the async `dynamic_input_type` / `dynamic_output_type` instead (see `AddNode` in `nodes/arithmetic.py`). `run` is async with **keyword-only** arguments. See [docs/authoring-nodes.md](docs/authoring-nodes.md) for the full guide.
 
 ```python
-class MyNode(Node[MyInput, MyOutput, MyParams]):
+class MyNode(Node[MyInput, MyOutput, Empty]):
     TYPE_INFO: ClassVar[NodeTypeInfo] = NodeTypeInfo.from_parameter_type(
-        name="MyNode",
         display_name="My Node",
         description="...",
         version="1.0.0",  # Semantic versioning required
-        parameter_type=MyParams,
+        parameter_type=Empty,
     )
-    type: Literal["MyNode"] = "MyNode"
 
-    @cached_property
-    def input_type(self):
+    @classmethod
+    @override
+    def static_input_type(cls) -> Type[MyInput]:
         return MyInput
 
-    @cached_property
-    def output_type(self):
+    @classmethod
+    @override
+    def static_output_type(cls) -> Type[MyOutput]:
         return MyOutput
 
-    async def run(self, context: Context, input: MyInput) -> MyOutput:
-        # Implementation
-        pass
+    @override
+    async def run(
+        self,
+        *,
+        context: ExecutionContext,
+        input_type: Type[MyInput],
+        output_type: Type[MyOutput],
+        input: MyInput,
+    ) -> MyOutput:
+        # Implementation; access params via self.params
+        ...
 ```
 
 **Field Titles and Descriptions**: Every field in `Data`, `Params`, and output model classes must have a `title` and `description` via `Field()`. These are surfaced to end users, so write them for a non-technical audience:
