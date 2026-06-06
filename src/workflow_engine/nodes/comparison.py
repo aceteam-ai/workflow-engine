@@ -47,9 +47,10 @@ class EqualityParams(Params):
         description=(
             "The maximum difference between the two values relative to the larger "
             "of their magnitudes, for them to count as equal. Use this to absorb "
-            "floating-point rounding error."
+            "floating-point rounding error. Defaults to 0, meaning an exact "
+            "comparison."
         ),
-        default=FloatValue(1e-9),
+        default=FloatValue(0.0),
         json_schema_extra={"minimum": 0},
     )
     abs_tol: FloatValue = Field(

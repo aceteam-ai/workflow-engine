@@ -53,7 +53,7 @@ Each comparison node takes two `FloatValue` inputs `a` and `b` and outputs a `Bo
 { "type": "GreaterThan", "id": "gt1", "params": {} }
 ```
 
-`Equal` and `NotEqual` compare with `math.isclose`, so they accept optional `rel_tol` (relative tolerance, default `1e-9`) and `abs_tol` (absolute tolerance, default `0.0`) parameters to absorb floating-point rounding. Set both to `0` for an exact comparison; use `abs_tol` when comparing values near zero.
+`Equal` and `NotEqual` compare with `math.isclose`. By default both tolerances are `0`, so the comparison is **exact**. To absorb floating-point rounding, set `rel_tol` (relative tolerance) and/or `abs_tol` (absolute tolerance); use `abs_tol` when comparing values near zero, where a relative tolerance is too strict.
 
 ```json
 { "type": "Equal", "id": "eq1", "params": { "rel_tol": 1e-6, "abs_tol": 1e-9 } }

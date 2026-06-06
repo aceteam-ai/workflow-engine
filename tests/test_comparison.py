@@ -89,17 +89,21 @@ async def test_comparison_nodes(
 
 
 @pytest.mark.asyncio
-async def test_equal_default_tolerance_absorbs_rounding(engine: WorkflowEngine):
-    """0.1 + 0.2 != 0.3 under exact ==, but Equal's default rel_tol treats them equal."""
-    assert await _run_comparison(engine, EqualNode, 0.1 + 0.2, 0.3) is True
-    assert await _run_comparison(engine, NotEqualNode, 0.1 + 0.2, 0.3) is False
+async def test_equal_default_is_exact(engine: WorkflowEngine):
+    """By default (rel_tol=0, abs_tol=0) Equal is an exact comparison."""
+    # 0.1 + 0.2 != 0.3 in binary floating point.
+    assert await _run_comparison(engine, EqualNode, 0.1 + 0.2, 0.3) is False
+    assert await _run_comparison(engine, NotEqualNode, 0.1 + 0.2, 0.3) is True
+    # Large magnitudes that differ by 1 are NOT silently treated as equal.
+    assert await _run_comparison(engine, EqualNode, 1e9, 1e9 + 1) is False
 
 
 @pytest.mark.asyncio
-async def test_equal_zero_rel_tol_is_exact(engine: WorkflowEngine):
-    """With rel_tol=0 and abs_tol=0, Equal falls back to exact comparison."""
-    params = {"rel_tol": 0.0, "abs_tol": 0.0}
-    assert await _run_comparison(engine, EqualNode, 0.1 + 0.2, 0.3, params) is False
+async def test_equal_rel_tol_absorbs_rounding(engine: WorkflowEngine):
+    """An explicit rel_tol lets Equal treat 0.1 + 0.2 and 0.3 as equal."""
+    params = {"rel_tol": 1e-9}
+    assert await _run_comparison(engine, EqualNode, 0.1 + 0.2, 0.3, params) is True
+    assert await _run_comparison(engine, NotEqualNode, 0.1 + 0.2, 0.3, params) is False
 
 
 @pytest.mark.asyncio
