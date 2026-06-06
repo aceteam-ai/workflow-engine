@@ -118,11 +118,11 @@ class MyContext(Context):
 
 ```python
 import logging
-from workflow_engine import Context
+from workflow_engine import ExecutionContext
 
 logger = logging.getLogger(__name__)
 
-class LoggingContext(Context):
+class LoggingContext(ExecutionContext):
     """A context that logs all lifecycle events."""
 
     def __init__(self):

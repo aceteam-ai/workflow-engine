@@ -87,7 +87,6 @@ First, increment your node's version:
 ```python
 class MyNode(Node[MyInput, MyOutput, MyParams]):
     TYPE_INFO: ClassVar[NodeTypeInfo] = NodeTypeInfo.from_parameter_type(
-        name="MyNode",
         display_name="My Node",
         description="...",
         version="2.0.0",  # ← Increment from 1.0.0

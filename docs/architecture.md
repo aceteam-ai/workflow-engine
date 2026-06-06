@@ -93,11 +93,11 @@ Edges connect specific output fields of one node to input fields of another. At 
 
 ### Node Registration
 
-Nodes auto-register via `__init_subclass__` when they define a `type` field with a `Literal` type annotation. This enables polymorphic deserialization: a `Workflow` JSON containing `{"type": "Add", ...}` automatically deserializes to an `AddNode` instance.
+Nodes auto-register via `__init_subclass__` when a concrete `Node` subclass is defined; each registers on `NodeRegistry.DEFAULT` under its derived type name (the class name with the `Node` suffix stripped, e.g. `AddNode` → `"Add"`). This enables polymorphic deserialization: a `Workflow` JSON containing `{"type": "Add", ...}` automatically deserializes to an `AddNode` instance.
 
 ### Discriminated Unions
 
-Node serialization uses Pydantic's discriminated union pattern. Each node class has a `type: Literal["NodeName"]` field that acts as the discriminator, enabling efficient deserialization without trying every possible node type.
+Node serialization uses a discriminator pattern. The base `Node` has a `type: str` field that is auto-populated with the node's derived type name; the registry maps that string to the concrete node class, enabling deserialization without trying every possible node type.
 
 ## Workflow Structure
 
