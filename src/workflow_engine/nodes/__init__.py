@@ -4,6 +4,17 @@ from .arithmetic import (
     FactorizationNode,
     SumNode,
 )
+from .comparison import (
+    AndNode,
+    EqualNode,
+    GreaterThanEqualNode,
+    GreaterThanNode,
+    LessThanEqualNode,
+    LessThanNode,
+    NotEqualNode,
+    NotNode,
+    OrNode,
+)
 from .conditional import (
     ConditionalInput,
     IfElseNode,
@@ -34,11 +45,13 @@ from .text import (
 
 __all__ = [
     "AddNode",
+    "AndNode",
     "AppendToFileNode",
     "ConditionalInput",
     "ConstantBooleanNode",
     "ConstantIntegerNode",
     "ConstantStringNode",
+    "EqualNode",
     "ErrorNode",
     "ExpandDataNode",
     "ExpandMappingNode",
@@ -48,7 +61,14 @@ __all__ = [
     "GatherDataNode",
     "GatherMappingNode",
     "GatherSequenceNode",
+    "GreaterThanEqualNode",
+    "GreaterThanNode",
     "IfElseNode",
     "IfNode",
+    "LessThanEqualNode",
+    "LessThanNode",
+    "NotEqualNode",
+    "NotNode",
+    "OrNode",
     "SumNode",
 ]

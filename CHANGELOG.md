@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 This project uses [PEP 440](https://peps.python.org/pep-0440/) versioning with release candidates (rcN) for pre-release versions.
 
+## [Unreleased]
+
+### Added
+- **Comparison and logic nodes** — built-in boolean nodes for branching and gating workflows:
+  - Comparison: `Equal`, `NotEqual`, `GreaterThan`, `GreaterThanEqual`, `LessThan`, `LessThanEqual` (two `FloatValue` inputs → `BooleanValue`).
+  - Logic: `And` and `Or` are variadic (a `num_arguments` parameter controls how many boolean inputs appear, like `Add`), plus a unary `Not`.
+  - `Equal` / `NotEqual` compare with `math.isclose`. They are exact by default (`rel_tol` and `abs_tol` both default to `0`) and accept optional `rel_tol` / `abs_tol` parameters to absorb floating-point rounding when needed.
+
 ## [2.0.0rc12] - 2026-05-29
 
 ### Added
