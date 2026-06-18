@@ -28,6 +28,9 @@ from .error import (
 from .iteration import (
     ForEachNode,
 )
+from .shell import (
+    BashNode,
+)
 from .text import (
     AppendToFileNode,
 )
@@ -35,6 +38,7 @@ from .text import (
 __all__ = [
     "AddNode",
     "AppendToFileNode",
+    "BashNode",
     "ConditionalInput",
     "ConstantBooleanNode",
     "ConstantIntegerNode",

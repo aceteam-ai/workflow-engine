@@ -139,6 +139,32 @@ Appends text to a file, with an optional suffix.
 | **Parameter** `suffix` | `StringValue`   |
 | **Output** `file`      | `TextFileValue` |
 
+## Shell
+
+### Bash
+
+Runs a shell command and captures its output. The command is a Jinja template
+rendered with the node's `arguments`, so values from upstream nodes can be
+substituted in (e.g. `echo Hello {{ name }}`).
+
+> **Warning:** This node executes arbitrary shell commands in the same
+> environment as the engine itself — it is effectively remote code execution.
+> Only enable it for trusted, locally-operated engines, and never expose it on an
+> engine that runs untrusted workflows or accepts workflows over the network.
+
+| Field                          | Type                          |
+| ------------------------------ | ----------------------------- |
+| **Input** `arguments`          | `StringMapValue[StringValue]` |
+| **Parameter** `command`        | `StringValue`                 |
+| **Parameter** `combine_output` | `BooleanValue`                |
+| **Output** `stdout`            | `TextFileValue`               |
+| **Output** `stderr`            | `TextFileValue`               |
+| **Output** `exit_code`         | `IntegerValue`                |
+
+When `combine_output` is `true`, standard error is merged into standard output
+and the node produces a single `output` (`TextFileValue`) field instead of the
+separate `stdout`/`stderr` files (alongside `exit_code`).
+
 ## Error
 
 ### Error
