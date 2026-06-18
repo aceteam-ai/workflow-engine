@@ -39,6 +39,9 @@ from .error import (
 from .iteration import (
     ForEachNode,
 )
+from .shell import (
+    BashNode,
+)
 from .text import (
     AppendToFileNode,
 )
@@ -47,6 +50,7 @@ __all__ = [
     "AddNode",
     "AndNode",
     "AppendToFileNode",
+    "BashNode",
     "ConditionalInput",
     "ConstantBooleanNode",
     "ConstantIntegerNode",
