@@ -36,6 +36,64 @@ Factorizes an integer into its prime factors.
 | **Input** `value`    | `IntegerValue`                |
 | **Output** `factors` | `SequenceValue[IntegerValue]` |
 
+## Comparison
+
+Each comparison node takes two `FloatValue` inputs `a` and `b` and outputs a `BooleanValue` `result`. `IntegerValue` sources cast to `FloatValue` automatically.
+
+| Node               | `result` is true when |
+| ------------------ | --------------------- |
+| `Equal`            | `a == b`              |
+| `NotEqual`         | `a != b`              |
+| `GreaterThan`      | `a > b`               |
+| `GreaterThanEqual` | `a >= b`              |
+| `LessThan`         | `a < b`               |
+| `LessThanEqual`    | `a <= b`              |
+
+```json
+{ "type": "GreaterThan", "id": "gt1", "params": {} }
+```
+
+`Equal` and `NotEqual` compare with `math.isclose`. By default both tolerances are `0`, so the comparison is **exact**. To absorb floating-point rounding, set `rel_tol` (relative tolerance) and/or `abs_tol` (absolute tolerance); use `abs_tol` when comparing values near zero, where a relative tolerance is too strict.
+
+```json
+{ "type": "Equal", "id": "eq1", "params": { "rel_tol": 1e-6, "abs_tol": 1e-9 } }
+```
+
+## Logic
+
+### And
+
+Outputs true only when all inputs are true. Variadic like `Add`: the `num_arguments` parameter (default `2`, minimum `2`) controls how many boolean inputs (`a`, `b`, `c`, …) appear.
+
+| Field                         | Type           |
+| ----------------------------- | -------------- |
+| **Parameter** `num_arguments` | `IntegerValue` |
+| **Input** `a`, `b`, …         | `BooleanValue` |
+| **Output** `result`           | `BooleanValue` |
+
+```json
+{ "type": "And", "id": "and1", "params": { "num_arguments": 3 } }
+```
+
+### Or
+
+Outputs true when at least one input is true. Variadic like `And` via `num_arguments`.
+
+| Field                         | Type           |
+| ----------------------------- | -------------- |
+| **Parameter** `num_arguments` | `IntegerValue` |
+| **Input** `a`, `b`, …         | `BooleanValue` |
+| **Output** `result`           | `BooleanValue` |
+
+### Not
+
+Returns the opposite of the input value.
+
+| Field               | Type           |
+| ------------------- | -------------- |
+| **Input** `a`       | `BooleanValue` |
+| **Output** `result` | `BooleanValue` |
+
 ## Constants
 
 ### ConstantBoolean
