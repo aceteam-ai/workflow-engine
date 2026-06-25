@@ -5,6 +5,7 @@ from typing import TypeVar
 
 from overrides import EnforceOverrides
 
+from ..utils.env import get_env as _resolve_env_var
 from .error import ShouldRetry, ShouldYield, WorkflowErrors, WorkflowException
 from .execution import WorkflowExecutionResult
 from .node import Node, NodeRegistry
@@ -31,6 +32,26 @@ class ValidationContext:
         self.node_registry = node_registry
         self.value_registry = value_registry
 
+    async def get_env(self, key: str, default: str | None = None) -> str:
+        """
+        Resolve an environment variable for use during validation or execution.
+
+        The default implementation reads from the process environment (a loaded
+        ``.env`` file included), returning ``default`` when the variable is
+        unset and raising ``ValueError`` when it is unset and no default is
+        given.
+
+        This is the single source of environment resolution; ``ExecutionContext``
+        delegates here. The method is awaitable so that interactive contexts can
+        raise ``ShouldYield`` to pause execution and ask the user to supply a
+        missing variable (returning the now-provided value on resume), or fetch
+        secrets from an external store.
+
+        key: the environment variable name
+        default: value to return when the variable is unset
+        """
+        return _resolve_env_var(key, default=default)
+
 
 class ExecutionContext(ABC, EnforceOverrides):
     """
@@ -45,6 +66,20 @@ class ExecutionContext(ABC, EnforceOverrides):
         if validation_context is None:
             validation_context = ValidationContext()
         self.validation_context = validation_context
+
+    async def get_env(self, key: str, default: str | None = None) -> str:
+        """
+        Resolve an environment variable, delegating to the validation context.
+
+        Nodes call this to obtain credentials and configuration at runtime. The
+        underlying implementation may raise ``ShouldYield`` to pause execution
+        and request a missing variable from the user; see
+        ``ValidationContext.get_env``.
+
+        key: the environment variable name
+        default: value to return when the variable is unset
+        """
+        return await self.validation_context.get_env(key, default=default)
 
     @abstractmethod
     async def read(
