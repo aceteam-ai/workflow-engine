@@ -17,7 +17,7 @@ import asyncio
 import os
 from typing import ClassVar, Type
 
-import jinja2
+from jinja2 import StrictUndefined, Template
 from overrides import override
 from pydantic import Field
 
@@ -128,8 +128,11 @@ class BashNode(Node[BashInput, Data, BashNodeParams]):
         input: BashInput,
     ) -> Data:
         arguments = {key: value.root for key, value in input.arguments.items()}
-        template = jinja2.Template(
-            self.params.command.root, undefined=jinja2.StrictUndefined
+        # NOTE: Template annotation is needed because Template.__new__ is typed
+        # as returning Any to avoid breaking Sphinx.
+        template: Template = Template(
+            self.params.command.root,
+            undefined=StrictUndefined,
         )
         command = template.render(**arguments)
 
@@ -143,20 +146,31 @@ class BashNode(Node[BashInput, Data, BashNodeParams]):
             stderr=(asyncio.subprocess.STDOUT if combine else asyncio.subprocess.PIPE),
         )
         stdout_bytes, stderr_bytes = await process.communicate()
-        exit_code = IntegerValue(process.returncode or 0)
+        assert process.returncode is not None, (
+            "process.returncode was None after communicate()"
+        )
 
-        stdout_text = (stdout_bytes or b"").decode("utf-8", errors="replace")
+        exit_code = IntegerValue(process.returncode)
+
+        stdout_text = stdout_bytes.decode("utf-8", errors="replace")
         if combine:
             output_file = TextFileValue(File(path=f"{self.id}.output.txt"))
             output_file = await output_file.write_text(context, text=stdout_text)
-            return BashCombinedOutput(output=output_file, exit_code=exit_code)
+            return BashCombinedOutput(
+                output=output_file,
+                exit_code=exit_code,
+            )
 
-        stderr_text = (stderr_bytes or b"").decode("utf-8", errors="replace")
+        stderr_text = stderr_bytes.decode("utf-8", errors="replace")
         stdout_file = TextFileValue(File(path=f"{self.id}.stdout.txt"))
         stdout_file = await stdout_file.write_text(context, text=stdout_text)
         stderr_file = TextFileValue(File(path=f"{self.id}.stderr.txt"))
         stderr_file = await stderr_file.write_text(context, text=stderr_text)
-        return BashOutput(stdout=stdout_file, stderr=stderr_file, exit_code=exit_code)
+        return BashOutput(
+            stdout=stdout_file,
+            stderr=stderr_file,
+            exit_code=exit_code,
+        )
 
 
 __all__ = [
