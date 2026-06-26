@@ -259,8 +259,7 @@ class ValidatedWorkflow(Workflow):
         for node in self.nodes:
             # remove the node if it is now finished
             if node.id in node_outputs:
-                if node.id in ready_nodes:
-                    ready_nodes.pop(node.id)
+                ready_nodes.pop(node.id, None)
                 continue
             # skip the node if it is already in the ready set
             if node.id in ready_nodes:
@@ -270,7 +269,6 @@ class ValidatedWorkflow(Workflow):
             ready: bool = True
             node_input_dict: DataMapping = {}
             for target_key, edge in self.edges_by_target[node.id].items():
-                # if the input is missing, we will let the node figure it out
                 if edge.source_id in node_outputs:
                     node_input_dict[target_key] = get_value_at_path(
                         data=node_outputs[edge.source_id],
