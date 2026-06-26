@@ -4,7 +4,7 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Mapping, Sequence
 from functools import cached_property
-from typing import TYPE_CHECKING, Self, Type
+from typing import TYPE_CHECKING, Awaitable, Self, Type
 
 import networkx as nx
 from overrides import override
@@ -20,7 +20,6 @@ from .values import (
     Data,
     DataMapping,
     Value,
-    ValueType,
     get_value_at_path,
     resolve_path,
 )
@@ -316,8 +315,10 @@ class ValidatedWorkflow(Workflow):
         Raises:
             WorkflowException: If a required output is missing or cannot be cast
         """
-        # First pass: Validate all outputs exist and can be cast
-        outputs_to_cast: list[tuple[str, Value, ValueType]] = []
+        # Validate and cast
+        output: DataMapping = {}
+        cast_keys: list[str] = []
+        cast_tasks: list[Awaitable[Value]] = []
 
         for edge in self.edges:
             if edge.target_id != self.output_node.id:
@@ -346,6 +347,11 @@ class ValidatedWorkflow(Workflow):
                 path=[edge.target_key],
             )
 
+            # Fast path: value already matches expected type
+            if isinstance(output_field, expected_type):
+                output[edge.target_key] = output_field
+                continue
+
             # Validate that the output can be cast to the expected type
             if not output_field.can_cast_to(expected_type):
                 raise WorkflowException.for_builder(
@@ -353,27 +359,15 @@ class ValidatedWorkflow(Workflow):
                     f"cannot be cast: {output_field} is not assignable to {expected_type}",
                 )
 
-            outputs_to_cast.append((edge.target_key, output_field, expected_type))
-
-        # Second pass: Cast all outputs in parallel
-        cast_tasks = [
-            output_field.cast_to(expected_type, context=context)
-            for _, output_field, expected_type in outputs_to_cast
-        ]
-
-        if len(cast_tasks) == 0:
-            return {}
+            cast_keys.append(edge.target_key)
+            cast_tasks.append(output_field.cast_to(expected_type, context=context))
 
         casted_values = await gather(cast_tasks)
 
         # Build the result dictionary
-        output: DataMapping = {}
-        for (output_key, _, _), casted_value in zip(
-            outputs_to_cast,
-            casted_values,
-            strict=True,
-        ):
-            output[output_key] = casted_value
+        for key, value in zip(cast_keys, casted_values):
+            assert key not in output
+            output[key] = value
 
         return output
 
