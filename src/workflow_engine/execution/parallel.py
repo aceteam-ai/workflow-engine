@@ -112,8 +112,8 @@ class ParallelExecutionAlgorithm(ExecutionAlgorithm):
 
         try:
             try:
-                # Initial dispatch - start all initially ready nodes
-                ready_nodes = {workflow.input_node.id: input}
+                # Initial dispatch - input node plus nodes with no incoming edges
+                ready_nodes = workflow.get_initial_ready_nodes(input)
                 for node_id, node_input in ready_nodes.items():
                     task = asyncio.create_task(
                         self._execute_node(
@@ -128,7 +128,7 @@ class ParallelExecutionAlgorithm(ExecutionAlgorithm):
                     running_tasks[task] = node_id
 
                 # Main event loop - process completions eagerly
-                while running_tasks or pending_retry:
+                while len(running_tasks) > 0 or len(pending_retry) > 0:
                     # Check if any pending retries are now ready
                     for node_id in list(pending_retry.keys()):
                         state = retry_tracker.get_state(node_id)
@@ -147,13 +147,13 @@ class ParallelExecutionAlgorithm(ExecutionAlgorithm):
                             running_tasks[task] = node_id
 
                     # If no tasks are running but retries are pending, wait for shortest backoff
-                    if not running_tasks and pending_retry:
+                    if len(running_tasks) == 0 and len(pending_retry) > 0:
                         wait_time = retry_tracker.min_wait_time()
                         if wait_time and wait_time.total_seconds() > 0:
                             await asyncio.sleep(wait_time.total_seconds())
                         continue
 
-                    if not running_tasks:
+                    if len(running_tasks) == 0:
                         break
 
                     done, _ = await asyncio.wait(
@@ -163,6 +163,7 @@ class ParallelExecutionAlgorithm(ExecutionAlgorithm):
 
                     # Process completed tasks
                     expansions_pending: list[tuple[str, Workflow]] = []
+                    completed_this_batch: set[str] = set()
 
                     for task in done:
                         node_id = running_tasks.pop(task)
@@ -237,24 +238,31 @@ class ParallelExecutionAlgorithm(ExecutionAlgorithm):
                             failed_nodes.add(node_id)
                         else:
                             node_outputs[node_id] = node_result.result
+                            completed_this_batch.add(node_id)
 
                     # Process expansions sequentially (workflow is immutable)
+                    expanded = len(expansions_pending) > 0
                     for node_id, subgraph in expansions_pending:
                         workflow = workflow.expand_node(node_id, subgraph)
 
-                    # EAGERLY dispatch newly ready nodes
                     in_flight = set(running_tasks.values())
                     pending_set = set(pending_retry.keys())
-                    ready_nodes = {
-                        nid: inp
-                        for nid, inp in workflow.get_ready_nodes(
-                            node_outputs=node_outputs,
-                        ).items()
-                        if nid not in failed_nodes
-                        and nid not in in_flight
-                        and nid not in pending_set
-                        and nid not in node_yields
-                    }
+                    skip = failed_nodes | in_flight | pending_set | set(node_yields)
+
+                    if expanded:
+                        ready_nodes = {
+                            nid: inp
+                            for nid, inp in workflow.get_ready_nodes(
+                                node_outputs=node_outputs,
+                            ).items()
+                            if nid not in skip
+                        }
+                    else:
+                        ready_nodes = workflow.get_ready_successors(
+                            completed_this_batch,
+                            node_outputs,
+                            skip=skip,
+                        )
 
                     for node_id, node_input in ready_nodes.items():
                         task = asyncio.create_task(
@@ -341,7 +349,7 @@ class ParallelExecutionAlgorithm(ExecutionAlgorithm):
         """Cancel all running tasks and wait for completion."""
         for task in running_tasks:
             task.cancel()
-        if running_tasks:
+        if len(running_tasks) > 0:
             await asyncio.wait(running_tasks.keys(), return_when=asyncio.ALL_COMPLETED)
 
     async def _execute_node(

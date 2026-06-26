@@ -86,7 +86,7 @@ class RetryTracker:
             for state in self.states.values()
             if state.next_retry_at is not None and not state.is_ready()
         ]
-        return min(pending) if pending else None
+        return min(pending) if len(pending) > 0 else None
 
 
 __all__ = [
