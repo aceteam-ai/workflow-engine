@@ -1,3 +1,4 @@
+from decimal import Decimal
 from typing import Literal
 
 import pytest
@@ -504,13 +505,13 @@ async def test_json_value_to_float(context):
     json_float = JSONValue(3.14)
     float_val = await json_float.cast_to(FloatValue, context=context)
     assert isinstance(float_val, FloatValue)
-    assert float_val.root == 3.14
+    assert float_val == 3.14
 
     # Successful cast from int (int should be accepted for float)
     json_int = JSONValue(42)
     float_val = await json_int.cast_to(FloatValue, context=context)
     assert isinstance(float_val, FloatValue)
-    assert float_val.root == 42.0
+    assert float_val == 42.0
 
     # Failed casts - bool should not cast to float
     with pytest.raises(ValueError, match="Expected float or int"):
@@ -646,6 +647,14 @@ async def test_json_value_type_checking_strictness(context):
     json_int = JSONValue(1)
     with pytest.raises(ValueError, match="Expected bool"):
         await json_int.cast_to(BooleanValue, context=context)
+
+
+@pytest.mark.unit
+def test_float_value_exact_decimal_arithmetic():
+    """FloatValue uses Decimal so 0.1 + 0.2 is exactly 0.3."""
+    a = FloatValue(0.1)
+    b = FloatValue(0.2)
+    assert a.root + b.root == Decimal("0.3")
 
 
 if __name__ == "__main__":
