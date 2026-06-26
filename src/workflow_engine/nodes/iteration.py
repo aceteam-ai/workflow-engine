@@ -172,6 +172,8 @@ class ForEachNode(Node[SequenceData, SequenceData | Empty, ForEachParams]):
             workflow,
         )
         has_no_output = self._has_no_output(workflow)
+        has_single_input = self._has_single_input(workflow)
+        has_single_output = self._has_single_output(workflow)
         expand_element_type = self._input_element_type(workflow)
         expand = context.validation_context.node_registry.create_node(
             ExpandSequenceNode,
@@ -208,27 +210,38 @@ class ForEachNode(Node[SequenceData, SequenceData | Empty, ForEachParams]):
                 )
             )
 
+        base_input_adapter = (
+            None
+            if has_single_input
+            else context.validation_context.node_registry.create_node(
+                ExpandDataNode,
+                id="input_adapter",
+                data_type=workflow.input_type,
+            )
+        )
+        base_output_adapter = (
+            None
+            if has_no_output or has_single_output
+            else context.validation_context.node_registry.create_node(
+                GatherDataNode,
+                id="output_adapter",
+                data_type=workflow.output_type,
+            )
+        )
+
         for i in range(n):
             namespace = f"element_{i}"
             item_workflow = workflow.with_namespace(namespace)
 
             input_adapter = (
-                context.validation_context.node_registry.create_node(
-                    ExpandDataNode,
-                    id="input_adapter",
-                    data_type=workflow.input_type,
-                ).with_namespace(namespace)
-                if not self._has_single_input(workflow)
-                else None
+                base_input_adapter
+                if base_input_adapter is None
+                else base_input_adapter.with_namespace(namespace)
             )
             output_adapter = (
-                context.validation_context.node_registry.create_node(
-                    GatherDataNode,
-                    id="output_adapter",
-                    data_type=workflow.output_type,
-                ).with_namespace(namespace)
-                if self._has_single_output(workflow) is False and has_no_output is False
-                else None
+                base_output_adapter
+                if base_output_adapter is None
+                else base_output_adapter.with_namespace(namespace)
             )
 
             if input_adapter is not None:
