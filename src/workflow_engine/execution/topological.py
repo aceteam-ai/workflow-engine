@@ -74,8 +74,7 @@ class TopologicalExecutionAlgorithm(ExecutionAlgorithm):
 
         try:
             try:
-                ready_nodes = dict(workflow.get_ready_nodes(node_outputs={}))
-                ready_nodes[workflow.input_node.id] = input
+                ready_nodes = dict(workflow.get_initial_ready_nodes(input))
 
                 while len(ready_nodes) > 0 or len(pending_retry) > 0:
                     # Check if any pending retries are now ready
@@ -85,7 +84,7 @@ class TopologicalExecutionAlgorithm(ExecutionAlgorithm):
                             ready_nodes[node_id] = pending_retry.pop(node_id)
 
                     # If no nodes are ready, wait for the shortest backoff
-                    if not ready_nodes and pending_retry:
+                    if len(ready_nodes) == 0 and len(pending_retry) > 0:
                         wait_time = retry_tracker.min_wait_time()
                         if wait_time and wait_time.total_seconds() > 0:
                             await asyncio.sleep(wait_time.total_seconds())
@@ -104,6 +103,7 @@ class TopologicalExecutionAlgorithm(ExecutionAlgorithm):
                     if limiter is not None:
                         await limiter.acquire()
 
+                    expanded = False
                     try:
                         node_result = await node(
                             context=context,
@@ -114,6 +114,7 @@ class TopologicalExecutionAlgorithm(ExecutionAlgorithm):
 
                         if isinstance(node_result, ValidatedWorkflow):
                             workflow = workflow.expand_node(node_id, node_result)
+                            expanded = True
                         else:
                             node_outputs[node.id] = node_result
 
@@ -156,14 +157,25 @@ class TopologicalExecutionAlgorithm(ExecutionAlgorithm):
                         if limiter is not None:
                             limiter.release()
 
-                    ready_nodes = {
-                        node_id: node_input
-                        for node_id, node_input in workflow.get_ready_nodes(
-                            node_outputs=node_outputs,
-                            partial_results=ready_nodes,
-                        ).items()
-                        if node_id not in node_yields
-                    }
+                    if expanded:
+                        ready_nodes = {
+                            node_id: node_input
+                            for node_id, node_input in workflow.get_ready_nodes(
+                                node_outputs=node_outputs,
+                                partial_results=ready_nodes,
+                            ).items()
+                            if node_id not in node_yields
+                        }
+                    else:
+                        ready_nodes.update(
+                            workflow.get_ready_successors(
+                                [node_id],
+                                node_outputs,
+                                skip=set(node_outputs)
+                                | set(ready_nodes)
+                                | set(node_yields),
+                            )
+                        )
 
                 if len(node_yields) > 0:
                     partial_output = await workflow.get_output(

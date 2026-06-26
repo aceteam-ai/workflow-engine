@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence, Set
 from functools import cached_property
 from typing import TYPE_CHECKING, Awaitable, Self, Type
 
@@ -65,6 +65,14 @@ class Workflow(ImmutableBaseModel):
                 )
             edges_by_target[edge.target_id][edge.target_key] = edge
         return edges_by_target
+
+    @cached_property
+    def successors_by_source(self) -> Mapping[str, Set[str]]:
+        """A mapping from each node to the set of nodes that depend on it."""
+        successors: dict[str, set[str]] = {node.id: set() for node in self.nodes}
+        for edge in self.edges:
+            successors[edge.source_id].add(edge.target_id)
+        return successors
 
     @cached_property
     def nx_graph(self) -> nx.DiGraph:
@@ -236,6 +244,60 @@ class ValidatedWorkflow(Workflow):
     def output_type(self) -> Type[Data]:
         return self.node_output_types[self.output_node.id]
 
+    def get_node_input_if_ready(
+        self,
+        node_id: str,
+        node_outputs: Mapping[str, DataMapping],
+    ) -> DataMapping | None:
+        """
+        Build a node's input from completed upstream outputs, or None if not ready.
+        """
+        node_edges = self.edges_by_target.get(node_id)
+        if node_edges is None or len(node_edges) == 0:
+            return {}
+        node_input: DataMapping = {}
+        for target_key, edge in node_edges.items():
+            source_output = node_outputs.get(edge.source_id)
+            if source_output is None:
+                return None
+            node_input[target_key] = get_value_at_path(
+                data=source_output,
+                path=edge.source_key_path,
+            )
+        return node_input
+
+    def get_initial_ready_nodes(self, input: DataMapping) -> Mapping[str, DataMapping]:
+        """
+        Return all nodes ready to execute at workflow start, including the input node.
+        """
+        return {
+            **self.get_ready_nodes(node_outputs={}),
+            self.input_node.id: input,
+        }
+
+    def get_ready_successors(
+        self,
+        completed_node_ids: Iterable[str],
+        node_outputs: Mapping[str, DataMapping],
+        *,
+        skip: Set[str] = frozenset(),
+    ) -> Mapping[str, DataMapping]:
+        """
+        Return newly ready successor nodes after the given nodes complete.
+
+        Only checks direct successors of completed_node_ids. Nodes in skip are
+        ignored, as are nodes already present in the returned map.
+        """
+        ready_nodes: dict[str, DataMapping] = {}
+        for completed_id in completed_node_ids:
+            for succ_id in self.successors_by_source.get(completed_id, ()):
+                if succ_id in node_outputs or succ_id in skip or succ_id in ready_nodes:
+                    continue
+                succ_input = self.get_node_input_if_ready(succ_id, node_outputs)
+                if succ_input is not None:
+                    ready_nodes[succ_id] = succ_input
+        return ready_nodes
+
     def get_ready_nodes(
         self,
         node_outputs: Mapping[str, DataMapping] | None = None,
@@ -265,26 +327,15 @@ class ValidatedWorkflow(Workflow):
             if node.id in ready_nodes:
                 continue
 
-            # node might be ready, we have to check all its input edges
-            ready: bool = True
-            node_input_dict: DataMapping = {}
-            for target_key, edge in self.edges_by_target[node.id].items():
-                if edge.source_id in node_outputs:
-                    node_input_dict[target_key] = get_value_at_path(
-                        data=node_outputs[edge.source_id],
-                        path=edge.source_key_path,
-                    )
-                else:
-                    ready = False
-                    break
-            if not ready:
+            node_input = self.get_node_input_if_ready(node.id, node_outputs)
+            if node_input is None:
                 continue
 
             try:
-                ready_nodes[node.id] = node_input_dict
+                ready_nodes[node.id] = node_input
             except ValidationError as e:
                 raise NodeException.for_user(
-                    f"Input {node_input_dict} for node {node.id} is invalid: {e}",
+                    f"Input {node_input} for node {node.id} is invalid: {e}",
                     node=node,
                 ) from e
         return ready_nodes
