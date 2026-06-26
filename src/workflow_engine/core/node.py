@@ -356,8 +356,9 @@ class Node(ImmutableBaseModel, Generic[Input_contra, Output, Params_co]):
         allow_extra_input = input_type.model_config.get("extra", "forbid") == "allow"
 
         # Validate castability and collect cast tasks
+        casted_input: dict[str, Value] = {}
+        cast_keys: list[str] = []
         cast_tasks: list[Awaitable[Value]] = []
-        keys: list[str] = []
         for key, value in input.items():
             if key not in input_fields:
                 if allow_extra_input:
@@ -373,13 +374,19 @@ class Node(ImmutableBaseModel, Generic[Input_contra, Output, Params_co]):
                     node=self,
                 )
 
-            cast_tasks.append(value.cast_to(input_field_type, context=context))
-            keys.append(key)
+            # avoid asyncio overhead by keeping original value
+            if isinstance(value, input_field_type):
+                casted_input[key] = value
+            else:
+                cast_tasks.append(value.cast_to(input_field_type, context=context))
+                cast_keys.append(key)
 
         casted_values = await gather(cast_tasks)
 
         # Build the result dictionary
-        casted_input = dict(zip(keys, casted_values))
+        for key, value in zip(cast_keys, casted_values):
+            assert key not in casted_input
+            casted_input[key] = value
 
         try:
             return input_type.model_validate(casted_input)
