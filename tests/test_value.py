@@ -6,13 +6,17 @@ import pytest
 from workflow_engine import ExecutionContext
 from workflow_engine.contexts.in_memory import InMemoryExecutionContext
 from workflow_engine.core import (
+    BooleanValue,
+    Edge,
     FloatValue,
     IntegerValue,
     SequenceValue,
     StringMapValue,
     StringValue,
+    UnionValue,
     Value,
 )
+from workflow_engine.core.values import build_data_type
 from workflow_engine.core.values.value import (
     get_origin_and_args,
     get_value_type_key,
@@ -655,6 +659,112 @@ def test_float_value_exact_decimal_arithmetic():
     a = FloatValue(0.1)
     b = FloatValue(0.2)
     assert a.root + b.root == Decimal("0.3")
+
+
+@pytest.mark.unit
+def test_union_value_data_field_validation():
+    """Data fields typed as UnionValue accept any member at validation time."""
+    from pydantic import Field
+
+    union_type = UnionValue[FloatValue, SequenceValue[FloatValue]]
+    Input = build_data_type(
+        name="UnionInput",
+        fields={
+            "values": (
+                union_type,
+                Field(title="Values", description="The values to combine."),
+            ),
+        },
+    )
+    scalar = Input.model_validate({"values": FloatValue(2.5)})
+    assert isinstance(scalar.values, FloatValue)
+    sequence = Input.model_validate(
+        {
+            "values": SequenceValue[FloatValue](
+                [FloatValue(1.0), FloatValue(2.0)],
+            ),
+        },
+    )
+    assert isinstance(sequence.values, SequenceValue)
+
+
+@pytest.mark.unit
+async def test_union_value_casting(context):
+    """Values cast to UnionValue targets via the matching member type."""
+    union_type = UnionValue[FloatValue, SequenceValue[FloatValue]]
+
+    assert FloatValue.can_cast_to(union_type)
+    assert SequenceValue[FloatValue].can_cast_to(union_type)
+    assert IntegerValue.can_cast_to(union_type)
+    assert not BooleanValue.can_cast_to(union_type)
+
+    float_result = await FloatValue(1.5).cast_to(union_type, context=context)
+    assert isinstance(float_result, FloatValue)
+    assert float_result.root == Decimal("1.5")
+
+    seq_result = await SequenceValue[FloatValue]([FloatValue(1.0)]).cast_to(
+        union_type,
+        context=context,
+    )
+    assert isinstance(seq_result, SequenceValue)
+
+    int_result = await IntegerValue(3).cast_to(union_type, context=context)
+    assert isinstance(int_result, FloatValue)
+    assert int_result.root == Decimal("3")
+
+
+@pytest.mark.unit
+async def test_union_value_cast_prefers_exact_member(context):
+    """Casting to a union prefers an exact member match over a castable one."""
+    union_type = UnionValue[IntegerValue, FloatValue]
+    result = await IntegerValue(7).cast_to(union_type, context=context)
+    assert isinstance(result, IntegerValue)
+    assert result.root == 7
+
+
+@pytest.mark.unit
+def test_union_value_edge_validation():
+    """Edges to union ports accept sources assignable to any member."""
+    from pydantic import Field
+
+    union_type = UnionValue[FloatValue, SequenceValue[FloatValue]]
+    Source = build_data_type(
+        name="UnionSource",
+        fields={"out": (FloatValue, Field(title="Out", description="The output."))},
+    )
+    Target = build_data_type(
+        name="UnionTarget",
+        fields={
+            "inp": (
+                union_type,
+                Field(title="In", description="The input."),
+            ),
+        },
+    )
+    edge = Edge(
+        source_id="src",
+        source_key="out",
+        target_id="tgt",
+        target_key="inp",
+    )
+    edge.validate_types(source_type=Source, target_type=Target)
+
+    seq_source = build_data_type(
+        name="SeqSource",
+        fields={
+            "out": (
+                SequenceValue[FloatValue],
+                Field(title="Out", description="The output."),
+            ),
+        },
+    )
+    edge.validate_types(source_type=seq_source, target_type=Target)
+
+    int_source = build_data_type(
+        name="IntSource",
+        fields={"out": (IntegerValue, Field(title="Out", description="The output."))},
+    )
+    edge.validate_types(source_type=int_source, target_type=Target)
 
 
 if __name__ == "__main__":

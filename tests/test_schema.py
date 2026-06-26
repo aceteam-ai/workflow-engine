@@ -26,6 +26,7 @@ from workflow_engine import (
     SequenceValue,
     StringMapValue,
     StringValue,
+    UnionValue,
     ValueSchemaValue,
     WorkflowValue,
 )
@@ -518,6 +519,38 @@ def test_sequence_schema_aliasing():
         assert isinstance(schema.items, BaseValueSchema)
         U = schema.to_value_cls()
         assert U == T
+
+
+@pytest.mark.unit
+def test_union_schema_roundtrip():
+    T = UnionValue[FloatValue, SequenceValue[FloatValue]]
+    schema = T.to_value_schema()
+    from workflow_engine.core.values.schema import UnionValueSchema
+
+    assert isinstance(schema, UnionValueSchema)
+    assert len(schema.anyOf) == 2
+    U = schema.to_value_cls()
+    assert U == T
+
+
+@pytest.mark.unit
+def test_union_schema_manual():
+    T = UnionValue[FloatValue, SequenceValue[FloatValue]]
+    json_schema = {
+        "anyOf": [
+            {"x-value-type": "FloatValue"},
+            {
+                "type": "array",
+                "items": {"x-value-type": "FloatValue"},
+            },
+        ],
+    }
+    schema = validate_value_schema(json_schema)
+    from workflow_engine.core.values.schema import UnionValueSchema
+
+    assert isinstance(schema, UnionValueSchema)
+    U = schema.to_value_cls()
+    assert U == T
 
 
 @pytest.mark.unit

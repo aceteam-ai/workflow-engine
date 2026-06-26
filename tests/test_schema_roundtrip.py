@@ -18,6 +18,7 @@ from workflow_engine import (
     SequenceValue,
     StringMapValue,
     StringValue,
+    UnionValue,
     ValueSchemaValue,
     ValueType,
     WorkflowValue,
@@ -118,6 +119,14 @@ def test_sequence_value_type_roundtrip(item_type: ValueType):
 def test_string_map_value_type_roundtrip(item_type: ValueType):
     """StringMapValue[T] → schema → to_value_cls() returns the same type."""
     value_cls = StringMapValue[item_type]
+    result = _value_type_roundtrip(value_cls)
+    assert result == value_cls, f"Expected {value_cls!r}, got {result!r}"
+
+
+@pytest.mark.unit
+def test_union_value_type_roundtrip():
+    """UnionValue[A, B] → schema → to_value_cls() returns the same type."""
+    value_cls = UnionValue[FloatValue, SequenceValue[FloatValue]]
     result = _value_type_roundtrip(value_cls)
     assert result == value_cls, f"Expected {value_cls!r}, got {result!r}"
 
