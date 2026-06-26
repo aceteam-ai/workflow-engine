@@ -2,6 +2,7 @@
 import datetime
 import json
 from collections.abc import Sequence
+from decimal import Decimal
 from logging import getLogger
 from typing import Any, ClassVar, Self, Type
 
@@ -41,7 +42,7 @@ class JSONFileValue(TextFileValue):
     mime_type: ClassVar[str] = "application/json"
 
     async def read_data(self, context: "ExecutionContext") -> Any:
-        return json.loads(await self.read_text(context))
+        return json.loads(await self.read_text(context), parse_float=Decimal)
 
     async def write_data(self, context: "ExecutionContext", data: Any) -> Self:
         text = json.dumps(data, default=_custom_json_serializer)
@@ -80,17 +81,19 @@ async def cast_json_file_to_integer(
 
 @JSONFileValue.register_cast_to(FloatValue)
 async def cast_json_file_to_float(
-    value: JSONFileValue, context: "ExecutionContext"
+    value: JSONFileValue,
+    context: "ExecutionContext",
 ) -> FloatValue:
     data = await value.read_data(context)
-    if isinstance(data, float):
+    if isinstance(data, (Decimal, int)):
         return FloatValue(data)
-    raise ValueError(f"Expected float, got {type(data)}")
+    raise ValueError(f"Expected number, got {type(data)}")
 
 
 @JSONFileValue.register_cast_to(StringValue)
 async def cast_json_file_to_string(
-    value: JSONFileValue, context: "ExecutionContext"
+    value: JSONFileValue,
+    context: "ExecutionContext",
 ) -> StringValue:
     data = await value.read_data(context)
     if isinstance(data, str):
@@ -130,14 +133,16 @@ def cast_json_file_to_string_map(
 
 @JSONFileValue.register_cast_to(JSONValue)
 async def cast_json_file_to_json(
-    value: JSONFileValue, context: "ExecutionContext"
+    value: JSONFileValue,
+    context: "ExecutionContext",
 ) -> JSONValue:
     return JSONValue(await value.read_data(context))
 
 
 @Value.register_cast_to(JSONFileValue)
 async def cast_any_to_json_file(
-    value: Value, context: "ExecutionContext"
+    value: Value,
+    context: "ExecutionContext",
 ) -> JSONFileValue:
     if isinstance(value, JSONFileValue):
         return value
@@ -160,7 +165,8 @@ class JSONLinesFileValue(TextFileValue):
 
     async def read_data(self, context: "ExecutionContext") -> Sequence[Any]:
         return [
-            json.loads(line) for line in (await self.read_text(context)).splitlines()
+            json.loads(line, parse_float=Decimal)
+            for line in (await self.read_text(context)).splitlines()
         ]
 
     async def write_data(

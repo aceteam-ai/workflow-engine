@@ -2,9 +2,9 @@
 import json
 import logging
 from collections.abc import Mapping, Sequence
-from typing import TYPE_CHECKING, Any, ClassVar, Generic, TypeVar
+from typing import TYPE_CHECKING, Annotated, Any, ClassVar, Generic, TypeVar
 
-from pydantic import ConfigDict, create_model
+from pydantic import ConfigDict, PlainSerializer, create_model
 from pydantic.fields import FieldInfo
 
 from ...utils.asynchronous import gather
@@ -20,7 +20,24 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-type DataMapping = Mapping[str, Value]
+def dump_data_mapping(data: Mapping[str, Value]) -> Mapping[str, Any]:
+    return {k: v.model_dump(mode="json") for k, v in data.items()}
+
+
+# Pydantic fields typed Mapping[str, Value] do not dispatch to each value's own
+# JSON serializers (e.g. FloatValue's PlainSerializer on _DecimalRoot).
+# Serialization sees the static Value base type and dumps roots directly,
+# e.g. Decimal would become a JSON string.
+# dump_data_mapping calls model_dump(mode="json") on every concrete Value
+# instance so leaf types control their own wire format.
+type DataMapping = Annotated[
+    Mapping[str, Value],
+    PlainSerializer(
+        dump_data_mapping,
+        return_type=Mapping[str, Any],
+        when_used="json",
+    ),
+]
 
 
 class Data(ImmutableBaseModel):
@@ -77,11 +94,7 @@ def get_only_field(cls: type[Data]) -> tuple[str, type[Value]]:
     return only(fields.items())
 
 
-def dump_data_mapping(data: DataMapping) -> Mapping[str, Any]:
-    return {k: v.model_dump() for k, v in data.items()}
-
-
-def serialize_data_mapping(data: DataMapping) -> str:
+def serialize_data_mapping(data: Mapping[str, Value]) -> str:
     return json.dumps(dump_data_mapping(data))
 
 

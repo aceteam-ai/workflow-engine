@@ -240,3 +240,45 @@ async def test_workflow_execution(engine: WorkflowEngine, workflow: Workflow):
     )
     assert result.status is WorkflowExecutionResultStatus.SUCCESS
     assert result.output == {"sum": 42 + 2025 + c}
+
+
+@pytest.mark.asyncio
+async def test_add_exact_decimal_fractions(engine: WorkflowEngine):
+    """AddNode sums decimal fractions exactly (0.1 + 0.2 == 0.3)."""
+    workflow = Workflow(
+        input_node=(input_node := engine.create_input_node(a=FloatValue, b=FloatValue)),
+        output_node=(output_node := engine.create_output_node(sum=FloatValue)),
+        inner_nodes=[add := engine.create_node(AddNode, id="add")],
+        edges=[
+            Edge.from_nodes(
+                source=input_node,
+                source_key="a",
+                target=add,
+                target_key="a",
+            ),
+            Edge.from_nodes(
+                source=input_node,
+                source_key="b",
+                target=add,
+                target_key="b",
+            ),
+            Edge.from_nodes(
+                source=add,
+                source_key="sum",
+                target=output_node,
+                target_key="sum",
+            ),
+        ],
+    )
+
+    context = InMemoryExecutionContext()
+    result = await engine.execute(
+        context=context,
+        workflow=workflow,
+        input={
+            "a": 0.1,
+            "b": 0.2,
+        },
+    )
+    assert result.status is WorkflowExecutionResultStatus.SUCCESS
+    assert result.output["sum"] == 0.3
