@@ -1,6 +1,7 @@
 # workflow_engine/core/values/json.py
 
 from collections.abc import Mapping, Sequence
+from decimal import Decimal
 from typing import TYPE_CHECKING
 
 from .mapping import StringMapValue
@@ -12,7 +13,7 @@ if TYPE_CHECKING:
     from ..context import ExecutionContext
 
 
-type JSON = Mapping[str, JSON] | Sequence[JSON] | None | bool | int | float | str
+type JSON = Mapping[str, JSON] | Sequence[JSON] | None | bool | int | Decimal | str
 
 
 class JSONValue(Value[JSON]):
@@ -48,10 +49,12 @@ def cast_json_to_integer(value: JSONValue, context: "ExecutionContext") -> Integ
 
 @JSONValue.register_cast_to(FloatValue)
 def cast_json_to_float(value: JSONValue, context: "ExecutionContext") -> FloatValue:
-    # Accept both int and float, but not bool
-    if isinstance(value.root, (int, float)) and not isinstance(value.root, bool):
-        return FloatValue(float(value.root))
-    raise ValueError(f"Expected float or int, got {type(value.root)}")
+    root = value.root
+    if isinstance(root, bool):
+        raise ValueError(f"Expected float or int, got {type(root)}")
+    if isinstance(root, (int, Decimal)):
+        return FloatValue(root)
+    raise ValueError(f"Expected float or int, got {type(root)}")
 
 
 @JSONValue.register_generic_cast_to(SequenceValue)

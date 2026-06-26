@@ -2,21 +2,99 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from decimal import Decimal
+from typing import TYPE_CHECKING, Annotated
 
+from pydantic import (
+    BeforeValidator,
+    GetJsonSchemaHandler,
+    PlainSerializer,
+    ValidationError,
+)
+from pydantic.json_schema import JsonSchemaValue
+from pydantic_core import core_schema
+
+from ...utils.iter import only
+from .decimal_utils import to_decimal
 from .value import Value
 
 if TYPE_CHECKING:
     from ..context import ExecutionContext
 
 
+def _serialize_decimal_for_json(value: Decimal) -> float:
+    return float(value)
+
+
+_NUMERIC_SCHEMA_ALIASES = {
+    "ge": "minimum",
+    "le": "maximum",
+    "gt": "exclusiveMinimum",
+    "lt": "exclusiveMaximum",
+    "multiple_of": "multipleOf",
+}
+
+
+class _FlattenDecimalJsonSchema:
+    """Pydantic emits Decimal as anyOf[number, string]; we want plain type: number."""
+
+    def __get_pydantic_json_schema__(
+        self,
+        core_schema: core_schema.CoreSchema,
+        handler: GetJsonSchemaHandler,
+    ) -> JsonSchemaValue:
+        json_schema = handler(core_schema)
+        if "anyOf" not in json_schema:
+            return json_schema
+        number_schema = only(
+            item for item in json_schema["anyOf"] if item.get("type") == "number"
+        )
+        result = dict(number_schema)
+        for key, value in json_schema.items():
+            if key == "anyOf":
+                continue
+            out_key = _NUMERIC_SCHEMA_ALIASES.get(key, key)
+            if out_key == "type" and "type" in result:
+                continue
+            result[out_key] = value
+        return result
+
+
+_DecimalRoot = Annotated[
+    Decimal,
+    BeforeValidator(to_decimal),
+    PlainSerializer(_serialize_decimal_for_json, return_type=float, when_used="json"),
+    _FlattenDecimalJsonSchema(),
+]
+
+
 class BooleanValue(Value[bool]):
     pass
 
 
-class FloatValue(Value[float]):
+class FloatValue(Value[_DecimalRoot]):
     def is_integer(self) -> bool:
-        return self.root.is_integer()
+        return self.root == self.root.to_integral_value()
+
+    def __eq__(self, other: object) -> bool:
+        if isinstance(other, Value):
+            return self.root == other.root
+        if isinstance(other, bool):
+            return False
+        try:
+            return self.root == FloatValue(other).root
+        except ValidationError:
+            return False
+
+    @classmethod
+    def __get_pydantic_json_schema__(
+        cls, core_schema: core_schema.CoreSchema, handler: GetJsonSchemaHandler
+    ) -> JsonSchemaValue:
+        json_schema = handler(core_schema)
+        extras = cls.model_config.get("json_schema_extra")
+        if extras:
+            json_schema = {**json_schema, **extras}
+        return json_schema
 
 
 class IntegerValue(Value[int]):
@@ -40,46 +118,56 @@ class StringValue(Value[str]):
 
 @IntegerValue.register_cast_to(FloatValue)
 def cast_integer_to_float(
-    value: IntegerValue, context: "ExecutionContext"
+    value: IntegerValue,
+    context: "ExecutionContext",
 ) -> FloatValue:
-    return FloatValue(float(value.root))
+    return FloatValue(value.root)
 
 
 @FloatValue.register_cast_to(IntegerValue)
 def cast_float_to_integer(
-    value: FloatValue, context: "ExecutionContext"
+    value: FloatValue,
+    context: "ExecutionContext",
 ) -> IntegerValue:
     """
     Convert a float to an integer only if the float is already an integer.
     Otherwise, raise a ValueError.
     """
-    if value.root.is_integer():
+    if value.is_integer():
         return IntegerValue(int(value.root))
     else:
         raise ValueError(f"Cannot convert {value} to {IntegerValue}")
 
 
 @Value.register_cast_to(StringValue)
-def cast_value_to_string(value: Value, context: "ExecutionContext") -> StringValue:
+def cast_value_to_string(
+    value: Value,
+    context: "ExecutionContext",
+) -> StringValue:
     return StringValue(str(value.root))
 
 
 @StringValue.register_cast_to(BooleanValue)
 def cast_string_to_boolean(
-    value: StringValue, context: "ExecutionContext"
+    value: StringValue,
+    context: "ExecutionContext",
 ) -> BooleanValue:
     return BooleanValue.model_validate_json(value.root)
 
 
 @StringValue.register_cast_to(IntegerValue)
 def cast_string_to_integer(
-    value: StringValue, context: "ExecutionContext"
+    value: StringValue,
+    context: "ExecutionContext",
 ) -> IntegerValue:
     return IntegerValue.model_validate_json(value.root)
 
 
 @StringValue.register_cast_to(FloatValue)
-def cast_string_to_float(value: StringValue, context: "ExecutionContext") -> FloatValue:
+def cast_string_to_float(
+    value: StringValue,
+    context: "ExecutionContext",
+) -> FloatValue:
     return FloatValue.model_validate_json(value.root)
 
 
