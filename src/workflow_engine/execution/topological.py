@@ -74,7 +74,8 @@ class TopologicalExecutionAlgorithm(ExecutionAlgorithm):
 
         try:
             try:
-                ready_nodes = {workflow.input_node.id: input}
+                ready_nodes = dict(workflow.get_ready_nodes(node_outputs={}))
+                ready_nodes[workflow.input_node.id] = input
 
                 while len(ready_nodes) > 0 or len(pending_retry) > 0:
                     # Check if any pending retries are now ready

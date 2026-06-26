@@ -112,8 +112,11 @@ class ParallelExecutionAlgorithm(ExecutionAlgorithm):
 
         try:
             try:
-                # Initial dispatch - start all initially ready nodes
-                ready_nodes = {workflow.input_node.id: input}
+                # Initial dispatch - input node plus nodes with no incoming edges
+                ready_nodes = {
+                    **workflow.get_ready_nodes(node_outputs={}),
+                    workflow.input_node.id: input,
+                }
                 for node_id, node_input in ready_nodes.items():
                     task = asyncio.create_task(
                         self._execute_node(
