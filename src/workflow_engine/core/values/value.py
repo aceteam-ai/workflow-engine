@@ -139,6 +139,9 @@ class Value(ImmutableRootModel[T], Generic[T]):
     _cast_cache: dict[ValueTypeKey, "Value"] = PrivateAttr(
         default_factory=dict,
     )
+    _identity_caster: ClassVar[Caster[Self, Self]] = staticmethod(
+        lambda value, context: value
+    )
 
     def __init_subclass__(cls, register: bool = True, **kwargs):
         super().__init_subclass__(**kwargs)
@@ -239,7 +242,7 @@ class Value(ImmutableRootModel[T], Generic[T]):
                 return caster
 
         if issubclass(cls, t):
-            return lambda value, context: value  # type: ignore
+            return cls._identity_caster
 
         return None
 
