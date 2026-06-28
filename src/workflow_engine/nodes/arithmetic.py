@@ -3,16 +3,8 @@
 Built-in arithmetic nodes.
 """
 
-from decimal import (
-    ROUND_CEILING,
-    ROUND_DOWN,
-    ROUND_FLOOR,
-    ROUND_HALF_DOWN,
-    ROUND_HALF_EVEN,
-    ROUND_HALF_UP,
-    ROUND_UP,
-    Decimal,
-)
+from collections.abc import Sequence
+from decimal import Decimal
 from math import prod
 from typing import ClassVar, Type
 
@@ -30,11 +22,11 @@ from ..core import (
     NodeTypeInfo,
     Params,
     SequenceValue,
-    StringValue,
     UnionValue,
     ValidationContext,
 )
 from ..core.values import build_data_type
+from ..core.values.rounding import RoundingMode, RoundingModeValue
 
 
 def _argument_field_name(index: int) -> str:
@@ -54,68 +46,38 @@ def _argument_field_name(index: int) -> str:
 
 _FLOAT_OR_FLOAT_SEQUENCE = UnionValue[FloatValue, SequenceValue[FloatValue]]
 
-_DECIMAL_ROUNDING_MODES = {
-    "floor": ROUND_FLOOR,
-    "ceiling": ROUND_CEILING,
-    "toward_zero": ROUND_DOWN,
-    "away_from_zero": ROUND_UP,
-    "half_toward_zero": ROUND_HALF_DOWN,
-    "half_away_from_zero": ROUND_HALF_UP,
-    "half_even": ROUND_HALF_EVEN,
-}
 
-_CUSTOM_ROUNDING_MODES = frozenset(
-    {
-        "half_toward_negative_infinity",
-        "half_toward_positive_infinity",
-        "half_odd",
-    }
-)
-
-_SUPPORTED_ROUNDING_MODES = frozenset(
-    _DECIMAL_ROUNDING_MODES.keys() | _CUSTOM_ROUNDING_MODES
-)
-
-_ROUNDING_MODE_DESCRIPTION = (
-    "The rounding rule to apply. Directed modes: "
-    '"floor", "ceiling", "toward_zero", "away_from_zero". '
-    "Nearest modes: "
-    '"half_even", "half_odd", "half_toward_zero", "half_away_from_zero", '
-    '"half_toward_positive_infinity", "half_toward_negative_infinity".'
-)
+class RoundingParams(Params):
+    digits: IntegerValue = Field(
+        title="Decimal Places",
+        description="The number of decimal places to round to.",
+        default=IntegerValue(0),
+    )
+    rounding_mode: RoundingModeValue = Field(
+        title="Rounding Mode",
+        description=(
+            "The rounding rule applied when reducing the input value to the "
+            "specified number of decimal places."
+        ),
+        default=RoundingModeValue(RoundingMode.HALF_EVEN),
+    )
 
 
-def _rounding_quantizer(digits: int) -> Decimal:
-    return Decimal(10) ** -digits
-
-
-def _round_half_toward_positive_infinity(value: Decimal, quantizer: Decimal) -> Decimal:
-    if value >= 0:
-        return value.quantize(quantizer, rounding=ROUND_HALF_UP)
-    return value.quantize(quantizer, rounding=ROUND_HALF_DOWN)
-
-
-def _round_half_toward_negative_infinity(value: Decimal, quantizer: Decimal) -> Decimal:
-    if value >= 0:
-        return value.quantize(quantizer, rounding=ROUND_HALF_DOWN)
-    return value.quantize(quantizer, rounding=ROUND_HALF_UP)
-
-
-def _round_half_odd(value: Decimal, quantizer: Decimal) -> Decimal:
-    rounded_up = value.quantize(quantizer, rounding=ROUND_HALF_UP)
-    rounded_down = value.quantize(quantizer, rounding=ROUND_HALF_DOWN)
-    if rounded_up == rounded_down:
-        return rounded_up
-    for candidate in (rounded_down, rounded_up):
-        scaled = candidate / quantizer
-        if int(scaled) % 2 != 0:
-            return candidate
-    return rounded_up
+class DivideParams(Params):
+    rounding_mode: RoundingModeValue = Field(
+        title="Rounding Mode",
+        description=(
+            "The rounding rule applied to the exact quotient to produce the "
+            "integer quotient. The remainder is computed from this rounded "
+            "integer quotient."
+        ),
+        default=RoundingModeValue(RoundingMode.DOWN),
+    )
 
 
 def _decimal_values_from_union(
     value: FloatValue | SequenceValue[FloatValue],
-) -> list[Decimal]:
+) -> Sequence[Decimal]:
     if isinstance(value, FloatValue):
         return [value.root]
     return [item.root for item in value.root]
@@ -129,71 +91,6 @@ def _require_nonzero(
 ) -> None:
     if divisor == 0:
         raise NodeException.for_user(f"Cannot divide by zero: {label} is 0.", node=node)
-
-
-def _round_decimal(value: Decimal, *, digits: int, mode: str) -> Decimal:
-    quantizer = _rounding_quantizer(digits)
-
-    if mode in _DECIMAL_ROUNDING_MODES:
-        return value.quantize(
-            quantizer,
-            rounding=_DECIMAL_ROUNDING_MODES[mode],
-        )
-
-    if mode == "half_toward_positive_infinity":
-        return _round_half_toward_positive_infinity(value, quantizer)
-    if mode == "half_toward_negative_infinity":
-        return _round_half_toward_negative_infinity(value, quantizer)
-    if mode == "half_odd":
-        return _round_half_odd(value, quantizer)
-
-    supported = ", ".join(sorted(_SUPPORTED_ROUNDING_MODES))
-    raise ValueError(f"Unknown rounding mode {mode!r}; expected one of: {supported}.")
-
-
-def _validate_rounding_mode(mode: str, *, node: Node) -> None:
-    if mode not in _SUPPORTED_ROUNDING_MODES:
-        supported = ", ".join(sorted(_SUPPORTED_ROUNDING_MODES))
-        raise NodeException.for_user(
-            f"Unknown rounding mode {mode!r}; expected one of: {supported}.",
-            node=node,
-        )
-
-
-def _divide_with_remainder(
-    dividend: Decimal,
-    divisor: Decimal,
-    *,
-    mode: str,
-) -> tuple[Decimal, Decimal, Decimal]:
-    quotient = dividend / divisor
-    integer_quotient = _round_decimal(quotient, digits=0, mode=mode)
-    remainder = dividend - integer_quotient * divisor
-    return quotient, integer_quotient, remainder
-
-
-class RoundingParams(Params):
-    digits: IntegerValue = Field(
-        title="Decimal Places",
-        description="The number of decimal places to round to.",
-        default=IntegerValue(0),
-    )
-    rounding_mode: StringValue = Field(
-        title="Rounding Mode",
-        description=_ROUNDING_MODE_DESCRIPTION,
-        default=StringValue("half_even"),
-    )
-
-
-class DivideParams(Params):
-    rounding_mode: StringValue = Field(
-        title="Rounding Mode",
-        description=(
-            "The rounding rule used to compute the integer quotient from the exact "
-            f"quotient. {_ROUNDING_MODE_DESCRIPTION}"
-        ),
-        default=StringValue("floor"),
-    )
 
 
 class SubtractInput(Data):
@@ -450,6 +347,18 @@ class DivideOutput(Data):
     )
 
 
+def _divide_with_remainder(
+    dividend: Decimal,
+    divisor: Decimal,
+    *,
+    mode: RoundingMode,
+) -> tuple[Decimal, Decimal, Decimal]:
+    quotient = dividend / divisor
+    integer_quotient = mode.round(quotient, digits=0)
+    remainder = dividend - integer_quotient * divisor
+    return quotient, integer_quotient, remainder
+
+
 class DivideNode(Node[DivideInput, DivideOutput, DivideParams]):
     TYPE_INFO: ClassVar[NodeTypeInfo] = NodeTypeInfo.from_parameter_type(
         display_name="Divide",
@@ -482,14 +391,17 @@ class DivideNode(Node[DivideInput, DivideOutput, DivideParams]):
         output_type: Type[DivideOutput],
         input: DivideInput,
     ) -> DivideOutput:
-        _require_nonzero(input.divisor.root, node=self, label="divisor")
         mode = self.params.rounding_mode.root
-        _validate_rounding_mode(mode, node=self)
+        dividend = input.dividend.root
+        divisor = input.divisor.root
+        _require_nonzero(divisor, node=self, label="divisor")
+
         quotient, integer_quotient, remainder = _divide_with_remainder(
-            input.dividend.root,
-            input.divisor.root,
+            dividend,
+            divisor,
             mode=mode,
         )
+
         return output_type(
             quotient=FloatValue(quotient),
             integer_quotient=FloatValue(integer_quotient),
@@ -738,10 +650,13 @@ class RoundParams(RoundingParams):
         description="The number of decimal places to round to.",
         default=IntegerValue(0),
     )
-    rounding_mode: StringValue = Field(
+    rounding_mode: RoundingModeValue = Field(
         title="Rounding Mode",
-        description=_ROUNDING_MODE_DESCRIPTION,
-        default=StringValue("half_even"),
+        description=(
+            "The rounding rule applied when reducing the input value to the "
+            "specified number of decimal places."
+        ),
+        default=RoundingModeValue(RoundingMode.HALF_EVEN),
     )
 
 
@@ -781,12 +696,9 @@ class RoundNode(Node[UnaryFloatInput, RoundOutput, RoundParams]):
         output_type: Type[RoundOutput],
         input: UnaryFloatInput,
     ) -> RoundOutput:
-        mode = self.params.rounding_mode.root
-        _validate_rounding_mode(mode, node=self)
-        rounded = _round_decimal(
+        rounded = self.params.rounding_mode.root.round(
             input.a.root,
             digits=self.params.digits.root,
-            mode=mode,
         )
         return output_type(rounded=FloatValue(rounded))
 

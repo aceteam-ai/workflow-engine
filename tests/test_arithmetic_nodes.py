@@ -12,6 +12,7 @@ from workflow_engine import (
 )
 from workflow_engine.contexts import InMemoryExecutionContext
 from workflow_engine.core.stakeholder import StakeholderLevel
+from workflow_engine.core.values.rounding import RoundingMode
 from workflow_engine.nodes import (
     AbsoluteValueNode,
     DivideNode,
@@ -23,7 +24,7 @@ from workflow_engine.nodes import (
     RoundNode,
     SubtractNode,
 )
-from workflow_engine.nodes.arithmetic import _divide_with_remainder, _round_decimal
+from workflow_engine.nodes.arithmetic import _divide_with_remainder
 
 
 @pytest.fixture
@@ -199,9 +200,9 @@ async def test_divide_exact_quotient_with_integer_part(
 @pytest.mark.parametrize(
     ("dividend", "divisor", "mode", "expected_integer_quotient", "expected_remainder"),
     [
-        (Decimal("10"), Decimal("3"), "floor", Decimal("3"), Decimal("1")),
-        (Decimal("-10"), Decimal("3"), "floor", Decimal("-4"), Decimal("2")),
-        (Decimal("10"), Decimal("3"), "ceiling", Decimal("4"), Decimal("-2")),
+        (Decimal("10"), Decimal("3"), "down", Decimal("3"), Decimal("1")),
+        (Decimal("-10"), Decimal("3"), "down", Decimal("-4"), Decimal("2")),
+        (Decimal("10"), Decimal("3"), "up", Decimal("4"), Decimal("-2")),
         (Decimal("7"), Decimal("2"), "toward_zero", Decimal("3"), Decimal("1")),
     ],
 )
@@ -215,7 +216,7 @@ def test_divide_with_remainder_rounding_modes(
     quotient, integer_quotient, remainder = _divide_with_remainder(
         dividend,
         divisor,
-        mode=mode,
+        mode=RoundingMode(mode),
     )
     assert quotient == dividend / divisor
     assert integer_quotient == expected_integer_quotient
@@ -225,7 +226,8 @@ def test_divide_with_remainder_rounding_modes(
 @pytest.mark.unit
 @pytest.mark.asyncio
 async def test_divide_by_zero(
-    engine: WorkflowEngine, context: InMemoryExecutionContext
+    engine: WorkflowEngine,
+    context: InMemoryExecutionContext,
 ):
     workflow = Workflow(
         input_node=(
@@ -544,18 +546,18 @@ async def test_round_half_away_from_zero(
 @pytest.mark.parametrize(
     ("value", "mode", "expected"),
     [
-        (Decimal("23.7"), "floor", Decimal("23")),
-        (Decimal("-23.2"), "floor", Decimal("-24")),
-        (Decimal("23.2"), "ceiling", Decimal("24")),
-        (Decimal("-23.7"), "ceiling", Decimal("-23")),
+        (Decimal("23.7"), "down", Decimal("23")),
+        (Decimal("-23.2"), "down", Decimal("-24")),
+        (Decimal("23.2"), "up", Decimal("24")),
+        (Decimal("-23.7"), "up", Decimal("-23")),
         (Decimal("23.7"), "toward_zero", Decimal("23")),
         (Decimal("-23.7"), "toward_zero", Decimal("-23")),
         (Decimal("23.2"), "away_from_zero", Decimal("24")),
         (Decimal("-23.2"), "away_from_zero", Decimal("-24")),
-        (Decimal("23.5"), "half_toward_positive_infinity", Decimal("24")),
-        (Decimal("-23.5"), "half_toward_positive_infinity", Decimal("-23")),
-        (Decimal("23.5"), "half_toward_negative_infinity", Decimal("23")),
-        (Decimal("-23.5"), "half_toward_negative_infinity", Decimal("-24")),
+        (Decimal("23.5"), "half_up", Decimal("24")),
+        (Decimal("-23.5"), "half_up", Decimal("-23")),
+        (Decimal("23.5"), "half_down", Decimal("23")),
+        (Decimal("-23.5"), "half_down", Decimal("-24")),
         (Decimal("23.5"), "half_toward_zero", Decimal("23")),
         (Decimal("-23.5"), "half_toward_zero", Decimal("-23")),
         (Decimal("23.5"), "half_away_from_zero", Decimal("24")),
@@ -567,7 +569,7 @@ async def test_round_half_away_from_zero(
     ],
 )
 def test_round_decimal_wikipedia_modes(value: Decimal, mode: str, expected: Decimal):
-    assert _round_decimal(value, digits=0, mode=mode) == expected
+    assert RoundingMode(mode).round(value, digits=0) == expected
 
 
 @pytest.mark.unit

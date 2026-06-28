@@ -31,6 +31,7 @@ from workflow_engine import (
     WorkflowValue,
 )
 from workflow_engine.core.values import get_data_schema, validate_value_schema
+from workflow_engine.core.values.rounding import RoundingMode, RoundingModeValue
 from workflow_engine.core.values.schema import (
     BaseValueSchema,
     BooleanValueSchema,
@@ -438,6 +439,22 @@ def test_string_schema_manual():
     u2 = U("good morning wengine")
     t2 = T.model_validate(u2)
     assert t2 == u2
+
+
+@pytest.mark.unit
+def test_rounding_mode_value_schema_roundtrip():
+    T = RoundingModeValue
+    schema = T.to_value_schema()
+    assert isinstance(schema, ReferenceValueSchema)
+    assert schema.value_type == "RoundingModeValue"
+    assert schema.defs["RoundingMode"].enum == [member.value for member in RoundingMode]
+    U = schema.to_value_cls()
+    assert U == T
+
+    t1 = T(RoundingMode.HALF_EVEN)
+    u1 = U.model_validate(t1)
+    assert u1 == t1
+    assert u1.root is RoundingMode.HALF_EVEN
 
 
 @pytest.mark.unit
