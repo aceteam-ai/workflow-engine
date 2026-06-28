@@ -23,6 +23,10 @@ from .json import JSON, JSONValue
 from .mapping import StringMapValue
 from .model import ModelValue
 from .primitives import BooleanValue, FloatValue, IntegerValue, NullValue, StringValue
+from .rounding import (
+    RoundingMode,
+    RoundingModeValue,
+)
 from .schema import (
     FieldSchemaMappingValue,
     ValueSchema,
@@ -58,6 +62,8 @@ __all__ = [
     "ModelValue",
     "NullValue",
     "Relation",
+    "RoundingMode",
+    "RoundingModeValue",
     "SequenceValue",
     "StringMapValue",
     "StringValue",

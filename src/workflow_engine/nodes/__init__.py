@@ -1,7 +1,16 @@
 # workflow_engine/nodes/__init__.py
 from .arithmetic import (
+    AbsoluteValueNode,
     AddNode,
+    DivideNode,
     FactorizationNode,
+    MaximumNode,
+    MinimumNode,
+    MultiplyNode,
+    NegateNode,
+    PowerNode,
+    RoundNode,
+    SubtractNode,
     SumNode,
 )
 from .comparison import (
@@ -44,6 +53,7 @@ from .text import (
 )
 
 __all__ = [
+    "AbsoluteValueNode",
     "AddNode",
     "AndNode",
     "AppendToFileNode",
@@ -51,6 +61,7 @@ __all__ = [
     "ConstantBooleanNode",
     "ConstantIntegerNode",
     "ConstantStringNode",
+    "DivideNode",
     "EqualNode",
     "ErrorNode",
     "ExpandDataNode",
@@ -67,8 +78,15 @@ __all__ = [
     "IfNode",
     "LessThanEqualNode",
     "LessThanNode",
+    "MaximumNode",
+    "MinimumNode",
+    "MultiplyNode",
+    "NegateNode",
     "NotEqualNode",
     "NotNode",
     "OrNode",
+    "PowerNode",
+    "RoundNode",
+    "SubtractNode",
     "SumNode",
 ]

@@ -1,14 +1,15 @@
 # workflow_engine/nodes/arithmetic.py
 """
-Simple nodes for testing the workflow engine, with limited usefulness otherwise.
+Built-in arithmetic nodes.
 """
 
+from collections.abc import Sequence
+from decimal import Decimal
+from math import prod
 from typing import ClassVar, Type
 
 from overrides import override
 from pydantic import Field
-
-from workflow_engine.core.values import build_data_type
 
 from ..core import (
     Data,
@@ -17,11 +18,15 @@ from ..core import (
     FloatValue,
     IntegerValue,
     Node,
+    NodeException,
     NodeTypeInfo,
     Params,
     SequenceValue,
+    UnionValue,
     ValidationContext,
 )
+from ..core.values import build_data_type
+from ..core.values.rounding import RoundingMode, RoundingModeValue
 
 
 def _argument_field_name(index: int) -> str:
@@ -37,6 +42,93 @@ def _argument_field_name(index: int) -> str:
         if n < 0:
             break
     return "".join(reversed(letters))
+
+
+_FLOAT_OR_FLOAT_SEQUENCE = UnionValue[FloatValue, SequenceValue[FloatValue]]
+
+
+class RoundingParams(Params):
+    digits: IntegerValue = Field(
+        title="Decimal Places",
+        description="The number of decimal places to round to.",
+        default=IntegerValue(0),
+    )
+    rounding_mode: RoundingModeValue = Field(
+        title="Rounding Mode",
+        description=(
+            "The rounding rule applied when reducing the input value to the "
+            "specified number of decimal places."
+        ),
+        default=RoundingModeValue(RoundingMode.HALF_EVEN),
+    )
+
+
+class DivideParams(Params):
+    rounding_mode: RoundingModeValue = Field(
+        title="Rounding Mode",
+        description=(
+            "The rounding rule applied to the exact quotient to produce the "
+            "integer quotient. The remainder is computed from this rounded "
+            "integer quotient."
+        ),
+        default=RoundingModeValue(RoundingMode.DOWN),
+    )
+
+
+def _decimal_values_from_union(
+    value: FloatValue | SequenceValue[FloatValue],
+) -> Sequence[Decimal]:
+    if isinstance(value, FloatValue):
+        return [value.root]
+    return [item.root for item in value.root]
+
+
+def _require_nonzero(
+    divisor: Decimal,
+    *,
+    node: Node,
+    label: str = "divisor",
+) -> None:
+    if divisor == 0:
+        raise NodeException.for_user(f"Cannot divide by zero: {label} is 0.", node=node)
+
+
+class SubtractInput(Data):
+    minuend: FloatValue = Field(
+        title="Minuend",
+        description="The number to subtract from.",
+    )
+    subtrahend: FloatValue = Field(
+        title="Subtrahend",
+        description="The number to subtract.",
+    )
+
+
+class DivideInput(Data):
+    dividend: FloatValue = Field(
+        title="Dividend",
+        description="The number to be divided.",
+    )
+    divisor: FloatValue = Field(
+        title="Divisor",
+        description="The number to divide by.",
+    )
+
+
+class PowerInput(Data):
+    base: FloatValue = Field(title="Base", description="The base number.")
+    exponent: FloatValue = Field(title="Exponent", description="The exponent.")
+
+
+class UnaryFloatInput(Data):
+    a: FloatValue = Field(title="A", description="The number.")
+
+
+class UnionFloatInput(Data):
+    values: _FLOAT_OR_FLOAT_SEQUENCE = Field(
+        title="Values",
+        description="The numbers to combine, as a single value or a sequence.",
+    )
 
 
 class AddNodeParams(Params):
@@ -61,7 +153,7 @@ class AddNode(Node[Data, SumOutput, AddNodeParams]):
     )
 
     # we can do this because an empty AddNodeParams is valid
-    params: AddNodeParams = Field(default=AddNodeParams())  # pyright: ignore[reportIncompatibleVariableOverride]
+    params: AddNodeParams = Field(default=AddNodeParams())
 
     @override
     async def dynamic_input_type(self, context: ValidationContext) -> Type[Data]:
@@ -196,8 +288,432 @@ class FactorizationNode(Node[IntegerData, FactorizationData, Empty]):
         raise ValueError("Can only factorize positive integers")
 
 
+class SubtractOutput(Data):
+    difference: FloatValue = Field(
+        title="Difference",
+        description="The result of subtracting the subtrahend from the minuend.",
+    )
+
+
+class SubtractNode(Node[SubtractInput, SubtractOutput, Empty]):
+    TYPE_INFO: ClassVar[NodeTypeInfo] = NodeTypeInfo.from_parameter_type(
+        display_name="Subtract",
+        description="Subtracts one number from another.",
+        version="1.0.0",
+        parameter_type=Empty,
+    )
+
+    @classmethod
+    @override
+    def static_input_type(cls) -> Type[SubtractInput]:
+        return SubtractInput
+
+    @classmethod
+    @override
+    def static_output_type(cls) -> Type[SubtractOutput]:
+        return SubtractOutput
+
+    @override
+    async def run(
+        self,
+        *,
+        context: ExecutionContext,
+        input_type: Type[SubtractInput],
+        output_type: Type[SubtractOutput],
+        input: SubtractInput,
+    ) -> SubtractOutput:
+        return output_type(
+            difference=FloatValue(input.minuend.root - input.subtrahend.root)
+        )
+
+
+class DivideOutput(Data):
+    quotient: FloatValue = Field(
+        title="Quotient",
+        description="The exact result of dividing the dividend by the divisor.",
+    )
+    integer_quotient: FloatValue = Field(
+        title="Integer Quotient",
+        description=(
+            "The quotient rounded to a whole number using the chosen rounding mode."
+        ),
+    )
+    remainder: FloatValue = Field(
+        title="Remainder",
+        description=(
+            "The amount left over after subtracting the integer quotient times "
+            "the divisor from the dividend."
+        ),
+    )
+
+
+def _divide_with_remainder(
+    dividend: Decimal,
+    divisor: Decimal,
+    *,
+    mode: RoundingMode,
+) -> tuple[Decimal, Decimal, Decimal]:
+    quotient = dividend / divisor
+    integer_quotient = mode.round(quotient, digits=0)
+    remainder = dividend - integer_quotient * divisor
+    return quotient, integer_quotient, remainder
+
+
+class DivideNode(Node[DivideInput, DivideOutput, DivideParams]):
+    TYPE_INFO: ClassVar[NodeTypeInfo] = NodeTypeInfo.from_parameter_type(
+        display_name="Divide",
+        description=(
+            "Divides one number by another, returning the exact quotient, an "
+            "integer quotient, and the remainder relative to that integer quotient."
+        ),
+        version="1.0.0",
+        parameter_type=DivideParams,
+    )
+
+    params: DivideParams = Field(default=DivideParams())
+
+    @classmethod
+    @override
+    def static_input_type(cls) -> Type[DivideInput]:
+        return DivideInput
+
+    @classmethod
+    @override
+    def static_output_type(cls) -> Type[DivideOutput]:
+        return DivideOutput
+
+    @override
+    async def run(
+        self,
+        *,
+        context: ExecutionContext,
+        input_type: Type[DivideInput],
+        output_type: Type[DivideOutput],
+        input: DivideInput,
+    ) -> DivideOutput:
+        mode = self.params.rounding_mode.root
+        dividend = input.dividend.root
+        divisor = input.divisor.root
+        _require_nonzero(divisor, node=self, label="divisor")
+
+        quotient, integer_quotient, remainder = _divide_with_remainder(
+            dividend,
+            divisor,
+            mode=mode,
+        )
+
+        return output_type(
+            quotient=FloatValue(quotient),
+            integer_quotient=FloatValue(integer_quotient),
+            remainder=FloatValue(remainder),
+        )
+
+
+class PowerOutput(Data):
+    power: FloatValue = Field(
+        title="Power",
+        description="The base raised to the exponent.",
+    )
+
+
+class PowerNode(Node[PowerInput, PowerOutput, Empty]):
+    TYPE_INFO: ClassVar[NodeTypeInfo] = NodeTypeInfo.from_parameter_type(
+        display_name="Power",
+        description="Raises a base number to an exponent.",
+        version="1.0.0",
+        parameter_type=Empty,
+    )
+
+    @classmethod
+    @override
+    def static_input_type(cls) -> Type[PowerInput]:
+        return PowerInput
+
+    @classmethod
+    @override
+    def static_output_type(cls) -> Type[PowerOutput]:
+        return PowerOutput
+
+    @override
+    async def run(
+        self,
+        *,
+        context: ExecutionContext,
+        input_type: Type[PowerInput],
+        output_type: Type[PowerOutput],
+        input: PowerInput,
+    ) -> PowerOutput:
+        return output_type(power=FloatValue(input.base.root**input.exponent.root))
+
+
+class MultiplyOutput(Data):
+    product: FloatValue = Field(
+        title="Product",
+        description="The product of the numbers.",
+    )
+
+
+class MultiplyNode(Node[UnionFloatInput, MultiplyOutput, Empty]):
+    TYPE_INFO: ClassVar[NodeTypeInfo] = NodeTypeInfo.from_parameter_type(
+        display_name="Multiply",
+        description="Multiplies one number or a sequence of numbers.",
+        version="1.0.0",
+        parameter_type=Empty,
+    )
+
+    @classmethod
+    @override
+    def static_input_type(cls) -> Type[UnionFloatInput]:
+        return UnionFloatInput
+
+    @classmethod
+    @override
+    def static_output_type(cls) -> Type[MultiplyOutput]:
+        return MultiplyOutput
+
+    @override
+    async def run(
+        self,
+        *,
+        context: ExecutionContext,
+        input_type: Type[UnionFloatInput],
+        output_type: Type[MultiplyOutput],
+        input: UnionFloatInput,
+    ) -> MultiplyOutput:
+        values = _decimal_values_from_union(input.values)
+        return output_type(product=FloatValue(prod(values, start=Decimal(1))))
+
+
+class MinimumOutput(Data):
+    minimum: FloatValue = Field(
+        title="Minimum",
+        description="The smallest number.",
+    )
+
+
+class MinimumNode(Node[UnionFloatInput, MinimumOutput, Empty]):
+    TYPE_INFO: ClassVar[NodeTypeInfo] = NodeTypeInfo.from_parameter_type(
+        display_name="Min",
+        description="Finds the smallest of one number or a sequence of numbers.",
+        version="1.0.0",
+        parameter_type=Empty,
+    )
+
+    @classmethod
+    @override
+    def static_input_type(cls) -> Type[UnionFloatInput]:
+        return UnionFloatInput
+
+    @classmethod
+    @override
+    def static_output_type(cls) -> Type[MinimumOutput]:
+        return MinimumOutput
+
+    @override
+    async def run(
+        self,
+        *,
+        context: ExecutionContext,
+        input_type: Type[UnionFloatInput],
+        output_type: Type[MinimumOutput],
+        input: UnionFloatInput,
+    ) -> MinimumOutput:
+        values = _decimal_values_from_union(input.values)
+        if not values:
+            raise NodeException.for_user(
+                "Cannot compute the minimum of an empty sequence.",
+                node=self,
+            )
+        return output_type(minimum=FloatValue(min(values)))
+
+
+class MaximumOutput(Data):
+    maximum: FloatValue = Field(
+        title="Maximum",
+        description="The largest number.",
+    )
+
+
+class MaximumNode(Node[UnionFloatInput, MaximumOutput, Empty]):
+    TYPE_INFO: ClassVar[NodeTypeInfo] = NodeTypeInfo.from_parameter_type(
+        display_name="Max",
+        description="Finds the largest of one number or a sequence of numbers.",
+        version="1.0.0",
+        parameter_type=Empty,
+    )
+
+    @classmethod
+    @override
+    def static_input_type(cls) -> Type[UnionFloatInput]:
+        return UnionFloatInput
+
+    @classmethod
+    @override
+    def static_output_type(cls) -> Type[MaximumOutput]:
+        return MaximumOutput
+
+    @override
+    async def run(
+        self,
+        *,
+        context: ExecutionContext,
+        input_type: Type[UnionFloatInput],
+        output_type: Type[MaximumOutput],
+        input: UnionFloatInput,
+    ) -> MaximumOutput:
+        values = _decimal_values_from_union(input.values)
+        if not values:
+            raise NodeException.for_user(
+                "Cannot compute the maximum of an empty sequence.",
+                node=self,
+            )
+        return output_type(maximum=FloatValue(max(values)))
+
+
+class NegateOutput(Data):
+    negated: FloatValue = Field(
+        title="Negated",
+        description="The number with its sign flipped.",
+    )
+
+
+class NegateNode(Node[UnaryFloatInput, NegateOutput, Empty]):
+    TYPE_INFO: ClassVar[NodeTypeInfo] = NodeTypeInfo.from_parameter_type(
+        display_name="Negate",
+        description="Flips the sign of a number.",
+        version="1.0.0",
+        parameter_type=Empty,
+    )
+
+    @classmethod
+    @override
+    def static_input_type(cls) -> Type[UnaryFloatInput]:
+        return UnaryFloatInput
+
+    @classmethod
+    @override
+    def static_output_type(cls) -> Type[NegateOutput]:
+        return NegateOutput
+
+    @override
+    async def run(
+        self,
+        *,
+        context: ExecutionContext,
+        input_type: Type[UnaryFloatInput],
+        output_type: Type[NegateOutput],
+        input: UnaryFloatInput,
+    ) -> NegateOutput:
+        return output_type(negated=FloatValue(-input.a.root))
+
+
+class AbsoluteValueOutput(Data):
+    absolute: FloatValue = Field(
+        title="Absolute Value",
+        description="The number without its sign.",
+    )
+
+
+class AbsoluteValueNode(Node[UnaryFloatInput, AbsoluteValueOutput, Empty]):
+    TYPE_INFO: ClassVar[NodeTypeInfo] = NodeTypeInfo.from_parameter_type(
+        display_name="Absolute Value",
+        description="Computes the absolute value of a number.",
+        version="1.0.0",
+        parameter_type=Empty,
+    )
+
+    @classmethod
+    @override
+    def static_input_type(cls) -> Type[UnaryFloatInput]:
+        return UnaryFloatInput
+
+    @classmethod
+    @override
+    def static_output_type(cls) -> Type[AbsoluteValueOutput]:
+        return AbsoluteValueOutput
+
+    @override
+    async def run(
+        self,
+        *,
+        context: ExecutionContext,
+        input_type: Type[UnaryFloatInput],
+        output_type: Type[AbsoluteValueOutput],
+        input: UnaryFloatInput,
+    ) -> AbsoluteValueOutput:
+        return output_type(absolute=FloatValue(abs(input.a.root)))
+
+
+class RoundParams(RoundingParams):
+    digits: IntegerValue = Field(
+        title="Decimal Places",
+        description="The number of decimal places to round to.",
+        default=IntegerValue(0),
+    )
+    rounding_mode: RoundingModeValue = Field(
+        title="Rounding Mode",
+        description=(
+            "The rounding rule applied when reducing the input value to the "
+            "specified number of decimal places."
+        ),
+        default=RoundingModeValue(RoundingMode.HALF_EVEN),
+    )
+
+
+class RoundOutput(Data):
+    rounded: FloatValue = Field(
+        title="Rounded",
+        description="The rounded number.",
+    )
+
+
+class RoundNode(Node[UnaryFloatInput, RoundOutput, RoundParams]):
+    TYPE_INFO: ClassVar[NodeTypeInfo] = NodeTypeInfo.from_parameter_type(
+        display_name="Round",
+        description="Rounds a number to a chosen number of decimal places.",
+        version="1.0.0",
+        parameter_type=RoundParams,
+    )
+
+    params: RoundParams = Field(default=RoundParams())
+
+    @classmethod
+    @override
+    def static_input_type(cls) -> Type[UnaryFloatInput]:
+        return UnaryFloatInput
+
+    @classmethod
+    @override
+    def static_output_type(cls) -> Type[RoundOutput]:
+        return RoundOutput
+
+    @override
+    async def run(
+        self,
+        *,
+        context: ExecutionContext,
+        input_type: Type[UnaryFloatInput],
+        output_type: Type[RoundOutput],
+        input: UnaryFloatInput,
+    ) -> RoundOutput:
+        rounded = self.params.rounding_mode.root.round(
+            input.a.root,
+            digits=self.params.digits.root,
+        )
+        return output_type(rounded=FloatValue(rounded))
+
+
 __all__ = [
+    "AbsoluteValueNode",
     "AddNode",
+    "DivideNode",
     "FactorizationNode",
+    "MaximumNode",
+    "MinimumNode",
+    "MultiplyNode",
+    "NegateNode",
+    "PowerNode",
+    "RoundNode",
+    "SubtractNode",
     "SumNode",
 ]
