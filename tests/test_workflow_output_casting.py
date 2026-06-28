@@ -248,7 +248,7 @@ async def test_input_casting():
     result = await engine.execute(
         context=context,
         workflow=workflow,
-        input={"a": FloatValue(10.5), "b": FloatValue(20.3)},
+        input={"a": 10.5, "b": 20.3},
     )
 
     assert result.status is WorkflowExecutionResultStatus.SUCCESS
@@ -262,7 +262,9 @@ async def test_workflow_output_type_inference(engine: WorkflowEngine):
         output_node=(output_node := engine.create_output_node(result=IntegerValue)),
         inner_nodes=[
             node := engine.create_node(
-                ConstantIntegerNode, id="producer", params=dict(value=42)
+                ConstantIntegerNode,
+                id="producer",
+                params=dict(value=42),
             ),
         ],
         edges=[

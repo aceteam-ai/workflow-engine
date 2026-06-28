@@ -73,6 +73,14 @@ class BooleanValue(Value[bool]):
 
 
 class FloatValue(Value[_DecimalRoot]):
+    # Pyright reads Annotated[Decimal, BeforeValidator(...)] as "constructor takes
+    # Decimal only", but BeforeValidator(to_decimal) already accepts int/float/str
+    # at runtime. Widening _DecimalRoot's Annotated inner type would fix __init__
+    # typing but also widen .root to the union — we want .root to stay Decimal.
+    if TYPE_CHECKING:
+
+        def __init__(self, root: int | float | Decimal, /) -> None: ...
+
     def is_integer(self) -> bool:
         return self.root == self.root.to_integral_value()
 

@@ -3,7 +3,7 @@ from typing import Literal
 
 import pytest
 
-from workflow_engine import ExecutionContext
+from workflow_engine import Data, ExecutionContext
 from workflow_engine.contexts.in_memory import InMemoryExecutionContext
 from workflow_engine.core import (
     BooleanValue,
@@ -664,27 +664,13 @@ def test_float_value_exact_decimal_arithmetic():
 @pytest.mark.unit
 def test_union_value_data_field_validation():
     """Data fields typed as UnionValue accept any member at validation time."""
-    from pydantic import Field
 
-    union_type = UnionValue[FloatValue, SequenceValue[FloatValue]]
-    Input = build_data_type(
-        name="UnionInput",
-        fields={
-            "values": (
-                union_type,
-                Field(title="Values", description="The values to combine."),
-            ),
-        },
-    )
-    scalar = Input.model_validate({"values": FloatValue(2.5)})
+    class Input(Data):
+        values: UnionValue[FloatValue, SequenceValue[FloatValue]]
+
+    scalar = Input.model_validate({"values": 2.5})
     assert isinstance(scalar.values, FloatValue)
-    sequence = Input.model_validate(
-        {
-            "values": SequenceValue[FloatValue](
-                [FloatValue(1.0), FloatValue(2.0)],
-            ),
-        },
-    )
+    sequence = Input.model_validate({"values": [1.0, 2.0]})
     assert isinstance(sequence.values, SequenceValue)
 
 

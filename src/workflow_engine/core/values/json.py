@@ -15,9 +15,29 @@ if TYPE_CHECKING:
 
 type JSON = Mapping[str, JSON] | Sequence[JSON] | None | bool | int | Decimal | str
 
+# Wider than JSON: accepts float literals at construction time (e.g. from
+# json.loads or Python code). Stored .root values remain JSON (Decimal, not float).
+type JSONInput = (
+    Mapping[str, JSONInput]
+    | Sequence[JSONInput]
+    | None
+    | bool
+    | int
+    | float
+    | Decimal
+    | str
+)
+
 
 class JSONValue(Value[JSON]):
-    pass
+    # Pyright treats Value[JSON] as "constructor takes JSON only", but JSON
+    # deliberately omits float (numbers round-trip as Decimal). Call sites still
+    # pass float payloads — JSONValue(3.14), nested dicts with 1.5, etc. Widening
+    # the JSON alias would fix __init__ typing but also widen .root; this stub
+    # accepts JSONInput at construction while .root stays JSON.
+    if TYPE_CHECKING:
+
+        def __init__(self, root: JSONInput, /) -> None: ...
 
 
 @Value.register_cast_to(JSONValue)
@@ -97,5 +117,6 @@ def cast_json_to_string_map(
 
 __all__ = [
     "JSON",
+    "JSONInput",
     "JSONValue",
 ]
