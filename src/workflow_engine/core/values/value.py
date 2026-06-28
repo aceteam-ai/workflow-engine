@@ -16,6 +16,7 @@ from typing import (
     Protocol,
     Self,
     TypeVar,
+    cast,
     get_origin,
     overload,
 )
@@ -248,7 +249,7 @@ class Value(ImmutableRootModel[T], Generic[T]):
                 return caster
 
         if issubclass(cls, t):
-            return cls._identity_caster
+            return cast(Caster[Self, V], cls._identity_caster)
 
         return None
 

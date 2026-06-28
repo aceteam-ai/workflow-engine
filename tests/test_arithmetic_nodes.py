@@ -12,6 +12,7 @@ from workflow_engine import (
 )
 from workflow_engine.contexts import InMemoryExecutionContext
 from workflow_engine.core.stakeholder import StakeholderLevel
+from workflow_engine.core.values.data import DataMapping
 from workflow_engine.core.values.rounding import RoundingMode
 from workflow_engine.nodes import (
     AbsoluteValueNode,
@@ -46,7 +47,7 @@ async def _run_unary(
     input_value: float | int,
     output_key: str,
     params: dict | None = None,
-) -> dict:
+) -> DataMapping:
     workflow = Workflow(
         input_node=(input_node := engine.create_input_node(a=FloatValue)),
         output_node=(
@@ -91,7 +92,7 @@ async def _run_binary(
     output_key: str | tuple[str, ...],
     input_keys: tuple[str, str] = ("a", "b"),
     params: dict | None = None,
-) -> dict:
+) -> DataMapping:
     left_key, right_key = input_keys
     output_keys = (output_key,) if isinstance(output_key, str) else output_key
     workflow = Workflow(
@@ -267,6 +268,7 @@ async def test_divide_by_zero(
     assert result.status is WorkflowExecutionResultStatus.ERROR
     assert "div" in result.errors.node_errors
     error = result.errors.node_errors["div"][0]
+    assert error is not None
     assert error.level is StakeholderLevel.USER
     assert "divide by zero" in error.message.lower()
 

@@ -44,9 +44,6 @@ def _argument_field_name(index: int) -> str:
     return "".join(reversed(letters))
 
 
-_FLOAT_OR_FLOAT_SEQUENCE = UnionValue[FloatValue, SequenceValue[FloatValue]]
-
-
 class RoundingParams(Params):
     digits: IntegerValue = Field(
         title="Decimal Places",
@@ -76,7 +73,7 @@ class DivideParams(Params):
 
 
 def _decimal_values_from_union(
-    value: FloatValue | SequenceValue[FloatValue],
+    value: UnionValue[FloatValue, SequenceValue[FloatValue]],
 ) -> Sequence[Decimal]:
     if isinstance(value, FloatValue):
         return [value.root]
@@ -125,7 +122,7 @@ class UnaryFloatInput(Data):
 
 
 class UnionFloatInput(Data):
-    values: _FLOAT_OR_FLOAT_SEQUENCE = Field(
+    values: UnionValue[FloatValue, SequenceValue[FloatValue]] = Field(
         title="Values",
         description="The numbers to combine, as a single value or a sequence.",
     )

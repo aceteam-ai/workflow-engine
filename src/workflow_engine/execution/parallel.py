@@ -16,7 +16,6 @@ from ..core import (
     ShouldRetry,
     ShouldYield,
     ValidatedWorkflow,
-    Workflow,
     WorkflowErrorsBuilder,
     WorkflowException,
     WorkflowExecutionResult,
@@ -36,7 +35,7 @@ class NodeResult(NamedTuple):
     """Result of a single node execution."""
 
     node_id: str
-    result: DataMapping | Workflow | WorkflowException
+    result: DataMapping | ValidatedWorkflow | WorkflowException
     input: DataMapping  # Original input to the node
     should_retry: ShouldRetry | None = None  # Set if this is a retryable failure
     should_yield: ShouldYield | None = None  # Set if the node yielded
@@ -162,7 +161,7 @@ class ParallelExecutionAlgorithm(ExecutionAlgorithm):
                     )
 
                     # Process completed tasks
-                    expansions_pending: list[tuple[str, Workflow]] = []
+                    expansions_pending: list[tuple[str, ValidatedWorkflow]] = []
                     completed_this_batch: set[str] = set()
 
                     for task in done:
@@ -227,7 +226,7 @@ class ParallelExecutionAlgorithm(ExecutionAlgorithm):
                                 failed_nodes.add(node_id)
                                 continue
 
-                        if isinstance(node_result.result, Workflow):
+                        if isinstance(node_result.result, ValidatedWorkflow):
                             expansions_pending.append((node_id, node_result.result))
                         elif isinstance(node_result.result, Exception):
                             # Handle exception stored in NodeResult

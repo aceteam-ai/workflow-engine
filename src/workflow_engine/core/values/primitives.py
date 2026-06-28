@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from decimal import Decimal
 from typing import TYPE_CHECKING, Annotated
 
@@ -74,9 +75,11 @@ class BooleanValue(Value[bool]):
 
 class FloatValue(Value[_DecimalRoot]):
     # Pyright reads Annotated[Decimal, BeforeValidator(...)] as "constructor takes
-    # Decimal only", but BeforeValidator(to_decimal) already accepts int/float/str
-    # at runtime. Widening _DecimalRoot's Annotated inner type would fix __init__
-    # typing but also widen .root to the union — we want .root to stay Decimal.
+    # Decimal only", but BeforeValidator(to_decimal) coerces int/float at runtime.
+    # Widening _DecimalRoot's Annotated inner type would fix __init__ typing but
+    # also widen .root to the union — we want .root to stay Decimal. str is
+    # deliberately omitted here so callers don't normalize FloatValue("3.14");
+    # strings still coerce via model_validate / StringValue casts when needed.
     if TYPE_CHECKING:
 
         def __init__(self, root: int | float | Decimal, /) -> None: ...
@@ -89,10 +92,12 @@ class FloatValue(Value[_DecimalRoot]):
             return self.root == other.root
         if isinstance(other, bool):
             return False
-        try:
-            return self.root == FloatValue(other).root
-        except ValidationError:
-            return False
+        if isinstance(other, (int, float, Decimal)):
+            try:
+                return self.root == FloatValue(other).root
+            except ValidationError:
+                return False
+        return False
 
     @classmethod
     def __get_pydantic_json_schema__(
@@ -100,7 +105,7 @@ class FloatValue(Value[_DecimalRoot]):
     ) -> JsonSchemaValue:
         json_schema = handler(core_schema)
         extras = cls.model_config.get("json_schema_extra")
-        if extras:
+        if isinstance(extras, Mapping):
             json_schema = {**json_schema, **extras}
         return json_schema
 

@@ -447,7 +447,9 @@ def test_rounding_mode_value_schema_roundtrip():
     schema = T.to_value_schema()
     assert isinstance(schema, ReferenceValueSchema)
     assert schema.value_type == "RoundingModeValue"
-    assert schema.defs["RoundingMode"].enum == [member.value for member in RoundingMode]
+    rounding_mode_schema = schema.defs["RoundingMode"]
+    assert isinstance(rounding_mode_schema, StringValueSchema)
+    assert rounding_mode_schema.enum == [member.value for member in RoundingMode]
     U = schema.to_value_cls()
     assert U == T
 
