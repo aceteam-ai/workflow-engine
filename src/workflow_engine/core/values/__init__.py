@@ -30,6 +30,7 @@ from .schema import (
     validate_value_schema,
 )
 from .sequence import SequenceValue
+from .union import UnionValue
 from .value import (
     Caster,
     Value,
@@ -60,6 +61,7 @@ __all__ = [
     "SequenceValue",
     "StringMapValue",
     "StringValue",
+    "UnionValue",
     "Value",
     "ValueRegistry",
     "ValueSchema",

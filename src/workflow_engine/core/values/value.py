@@ -50,6 +50,12 @@ def get_origin_and_args(t: ValueType) -> tuple[ValueType, tuple[ValueType, ...]]
     # Pydantic RootModels don't play nice with get_origin and get_args, so we
     # get the root type directly from the model fields.
     assert issubclass(t, Value)
+    # UnionValue stores members on _union_members_ instead of Pydantic generic args.
+    members: tuple[ValueType, ...] | None = getattr(t, "_union_members_", None)
+    if members is not None:
+        from .union import UnionValue
+
+        return UnionValue, members
     info = t.__pydantic_generic_metadata__
     origin = info["origin"]
     args = info["args"]

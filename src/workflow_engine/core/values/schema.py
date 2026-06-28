@@ -503,10 +503,14 @@ class UnionValueSchema(BaseValueSchema):
         self,
         *extra_defs: Mapping[str, ValueSchema],
     ) -> ValueType:
-        # TODO: add proper type union support
-        raise NotImplementedError(
-            "There is no Value type handling for type unions yet."
+        from .union import union_value_type
+
+        members = tuple(
+            schema.to_value_cls(self.defs, *extra_defs) for schema in self.anyOf
         )
+        if not members:
+            raise ValueError("UnionValueSchema requires at least one anyOf member")
+        return union_value_type(*members)
 
 
 class ReferenceValueSchema(BaseValueSchema):
