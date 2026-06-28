@@ -13,16 +13,17 @@ from workflow_engine import (
 from workflow_engine.contexts import InMemoryExecutionContext
 from workflow_engine.core.stakeholder import StakeholderLevel
 from workflow_engine.nodes import (
-    AbsNode,
+    AbsoluteValueNode,
     DivideNode,
-    MaxNode,
-    MinNode,
+    MaximumNode,
+    MinimumNode,
     MultiplyNode,
     NegateNode,
     PowerNode,
     RoundNode,
     SubtractNode,
 )
+from workflow_engine.nodes.arithmetic import _divide_with_remainder, _round_decimal
 
 
 @pytest.fixture
@@ -86,10 +87,12 @@ async def _run_binary(
     node_id: str,
     a: float | int,
     b: float | int,
-    output_key: str,
+    output_key: str | tuple[str, ...],
     input_keys: tuple[str, str] = ("a", "b"),
+    params: dict | None = None,
 ) -> dict:
     left_key, right_key = input_keys
+    output_keys = (output_key,) if isinstance(output_key, str) else output_key
     workflow = Workflow(
         input_node=(
             input_node := engine.create_input_node(
@@ -97,9 +100,13 @@ async def _run_binary(
             )
         ),
         output_node=(
-            output_node := engine.create_output_node(**{output_key: FloatValue})
+            output_node := engine.create_output_node(
+                **{key: FloatValue for key in output_keys},
+            )
         ),
-        inner_nodes=[node := engine.create_node(node_cls, id=node_id)],
+        inner_nodes=[
+            node := engine.create_node(node_cls, id=node_id, params=params or {}),
+        ],
         edges=[
             Edge.from_nodes(
                 source=input_node,
@@ -113,11 +120,14 @@ async def _run_binary(
                 target=node,
                 target_key=right_key,
             ),
-            Edge.from_nodes(
-                source=node,
-                source_key=output_key,
-                target=output_node,
-                target_key=output_key,
+            *(
+                Edge.from_nodes(
+                    source=node,
+                    source_key=key,
+                    target=output_node,
+                    target_key=key,
+                )
+                for key in output_keys
             ),
         ],
     )
@@ -142,6 +152,7 @@ async def test_subtract(engine: WorkflowEngine, context: InMemoryExecutionContex
         a=10,
         b=3,
         output_key="difference",
+        input_keys=("minuend", "subtrahend"),
     )
     assert output["difference"] == 7
 
@@ -154,11 +165,61 @@ async def test_divide(engine: WorkflowEngine, context: InMemoryExecutionContext)
         context,
         node_cls=DivideNode,
         node_id="div",
+        a=10,
+        b=3,
+        output_key=("quotient", "integer_quotient", "remainder"),
+        input_keys=("dividend", "divisor"),
+    )
+    assert output["quotient"] == Decimal("10") / Decimal("3")
+    assert output["integer_quotient"] == 3
+    assert output["remainder"] == 1
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_divide_exact_quotient_with_integer_part(
+    engine: WorkflowEngine, context: InMemoryExecutionContext
+):
+    output = await _run_binary(
+        engine,
+        context,
+        node_cls=DivideNode,
+        node_id="div",
         a=7,
         b=2,
-        output_key="quotient",
+        output_key=("quotient", "integer_quotient", "remainder"),
+        input_keys=("dividend", "divisor"),
     )
     assert output["quotient"] == 3.5
+    assert output["integer_quotient"] == 3
+    assert output["remainder"] == 1
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ("dividend", "divisor", "mode", "expected_integer_quotient", "expected_remainder"),
+    [
+        (Decimal("10"), Decimal("3"), "floor", Decimal("3"), Decimal("1")),
+        (Decimal("-10"), Decimal("3"), "floor", Decimal("-4"), Decimal("2")),
+        (Decimal("10"), Decimal("3"), "ceiling", Decimal("4"), Decimal("-2")),
+        (Decimal("7"), Decimal("2"), "toward_zero", Decimal("3"), Decimal("1")),
+    ],
+)
+def test_divide_with_remainder_rounding_modes(
+    dividend: Decimal,
+    divisor: Decimal,
+    mode: str,
+    expected_integer_quotient: Decimal,
+    expected_remainder: Decimal,
+):
+    quotient, integer_quotient, remainder = _divide_with_remainder(
+        dividend,
+        divisor,
+        mode=mode,
+    )
+    assert quotient == dividend / divisor
+    assert integer_quotient == expected_integer_quotient
+    assert remainder == expected_remainder
 
 
 @pytest.mark.unit
@@ -167,15 +228,26 @@ async def test_divide_by_zero(
     engine: WorkflowEngine, context: InMemoryExecutionContext
 ):
     workflow = Workflow(
-        input_node=(input_node := engine.create_input_node(a=FloatValue, b=FloatValue)),
+        input_node=(
+            input_node := engine.create_input_node(
+                dividend=FloatValue,
+                divisor=FloatValue,
+            )
+        ),
         output_node=(output_node := engine.create_output_node(quotient=FloatValue)),
         inner_nodes=[divide := engine.create_node(DivideNode, id="div")],
         edges=[
             Edge.from_nodes(
-                source=input_node, source_key="a", target=divide, target_key="a"
+                source=input_node,
+                source_key="dividend",
+                target=divide,
+                target_key="dividend",
             ),
             Edge.from_nodes(
-                source=input_node, source_key="b", target=divide, target_key="b"
+                source=input_node,
+                source_key="divisor",
+                target=divide,
+                target_key="divisor",
             ),
             Edge.from_nodes(
                 source=divide,
@@ -188,7 +260,7 @@ async def test_divide_by_zero(
     result = await engine.execute(
         context=context,
         workflow=workflow,
-        input={"a": 1, "b": 0},
+        input={"dividend": 1, "divisor": 0},
     )
     assert result.status is WorkflowExecutionResultStatus.ERROR
     assert "div" in result.errors.node_errors
@@ -334,8 +406,8 @@ async def test_min_and_max_sequence(
             )
         ),
         inner_nodes=[
-            min_node := engine.create_node(MinNode, id="min"),
-            max_node := engine.create_node(MaxNode, id="max"),
+            min_node := engine.create_node(MinimumNode, id="min"),
+            max_node := engine.create_node(MaximumNode, id="max"),
         ],
         edges=[
             Edge.from_nodes(
@@ -383,7 +455,7 @@ async def test_min_empty_sequence(
             input_node := engine.create_input_node(values=SequenceValue[FloatValue])
         ),
         output_node=(output_node := engine.create_output_node(minimum=FloatValue)),
-        inner_nodes=[min_node := engine.create_node(MinNode, id="min")],
+        inner_nodes=[min_node := engine.create_node(MinimumNode, id="min")],
         edges=[
             Edge.from_nodes(
                 source=input_node,
@@ -426,7 +498,7 @@ async def test_negate_and_abs(
     absolute = await _run_unary(
         engine,
         context,
-        node_cls=AbsNode,
+        node_cls=AbsoluteValueNode,
         node_id="abs",
         input_value=-5,
         output_key="absolute",
@@ -446,14 +518,16 @@ async def test_round_half_even(
         node_id="round",
         input_value=2.5,
         output_key="rounded",
-        params={"ndigits": 0, "rounding_mode": "half_even"},
+        params={"digits": 0, "rounding_mode": "half_even"},
     )
     assert output["rounded"] == 2
 
 
 @pytest.mark.unit
 @pytest.mark.asyncio
-async def test_round_half_up(engine: WorkflowEngine, context: InMemoryExecutionContext):
+async def test_round_half_away_from_zero(
+    engine: WorkflowEngine, context: InMemoryExecutionContext
+):
     output = await _run_unary(
         engine,
         context,
@@ -461,9 +535,39 @@ async def test_round_half_up(engine: WorkflowEngine, context: InMemoryExecutionC
         node_id="round",
         input_value=2.5,
         output_key="rounded",
-        params={"ndigits": 0, "rounding_mode": "half_up"},
+        params={"digits": 0, "rounding_mode": "half_away_from_zero"},
     )
     assert output["rounded"] == 3
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ("value", "mode", "expected"),
+    [
+        (Decimal("23.7"), "floor", Decimal("23")),
+        (Decimal("-23.2"), "floor", Decimal("-24")),
+        (Decimal("23.2"), "ceiling", Decimal("24")),
+        (Decimal("-23.7"), "ceiling", Decimal("-23")),
+        (Decimal("23.7"), "toward_zero", Decimal("23")),
+        (Decimal("-23.7"), "toward_zero", Decimal("-23")),
+        (Decimal("23.2"), "away_from_zero", Decimal("24")),
+        (Decimal("-23.2"), "away_from_zero", Decimal("-24")),
+        (Decimal("23.5"), "half_toward_positive_infinity", Decimal("24")),
+        (Decimal("-23.5"), "half_toward_positive_infinity", Decimal("-23")),
+        (Decimal("23.5"), "half_toward_negative_infinity", Decimal("23")),
+        (Decimal("-23.5"), "half_toward_negative_infinity", Decimal("-24")),
+        (Decimal("23.5"), "half_toward_zero", Decimal("23")),
+        (Decimal("-23.5"), "half_toward_zero", Decimal("-23")),
+        (Decimal("23.5"), "half_away_from_zero", Decimal("24")),
+        (Decimal("-23.5"), "half_away_from_zero", Decimal("-24")),
+        (Decimal("2.5"), "half_even", Decimal("2")),
+        (Decimal("3.5"), "half_even", Decimal("4")),
+        (Decimal("2.5"), "half_odd", Decimal("3")),
+        (Decimal("3.5"), "half_odd", Decimal("3")),
+    ],
+)
+def test_round_decimal_wikipedia_modes(value: Decimal, mode: str, expected: Decimal):
+    assert _round_decimal(value, digits=0, mode=mode) == expected
 
 
 @pytest.mark.unit
@@ -480,7 +584,7 @@ async def test_round_decimal_fractions_exact(
             round_node := engine.create_node(
                 RoundNode,
                 id="round",
-                params={"ndigits": 1, "rounding_mode": "half_up"},
+                params={"digits": 1, "rounding_mode": "half_away_from_zero"},
             ),
         ],
         edges=[

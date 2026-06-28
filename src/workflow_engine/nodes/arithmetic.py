@@ -3,14 +3,21 @@
 Built-in arithmetic nodes.
 """
 
-from decimal import ROUND_HALF_EVEN, ROUND_HALF_UP, Decimal
+from decimal import (
+    ROUND_CEILING,
+    ROUND_DOWN,
+    ROUND_FLOOR,
+    ROUND_HALF_DOWN,
+    ROUND_HALF_EVEN,
+    ROUND_HALF_UP,
+    ROUND_UP,
+    Decimal,
+)
 from math import prod
 from typing import ClassVar, Type
 
 from overrides import override
 from pydantic import Field
-
-from workflow_engine.core.values import build_data_type
 
 from ..core import (
     Data,
@@ -27,6 +34,7 @@ from ..core import (
     UnionValue,
     ValidationContext,
 )
+from ..core.values import build_data_type
 
 
 def _argument_field_name(index: int) -> str:
@@ -46,10 +54,63 @@ def _argument_field_name(index: int) -> str:
 
 _FLOAT_OR_FLOAT_SEQUENCE = UnionValue[FloatValue, SequenceValue[FloatValue]]
 
-_ROUNDING_MODES = {
+_DECIMAL_ROUNDING_MODES = {
+    "floor": ROUND_FLOOR,
+    "ceiling": ROUND_CEILING,
+    "toward_zero": ROUND_DOWN,
+    "away_from_zero": ROUND_UP,
+    "half_toward_zero": ROUND_HALF_DOWN,
+    "half_away_from_zero": ROUND_HALF_UP,
     "half_even": ROUND_HALF_EVEN,
-    "half_up": ROUND_HALF_UP,
 }
+
+_CUSTOM_ROUNDING_MODES = frozenset(
+    {
+        "half_toward_negative_infinity",
+        "half_toward_positive_infinity",
+        "half_odd",
+    }
+)
+
+_SUPPORTED_ROUNDING_MODES = frozenset(
+    _DECIMAL_ROUNDING_MODES.keys() | _CUSTOM_ROUNDING_MODES
+)
+
+_ROUNDING_MODE_DESCRIPTION = (
+    "The rounding rule to apply. Directed modes: "
+    '"floor", "ceiling", "toward_zero", "away_from_zero". '
+    "Nearest modes: "
+    '"half_even", "half_odd", "half_toward_zero", "half_away_from_zero", '
+    '"half_toward_positive_infinity", "half_toward_negative_infinity".'
+)
+
+
+def _rounding_quantizer(digits: int) -> Decimal:
+    return Decimal(10) ** -digits
+
+
+def _round_half_toward_positive_infinity(value: Decimal, quantizer: Decimal) -> Decimal:
+    if value >= 0:
+        return value.quantize(quantizer, rounding=ROUND_HALF_UP)
+    return value.quantize(quantizer, rounding=ROUND_HALF_DOWN)
+
+
+def _round_half_toward_negative_infinity(value: Decimal, quantizer: Decimal) -> Decimal:
+    if value >= 0:
+        return value.quantize(quantizer, rounding=ROUND_HALF_DOWN)
+    return value.quantize(quantizer, rounding=ROUND_HALF_UP)
+
+
+def _round_half_odd(value: Decimal, quantizer: Decimal) -> Decimal:
+    rounded_up = value.quantize(quantizer, rounding=ROUND_HALF_UP)
+    rounded_down = value.quantize(quantizer, rounding=ROUND_HALF_DOWN)
+    if rounded_up == rounded_down:
+        return rounded_up
+    for candidate in (rounded_down, rounded_up):
+        scaled = candidate / quantizer
+        if int(scaled) % 2 != 0:
+            return candidate
+    return rounded_up
 
 
 def _decimal_values_from_union(
@@ -70,14 +131,91 @@ def _require_nonzero(
         raise NodeException.for_user(f"Cannot divide by zero: {label} is 0.", node=node)
 
 
-def _round_decimal(value: Decimal, *, ndigits: int, mode: str) -> Decimal:
-    rounding = _ROUNDING_MODES[mode]
-    return value.quantize(Decimal(10) ** -ndigits, rounding=rounding)
+def _round_decimal(value: Decimal, *, digits: int, mode: str) -> Decimal:
+    quantizer = _rounding_quantizer(digits)
+
+    if mode in _DECIMAL_ROUNDING_MODES:
+        return value.quantize(
+            quantizer,
+            rounding=_DECIMAL_ROUNDING_MODES[mode],
+        )
+
+    if mode == "half_toward_positive_infinity":
+        return _round_half_toward_positive_infinity(value, quantizer)
+    if mode == "half_toward_negative_infinity":
+        return _round_half_toward_negative_infinity(value, quantizer)
+    if mode == "half_odd":
+        return _round_half_odd(value, quantizer)
+
+    supported = ", ".join(sorted(_SUPPORTED_ROUNDING_MODES))
+    raise ValueError(f"Unknown rounding mode {mode!r}; expected one of: {supported}.")
 
 
-class BinaryFloatInput(Data):
-    a: FloatValue = Field(title="A", description="The first number.")
-    b: FloatValue = Field(title="B", description="The second number.")
+def _validate_rounding_mode(mode: str, *, node: Node) -> None:
+    if mode not in _SUPPORTED_ROUNDING_MODES:
+        supported = ", ".join(sorted(_SUPPORTED_ROUNDING_MODES))
+        raise NodeException.for_user(
+            f"Unknown rounding mode {mode!r}; expected one of: {supported}.",
+            node=node,
+        )
+
+
+def _divide_with_remainder(
+    dividend: Decimal,
+    divisor: Decimal,
+    *,
+    mode: str,
+) -> tuple[Decimal, Decimal, Decimal]:
+    quotient = dividend / divisor
+    integer_quotient = _round_decimal(quotient, digits=0, mode=mode)
+    remainder = dividend - integer_quotient * divisor
+    return quotient, integer_quotient, remainder
+
+
+class RoundingParams(Params):
+    digits: IntegerValue = Field(
+        title="Decimal Places",
+        description="The number of decimal places to round to.",
+        default=IntegerValue(0),
+    )
+    rounding_mode: StringValue = Field(
+        title="Rounding Mode",
+        description=_ROUNDING_MODE_DESCRIPTION,
+        default=StringValue("half_even"),
+    )
+
+
+class DivideParams(Params):
+    rounding_mode: StringValue = Field(
+        title="Rounding Mode",
+        description=(
+            "The rounding rule used to compute the integer quotient from the exact "
+            f"quotient. {_ROUNDING_MODE_DESCRIPTION}"
+        ),
+        default=StringValue("floor"),
+    )
+
+
+class SubtractInput(Data):
+    minuend: FloatValue = Field(
+        title="Minuend",
+        description="The number to subtract from.",
+    )
+    subtrahend: FloatValue = Field(
+        title="Subtrahend",
+        description="The number to subtract.",
+    )
+
+
+class DivideInput(Data):
+    dividend: FloatValue = Field(
+        title="Dividend",
+        description="The number to be divided.",
+    )
+    divisor: FloatValue = Field(
+        title="Divisor",
+        description="The number to divide by.",
+    )
 
 
 class PowerInput(Data):
@@ -118,7 +256,7 @@ class AddNode(Node[Data, SumOutput, AddNodeParams]):
     )
 
     # we can do this because an empty AddNodeParams is valid
-    params: AddNodeParams = Field(default=AddNodeParams())  # pyright: ignore[reportIncompatibleVariableOverride]
+    params: AddNodeParams = Field(default=AddNodeParams())
 
     @override
     async def dynamic_input_type(self, context: ValidationContext) -> Type[Data]:
@@ -256,11 +394,11 @@ class FactorizationNode(Node[IntegerData, FactorizationData, Empty]):
 class SubtractOutput(Data):
     difference: FloatValue = Field(
         title="Difference",
-        description="The result of subtracting the second number from the first.",
+        description="The result of subtracting the subtrahend from the minuend.",
     )
 
 
-class SubtractNode(Node[BinaryFloatInput, SubtractOutput, Empty]):
+class SubtractNode(Node[SubtractInput, SubtractOutput, Empty]):
     TYPE_INFO: ClassVar[NodeTypeInfo] = NodeTypeInfo.from_parameter_type(
         display_name="Subtract",
         description="Subtracts one number from another.",
@@ -270,8 +408,8 @@ class SubtractNode(Node[BinaryFloatInput, SubtractOutput, Empty]):
 
     @classmethod
     @override
-    def static_input_type(cls) -> Type[BinaryFloatInput]:
-        return BinaryFloatInput
+    def static_input_type(cls) -> Type[SubtractInput]:
+        return SubtractInput
 
     @classmethod
     @override
@@ -283,32 +421,52 @@ class SubtractNode(Node[BinaryFloatInput, SubtractOutput, Empty]):
         self,
         *,
         context: ExecutionContext,
-        input_type: Type[BinaryFloatInput],
+        input_type: Type[SubtractInput],
         output_type: Type[SubtractOutput],
-        input: BinaryFloatInput,
+        input: SubtractInput,
     ) -> SubtractOutput:
-        return output_type(difference=FloatValue(input.a.root - input.b.root))
+        return output_type(
+            difference=FloatValue(input.minuend.root - input.subtrahend.root)
+        )
 
 
 class DivideOutput(Data):
     quotient: FloatValue = Field(
         title="Quotient",
-        description="The result of dividing the first number by the second.",
+        description="The exact result of dividing the dividend by the divisor.",
+    )
+    integer_quotient: FloatValue = Field(
+        title="Integer Quotient",
+        description=(
+            "The quotient rounded to a whole number using the chosen rounding mode."
+        ),
+    )
+    remainder: FloatValue = Field(
+        title="Remainder",
+        description=(
+            "The amount left over after subtracting the integer quotient times "
+            "the divisor from the dividend."
+        ),
     )
 
 
-class DivideNode(Node[BinaryFloatInput, DivideOutput, Empty]):
+class DivideNode(Node[DivideInput, DivideOutput, DivideParams]):
     TYPE_INFO: ClassVar[NodeTypeInfo] = NodeTypeInfo.from_parameter_type(
         display_name="Divide",
-        description="Divides one number by another.",
+        description=(
+            "Divides one number by another, returning the exact quotient, an "
+            "integer quotient, and the remainder relative to that integer quotient."
+        ),
         version="1.0.0",
-        parameter_type=Empty,
+        parameter_type=DivideParams,
     )
+
+    params: DivideParams = Field(default=DivideParams())
 
     @classmethod
     @override
-    def static_input_type(cls) -> Type[BinaryFloatInput]:
-        return BinaryFloatInput
+    def static_input_type(cls) -> Type[DivideInput]:
+        return DivideInput
 
     @classmethod
     @override
@@ -320,12 +478,23 @@ class DivideNode(Node[BinaryFloatInput, DivideOutput, Empty]):
         self,
         *,
         context: ExecutionContext,
-        input_type: Type[BinaryFloatInput],
+        input_type: Type[DivideInput],
         output_type: Type[DivideOutput],
-        input: BinaryFloatInput,
+        input: DivideInput,
     ) -> DivideOutput:
-        _require_nonzero(input.b.root, node=self, label="divisor")
-        return output_type(quotient=FloatValue(input.a.root / input.b.root))
+        _require_nonzero(input.divisor.root, node=self, label="divisor")
+        mode = self.params.rounding_mode.root
+        _validate_rounding_mode(mode, node=self)
+        quotient, integer_quotient, remainder = _divide_with_remainder(
+            input.dividend.root,
+            input.divisor.root,
+            mode=mode,
+        )
+        return output_type(
+            quotient=FloatValue(quotient),
+            integer_quotient=FloatValue(integer_quotient),
+            remainder=FloatValue(remainder),
+        )
 
 
 class PowerOutput(Data):
@@ -403,14 +572,14 @@ class MultiplyNode(Node[UnionFloatInput, MultiplyOutput, Empty]):
         return output_type(product=FloatValue(prod(values, start=Decimal(1))))
 
 
-class MinOutput(Data):
+class MinimumOutput(Data):
     minimum: FloatValue = Field(
         title="Minimum",
         description="The smallest number.",
     )
 
 
-class MinNode(Node[UnionFloatInput, MinOutput, Empty]):
+class MinimumNode(Node[UnionFloatInput, MinimumOutput, Empty]):
     TYPE_INFO: ClassVar[NodeTypeInfo] = NodeTypeInfo.from_parameter_type(
         display_name="Min",
         description="Finds the smallest of one number or a sequence of numbers.",
@@ -425,8 +594,8 @@ class MinNode(Node[UnionFloatInput, MinOutput, Empty]):
 
     @classmethod
     @override
-    def static_output_type(cls) -> Type[MinOutput]:
-        return MinOutput
+    def static_output_type(cls) -> Type[MinimumOutput]:
+        return MinimumOutput
 
     @override
     async def run(
@@ -434,9 +603,9 @@ class MinNode(Node[UnionFloatInput, MinOutput, Empty]):
         *,
         context: ExecutionContext,
         input_type: Type[UnionFloatInput],
-        output_type: Type[MinOutput],
+        output_type: Type[MinimumOutput],
         input: UnionFloatInput,
-    ) -> MinOutput:
+    ) -> MinimumOutput:
         values = _decimal_values_from_union(input.values)
         if not values:
             raise NodeException.for_user(
@@ -446,14 +615,14 @@ class MinNode(Node[UnionFloatInput, MinOutput, Empty]):
         return output_type(minimum=FloatValue(min(values)))
 
 
-class MaxOutput(Data):
+class MaximumOutput(Data):
     maximum: FloatValue = Field(
         title="Maximum",
         description="The largest number.",
     )
 
 
-class MaxNode(Node[UnionFloatInput, MaxOutput, Empty]):
+class MaximumNode(Node[UnionFloatInput, MaximumOutput, Empty]):
     TYPE_INFO: ClassVar[NodeTypeInfo] = NodeTypeInfo.from_parameter_type(
         display_name="Max",
         description="Finds the largest of one number or a sequence of numbers.",
@@ -468,8 +637,8 @@ class MaxNode(Node[UnionFloatInput, MaxOutput, Empty]):
 
     @classmethod
     @override
-    def static_output_type(cls) -> Type[MaxOutput]:
-        return MaxOutput
+    def static_output_type(cls) -> Type[MaximumOutput]:
+        return MaximumOutput
 
     @override
     async def run(
@@ -477,9 +646,9 @@ class MaxNode(Node[UnionFloatInput, MaxOutput, Empty]):
         *,
         context: ExecutionContext,
         input_type: Type[UnionFloatInput],
-        output_type: Type[MaxOutput],
+        output_type: Type[MaximumOutput],
         input: UnionFloatInput,
-    ) -> MaxOutput:
+    ) -> MaximumOutput:
         values = _decimal_values_from_union(input.values)
         if not values:
             raise NodeException.for_user(
@@ -526,16 +695,16 @@ class NegateNode(Node[UnaryFloatInput, NegateOutput, Empty]):
         return output_type(negated=FloatValue(-input.a.root))
 
 
-class AbsOutput(Data):
+class AbsoluteValueOutput(Data):
     absolute: FloatValue = Field(
         title="Absolute Value",
         description="The number without its sign.",
     )
 
 
-class AbsNode(Node[UnaryFloatInput, AbsOutput, Empty]):
+class AbsoluteValueNode(Node[UnaryFloatInput, AbsoluteValueOutput, Empty]):
     TYPE_INFO: ClassVar[NodeTypeInfo] = NodeTypeInfo.from_parameter_type(
-        display_name="Abs",
+        display_name="Absolute Value",
         description="Computes the absolute value of a number.",
         version="1.0.0",
         parameter_type=Empty,
@@ -548,8 +717,8 @@ class AbsNode(Node[UnaryFloatInput, AbsOutput, Empty]):
 
     @classmethod
     @override
-    def static_output_type(cls) -> Type[AbsOutput]:
-        return AbsOutput
+    def static_output_type(cls) -> Type[AbsoluteValueOutput]:
+        return AbsoluteValueOutput
 
     @override
     async def run(
@@ -557,24 +726,21 @@ class AbsNode(Node[UnaryFloatInput, AbsOutput, Empty]):
         *,
         context: ExecutionContext,
         input_type: Type[UnaryFloatInput],
-        output_type: Type[AbsOutput],
+        output_type: Type[AbsoluteValueOutput],
         input: UnaryFloatInput,
-    ) -> AbsOutput:
+    ) -> AbsoluteValueOutput:
         return output_type(absolute=FloatValue(abs(input.a.root)))
 
 
-class RoundParams(Params):
-    ndigits: IntegerValue = Field(
+class RoundParams(RoundingParams):
+    digits: IntegerValue = Field(
         title="Decimal Places",
         description="The number of decimal places to round to.",
         default=IntegerValue(0),
     )
     rounding_mode: StringValue = Field(
         title="Rounding Mode",
-        description=(
-            "The rounding rule to apply: "
-            '"half_even" for banker\'s rounding, "half_up" for half-up rounding.'
-        ),
+        description=_ROUNDING_MODE_DESCRIPTION,
         default=StringValue("half_even"),
     )
 
@@ -594,7 +760,7 @@ class RoundNode(Node[UnaryFloatInput, RoundOutput, RoundParams]):
         parameter_type=RoundParams,
     )
 
-    params: RoundParams = Field(default=RoundParams())  # pyright: ignore[reportIncompatibleVariableOverride]
+    params: RoundParams = Field(default=RoundParams())
 
     @classmethod
     @override
@@ -616,27 +782,22 @@ class RoundNode(Node[UnaryFloatInput, RoundOutput, RoundParams]):
         input: UnaryFloatInput,
     ) -> RoundOutput:
         mode = self.params.rounding_mode.root
-        if mode not in _ROUNDING_MODES:
-            supported = ", ".join(sorted(_ROUNDING_MODES))
-            raise NodeException.for_user(
-                f"Unknown rounding mode {mode!r}; expected one of: {supported}.",
-                node=self,
-            )
+        _validate_rounding_mode(mode, node=self)
         rounded = _round_decimal(
             input.a.root,
-            ndigits=self.params.ndigits.root,
+            digits=self.params.digits.root,
             mode=mode,
         )
         return output_type(rounded=FloatValue(rounded))
 
 
 __all__ = [
-    "AbsNode",
+    "AbsoluteValueNode",
     "AddNode",
     "DivideNode",
     "FactorizationNode",
-    "MaxNode",
-    "MinNode",
+    "MaximumNode",
+    "MinimumNode",
     "MultiplyNode",
     "NegateNode",
     "PowerNode",
