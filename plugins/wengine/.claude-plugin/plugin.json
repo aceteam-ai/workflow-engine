@@ -3,7 +3,7 @@
   "version": "2.0.0rc12",
   "description": "Skill for exploring, composing, validating, and running typed workflows via the wengine CLI from aceteam-workflow-engine.",
   "author": {
-    "name": "Aceteam"
+    "name": "AceTeam"
   },
   "homepage": "https://github.com/aceteam-ai/workflow-engine",
   "repository": "https://github.com/aceteam-ai/workflow-engine",

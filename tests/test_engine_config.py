@@ -47,7 +47,7 @@ class TestEntryPointRef:
 
     def test_normalizes_distribution_name(self):
         # PEP 503: underscores/dots/hyphens collapse, case-insensitive.
-        ref = EntryPointRef(root="Aceteam_Workflow.Engine:ForEach")
+        ref = EntryPointRef(root="AceTeam_Workflow.Engine:ForEach")
         assert ref.node_cls is ForEachNode
 
     def test_rejects_malformed_string(self):
@@ -145,11 +145,11 @@ class TestNodesConfigResolution:
         assert reg.get("vendor/legacy:Sum") is SumNode
 
     def test_same_distribution_different_spellings_is_not_collision(self):
-        # PEP 503: "Aceteam_Workflow.Engine" normalizes to the same name as
+        # PEP 503: "AceTeam_Workflow.Engine" normalizes to the same name as
         # "aceteam-workflow-engine". Listing both in `"*"` must not flag every
         # node as a bare-name collision.
         nc = NodesConfig.model_validate(
-            {"*": ["aceteam-workflow-engine", "Aceteam_Workflow.Engine"]}
+            {"*": ["aceteam-workflow-engine", "AceTeam_Workflow.Engine"]}
         )
         assert nc.node_registry.get("Sum") is SumNode
 

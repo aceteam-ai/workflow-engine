@@ -1,5 +1,5 @@
 {
-  description = "Aceteam Workflow Engine development environment";
+  description = "AceTeam Workflow Engine development environment";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";

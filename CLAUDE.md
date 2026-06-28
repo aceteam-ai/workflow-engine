@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Aceteam Workflow Engine is a Python library for building and executing graph-based workflows. It uses Pydantic for validation, NetworkX for DAG operations, and asyncio for concurrent execution.
+AceTeam Workflow Engine is a Python library for building and executing graph-based workflows. It uses Pydantic for validation, NetworkX for DAG operations, and asyncio for concurrent execution.
 
 ## Common Commands
 
