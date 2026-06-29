@@ -1,6 +1,6 @@
 {
   "name": "wengine",
-  "version": "2.0.0rc12",
+  "version": "2.0.0rc13",
   "description": "Skill for exploring, composing, validating, and running typed workflows via the wengine CLI from aceteam-workflow-engine.",
   "author": {
     "name": "AceTeam"
