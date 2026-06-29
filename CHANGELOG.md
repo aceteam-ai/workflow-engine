@@ -6,11 +6,29 @@ This project uses [PEP 440](https://peps.python.org/pep-0440/) versioning with r
 
 ## [Unreleased]
 
+## [2.0.0rc13] - 2026-06-29
+
 ### Added
+- **Arithmetic nodes** — built-in numeric nodes built on `UnionValue` ports (#167).
+- **`UnionValue`** for type-union ports, allowing a single port to accept any of several value types (#154, #166).
 - **Comparison and logic nodes** — built-in boolean nodes for branching and gating workflows:
   - Comparison: `Equal`, `NotEqual`, `GreaterThan`, `GreaterThanEqual`, `LessThan`, `LessThanEqual` (two `FloatValue` inputs → `BooleanValue`).
   - Logic: `And` and `Or` are variadic (a `num_arguments` parameter controls how many boolean inputs appear, like `Add`), plus a unary `Not`.
   - `Equal` / `NotEqual` compare with `math.isclose`. They are exact by default (`rel_tol` and `abs_tol` both default to `0`) and accept optional `rel_tol` / `abs_tol` parameters to absorb floating-point rounding when needed.
+- Async `get_env` on `ValidationContext` and `ExecutionContext` (#159).
+
+### Changed
+- `FloatValue` is now backed by `Decimal` for exact decimal arithmetic (#161).
+- Faster execution scheduling via incremental ready-node tracking (#165), plus node, workflow, value, and iteration performance improvements adopted from autoresearch (#163, #164).
+- Standardized capitalization of "AceTeam" across the codebase.
+
+### Fixed
+- Pyright typing fixes across core and tests, including `FloatValue` / `JSONValue` constructors.
+
+### Internal
+- Bumped Pyright.
+- Dependency bumps: `cryptography` 46.0.7 → 48.0.1 (#162).
+- Refreshed node-authoring API docs and fixed stale references (#150).
 
 ## [2.0.0rc12] - 2026-05-29
 
