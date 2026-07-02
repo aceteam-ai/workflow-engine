@@ -95,6 +95,9 @@ class DateValue(Value[_UtcDateTimeRoot]):
     def __str__(self) -> str:
         return self.root.isoformat()
 
+    def timestamp(self) -> Decimal:
+        return Decimal(self.root.timestamp())
+
 
 @IntegerValue.register_cast_to(DateValue)
 def cast_integer_to_date(
@@ -126,6 +129,14 @@ def cast_date_to_string(
     context: ExecutionContext,
 ) -> StringValue:
     return StringValue(value.root.isoformat())
+
+
+@DateValue.register_cast_to(FloatValue)
+def cast_date_to_float(
+    value: DateValue,
+    context: ExecutionContext,
+) -> FloatValue:
+    return FloatValue(value.timestamp())
 
 
 __all__ = ("DateValue",)

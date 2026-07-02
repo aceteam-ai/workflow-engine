@@ -56,3 +56,14 @@ async def test_cast_date_to_string(context):
     )
     assert isinstance(value, StringValue)
     assert value.root == "2026-07-01T07:17:05+00:00"
+
+
+@pytest.mark.unit
+async def test_cast_date_to_float(context):
+    from decimal import Decimal
+
+    date = DateValue(1_719_834_000.5)
+    assert date.timestamp() == Decimal(str(1_719_834_000.5))
+    float_val = await date.cast_to(FloatValue, context=context)
+    assert isinstance(float_val, FloatValue)
+    assert float_val == date.timestamp()
