@@ -11,6 +11,7 @@ from ...utils.asynchronous import gather
 from ...utils.iter import only
 from ...utils.model import ImmutableBaseModel
 from .mapping import StringMapValue
+from .union import resolve_union_type_from_field
 from .value import Caster, Value, ValueType, get_origin_and_args
 
 if TYPE_CHECKING:
@@ -43,15 +44,21 @@ type DataMapping = Annotated[
 class Data(ImmutableBaseModel):
     model_config: ClassVar[ConfigDict] = ConfigDict(extra="forbid")
 
-    def __init_subclass__(cls, **kwargs):
+    @classmethod
+    def __pydantic_init_subclass__(cls, **kwargs) -> None:
         """Ensure all fields in subclasses are Value types."""
-        super().__init_subclass__(**kwargs)
+        super().__pydantic_init_subclass__(**kwargs)
 
         for field_name, field_info in cls.model_fields.items():
-            if not issubclass(field_info.annotation, Value):  # type: ignore
+            if field_info.annotation is None:
+                continue
+            try:
+                resolve_union_type_from_field(field_info)
+            except TypeError as exc:
                 raise TypeError(
-                    f"Field '{field_name}' in {cls.__name__} must be a Value type, got {field_info.annotation}"
-                )
+                    f"Field '{field_name}' in {cls.__name__} must be a Value type, "
+                    f"got {field_info.annotation!r}"
+                ) from exc
 
 
 # These are module-level functions rather than methods on Data to avoid
@@ -74,12 +81,11 @@ def get_data_schema(cls: type[Data]) -> "ValueSchema":
 
 
 def get_field_annotations(cls: type[Data]) -> Mapping[str, type[Value]]:
-    """Return the name and type annotation of each field."""
+    """Return the name and Value type of each field."""
     fields: Mapping[str, type[Value]] = {}
     for field_name, field_info in cls.model_fields.items():
         assert field_info.annotation is not None
-        assert issubclass(field_info.annotation, Value)
-        fields[field_name] = field_info.annotation
+        fields[field_name] = resolve_union_type_from_field(field_info)
     return fields
 
 
@@ -161,18 +167,15 @@ def get_data_fields(cls: type[Data]) -> Mapping[str, tuple[ValueType, FieldInfo]
     fields: Mapping[str, tuple[ValueType, FieldInfo]] = {}
     for k, v in cls.model_fields.items():
         assert v.annotation is not None
-        assert issubclass(v.annotation, Value)
-        fields[k] = (v.annotation, v)
+        fields[k] = (resolve_union_type_from_field(v), v)
     return fields
 
 
 def get_data_field(cls: type[Data], name: str) -> ValueType | None:
     if name not in cls.model_fields:
         return None
-    field = cls.model_fields[name].annotation
-    assert field is not None
-    assert issubclass(field, Value)
-    return field
+    field_info = cls.model_fields[name]
+    return resolve_union_type_from_field(field_info)
 
 
 D = TypeVar("D", bound=Data)

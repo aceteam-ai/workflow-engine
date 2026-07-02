@@ -182,6 +182,54 @@ result = await value.cast_to(FloatValue)  # FloatValue(42.0)
 
 The full casting graph is visualized in the repository: [typecast_graph.svg](typecast_graph.svg).
 
+## Union Values
+
+`UnionValue[A, B, ...]` accepts any of several member types. Validated and cast values are always an instance of one member (`FloatValue`, `SequenceValue[FloatValue]`, …), never a wrapper object.
+
+Assign a module-level type alias (pyright requires this for multi-member unions):
+
+```python
+from decimal import Decimal
+
+from workflow_engine import Data, FloatValue, SequenceValue, UnionValue
+from pydantic import Field
+
+NumericValues = UnionValue[FloatValue, SequenceValue[FloatValue]]
+
+class SumInput(Data):
+    values: NumericValues = Field(
+        title="Values",
+        description="A scalar or sequence of numbers to sum.",
+    )
+
+def as_decimals(value: FloatValue | SequenceValue[FloatValue]) -> list[Decimal]:
+    if isinstance(value, FloatValue):
+        return [value.root]
+    return [item.root for item in value.root]
+```
+
+At construction time, pass explicit member instances (`FloatValue(1.5)`, `NullValue(None)`, …). Pydantic still coerces raw Python values when deserializing (`model_validate`, JSON). Use `isinstance` on members in node code — not on `UnionValue` itself.
+
+### Optional fields: `OptionalValue`
+
+For optional fields (`T | NullValue`), use `OptionalValue[T]` — shorthand for `UnionValue[T, NullValue]`:
+
+```python
+from workflow_engine import Data, IntegerValue, NullValue, OptionalValue, StringValue
+
+OptionalInteger = OptionalValue[IntegerValue]
+
+class MessageItem(Data):
+    sender_id: OptionalInteger
+    text: OptionalValue[StringValue]
+
+MessageItem(sender_id=NullValue(None), text=StringValue("hello"))
+MessageItem(sender_id=IntegerValue(42), text=StringValue("hi"))
+MessageItem(sender_id=NullValue(None), text=NullValue(None))
+```
+
+Both `UnionValue` and `OptionalValue` support call syntax too: `UnionValue(FloatValue, ...)`, `OptionalValue(IntegerValue)`.
+
 ## Creating Custom Values
 
 To create a custom Value type:

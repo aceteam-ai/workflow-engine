@@ -17,10 +17,13 @@ from workflow_engine.core import (
     Value,
 )
 from workflow_engine.core.values import build_data_type
+from workflow_engine.core.values.union import resolve_union_type
 from workflow_engine.core.values.value import (
     get_origin_and_args,
     get_value_type_key,
 )
+
+UnionFloatValues = UnionValue[FloatValue, SequenceValue[FloatValue]]
 
 
 class QuestionValue(Value[str]):
@@ -666,7 +669,7 @@ def test_union_value_data_field_validation():
     """Data fields typed as UnionValue accept any member at validation time."""
 
     class Input(Data):
-        values: UnionValue[FloatValue, SequenceValue[FloatValue]]
+        values: UnionFloatValues
 
     scalar = Input.model_validate({"values": 2.5})
     assert isinstance(scalar.values, FloatValue)
@@ -676,8 +679,8 @@ def test_union_value_data_field_validation():
 
 @pytest.mark.unit
 async def test_union_value_casting(context):
-    """Values cast to UnionValue targets via the matching member type."""
-    union_type = UnionValue[FloatValue, SequenceValue[FloatValue]]
+    """Values cast to union targets via the matching member type."""
+    union_type = resolve_union_type(UnionValue[FloatValue, SequenceValue[FloatValue]])
 
     assert FloatValue.can_cast_to(union_type)
     assert SequenceValue[FloatValue].can_cast_to(union_type)
@@ -702,7 +705,7 @@ async def test_union_value_casting(context):
 @pytest.mark.unit
 async def test_union_value_cast_prefers_exact_member(context):
     """Casting to a union prefers an exact member match over a castable one."""
-    union_type = UnionValue[IntegerValue, FloatValue]
+    union_type = resolve_union_type(UnionValue[IntegerValue, FloatValue])
     result = await IntegerValue(7).cast_to(union_type, context=context)
     assert isinstance(result, IntegerValue)
     assert result.root == 7
@@ -710,10 +713,10 @@ async def test_union_value_cast_prefers_exact_member(context):
 
 @pytest.mark.unit
 def test_union_value_edge_validation():
-    """Edges to union ports accept sources assignable to any member."""
+    """Edges to union fields accept sources assignable to any member."""
     from pydantic import Field
 
-    union_type = UnionValue[FloatValue, SequenceValue[FloatValue]]
+    union_type = resolve_union_type(UnionValue[FloatValue, SequenceValue[FloatValue]])
     Source = build_data_type(
         name="UnionSource",
         fields={"out": (FloatValue, Field(title="Out", description="The output."))},
@@ -751,6 +754,43 @@ def test_union_value_edge_validation():
         fields={"out": (IntegerValue, Field(title="Out", description="The output."))},
     )
     edge.validate_types(source_type=int_source, target_type=Target)
+
+
+@pytest.mark.unit
+def test_union_value_can_cast_to_member_target():
+    """Union sources are statically castable when any member can reach the target."""
+    union_type = resolve_union_type(UnionValue[FloatValue, SequenceValue[FloatValue]])
+
+    assert union_type.can_cast_to(FloatValue)
+    assert not union_type.can_cast_to(BooleanValue)
+
+
+@pytest.mark.unit
+def test_union_value_edge_validation_to_concrete_target():
+    """Edges from union outputs accept targets any member can cast to."""
+    from pydantic import Field
+
+    union_type = resolve_union_type(UnionValue[FloatValue, SequenceValue[FloatValue]])
+    Source = build_data_type(
+        name="UnionOutSource",
+        fields={
+            "out": (
+                union_type,
+                Field(title="Out", description="The output."),
+            ),
+        },
+    )
+    Target = build_data_type(
+        name="FloatTarget",
+        fields={"inp": (FloatValue, Field(title="In", description="The input."))},
+    )
+    edge = Edge(
+        source_id="src",
+        source_key="out",
+        target_id="tgt",
+        target_key="inp",
+    )
+    edge.validate_types(source_type=Source, target_type=Target)
 
 
 if __name__ == "__main__":

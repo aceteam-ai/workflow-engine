@@ -35,7 +35,7 @@ from .schema import (
     validate_value_schema,
 )
 from .sequence import SequenceValue
-from .union import UnionValue
+from .union import OptionalValue, UnionValue
 from .value import (
     Caster,
     Value,
@@ -63,6 +63,7 @@ __all__ = [
     "JSONValue",
     "ModelValue",
     "NullValue",
+    "OptionalValue",
     "Relation",
     "RoundingMode",
     "RoundingModeValue",
