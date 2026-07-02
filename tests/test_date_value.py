@@ -44,12 +44,6 @@ async def test_cast_iso_string_to_date(context):
 
 
 @pytest.mark.unit
-async def test_cast_slack_timestamp_string_to_date_fails(context):
-    with pytest.raises(ValueError, match="numeric string"):
-        await StringValue("1719834567.123456").cast_to(DateValue, context=context)
-
-
-@pytest.mark.unit
 async def test_cast_date_to_string(context):
     value = await DateValue("2026-07-01T07:17:05Z").cast_to(
         StringValue, context=context

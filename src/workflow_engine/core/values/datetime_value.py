@@ -32,11 +32,6 @@ def _parse_iso8601_datetime(value: str) -> datetime:
     if not text:
         raise ValueError("Empty datetime string")
 
-    # Reject opaque numeric strings (e.g. Slack message timestamps).
-    numeric = text.replace(".", "", 1)
-    if numeric.isdigit():
-        raise ValueError(f"Expected ISO 8601 datetime, got numeric string: {value!r}")
-
     if text.endswith("Z"):
         text = text[:-1] + "+00:00"
 
