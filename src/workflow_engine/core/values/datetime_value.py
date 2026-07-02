@@ -32,9 +32,6 @@ def _parse_iso8601_datetime(value: str) -> datetime:
     if not text:
         raise ValueError("Empty datetime string")
 
-    if text.endswith("Z"):
-        text = text[:-1] + "+00:00"
-
     return _assume_utc(datetime.fromisoformat(text))
 
 
