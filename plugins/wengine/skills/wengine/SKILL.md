@@ -119,13 +119,19 @@ To validate a value against a schema: `wengine schema parse <schema> <value>`.
 
 ## The explore → compose → run loop
 
-### 1. Explore: run individual nodes
+### 1. Explore: discover individual nodes
+
+Treat each node type as a **tool**: check its shape, then if needed, try running it in isolation.
 
 ```sh
-wengine node run <Name> <params-json> <input-json>
+# 1. What params and I/O does this node have?
+wengine node check Add '{"num_arguments": 3}'
+
+# 2. Run it on sample input
+wengine node run Add '{"num_arguments": 3}' '{"a": 1, "b": 2, "c": 3}'
 ```
 
-Inputs accept three forms anywhere `<params>` or `<input>` appears: an inline JSON literal, `@path/to/file.json`, or `-` to read from stdin. Outputs from `node run` are written to a `LocalContext` directory (default `./local/<uuid>/`); use `--base-dir` to relocate.
+Inputs accept three forms anywhere `<params>` or `<input>` appears: an inline JSON literal, `@path/to/file.json`, or `-` to read from stdin. Outputs from `node run` are written to a `LocalContext` directory (default `./local/<uuid>/`); use `--base-dir` to relocate. File outputs (e.g. from fetch/scrape nodes) land on disk and can be fed into the next `node run` via `@file.json`.
 
 Example:
 

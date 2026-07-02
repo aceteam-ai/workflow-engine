@@ -65,7 +65,7 @@ uv run pytest -m unit
 uv run pytest -m integration
 
 # Run a specific test file
-uv run pytest tests/test_addition.py
+uv run pytest tests/test_arithmetic_nodes.py
 
 # Run a specific test
 uv run pytest tests/test_value.py::TestValue::test_cast
@@ -78,8 +78,11 @@ uv run pytest -v
 
 - Place tests in the `tests/` directory
 - Use `pytest.mark.unit` or `pytest.mark.integration` markers
-- Use `InMemoryContext` for unit tests (no filesystem side effects)
+- Use `InMemoryExecutionContext` for unit tests (no filesystem side effects)
 - All node `run()` methods are async, so use `async def test_*` with pytest-asyncio
+- To test a single node through the full execution pipeline, use
+  `WorkflowEngine.execute_node()` — it builds a one-node workflow and infers I/O
+  fields from the node's resolved types (see `tests/test_arithmetic_nodes.py`)
 
 ## Creating a New Node
 

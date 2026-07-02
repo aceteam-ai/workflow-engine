@@ -4,8 +4,6 @@ import pytest
 
 from workflow_engine import (
     DateValue,
-    Edge,
-    Workflow,
     WorkflowEngine,
     WorkflowExecutionResultStatus,
 )
@@ -21,22 +19,9 @@ def engine() -> WorkflowEngine:
 @pytest.mark.asyncio
 async def test_now_node(engine: WorkflowEngine):
     before = datetime.now(timezone.utc)
-    workflow = Workflow(
-        input_node=engine.create_input_node(),
-        output_node=(output_node := engine.create_output_node(now=DateValue)),
-        inner_nodes=[now := engine.create_node(NowNode, id="now")],
-        edges=[
-            Edge.from_nodes(
-                source=now,
-                source_key="now",
-                target=output_node,
-                target_key="now",
-            ),
-        ],
-    )
-    result = await engine.execute(
+    result = await engine.execute_node(
         context=InMemoryExecutionContext(),
-        workflow=workflow,
+        node=NowNode,
         input={},
     )
     after = datetime.now(timezone.utc)

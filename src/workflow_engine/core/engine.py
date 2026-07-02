@@ -6,13 +6,20 @@ from typing_extensions import Self
 
 from .config import WorkflowEngineConfig
 from .context import ExecutionContext, ValidationContext
+from .edge import Edge
 from .execution import ExecutionAlgorithm, WorkflowExecutionResult
 from .io import InputNode, OutputNode
 from .node import Node, NodeRegistry, Params
-from .values import ValueRegistry, ValueType, get_data_dict
+from .values import Data, ValueRegistry, ValueType, get_data_dict, get_data_fields
 from .workflow import ValidatedWorkflow, Workflow
 
 N = TypeVar("N", bound=Node)
+
+
+def _value_fields_from_data_type(data_type: type[Data]) -> dict[str, ValueType]:
+    return {
+        name: value_type for name, (value_type, _) in get_data_fields(data_type).items()
+    }
 
 
 class WorkflowEngine:
@@ -156,6 +163,89 @@ class WorkflowEngine:
             context=context,
             workflow=validated_workflow,
             input=get_data_dict(validated_input),
+        )
+
+    async def build_single_node_workflow(
+        self,
+        node: str | type[N],
+        /,
+        *,
+        node_id: str = "node",
+        params: Mapping[str, Any] | Params | None = None,
+        input_fields: Mapping[str, ValueType] | None = None,
+        output_fields: Mapping[str, ValueType] | None = None,
+    ) -> Workflow:
+        """
+        Build a minimal workflow that wires one inner node between input and output.
+
+        When ``input_fields`` or ``output_fields`` are omitted, they are inferred
+        from the node's resolved input and output types (including dynamic types
+        that depend on ``params``).
+        """
+        inner_node = self.create_node(node, id=node_id, params=params)
+        validation_context = await self._get_validation_context()
+        if input_fields is None:
+            input_type = await inner_node.input_type(validation_context)
+            input_fields = _value_fields_from_data_type(input_type)
+        if output_fields is None:
+            output_type = await inner_node.output_type(validation_context)
+            output_fields = _value_fields_from_data_type(output_type)
+
+        input_node = self.create_input_node(**input_fields)
+        output_node = self.create_output_node(**output_fields)
+        edges = [
+            Edge.from_nodes(
+                source=input_node,
+                source_key=key,
+                target=inner_node,
+                target_key=key,
+            )
+            for key in input_fields
+        ] + [
+            Edge.from_nodes(
+                source=inner_node,
+                source_key=key,
+                target=output_node,
+                target_key=key,
+            )
+            for key in output_fields
+        ]
+        return Workflow(
+            input_node=input_node,
+            output_node=output_node,
+            inner_nodes=[inner_node],
+            edges=edges,
+        )
+
+    async def execute_node(
+        self,
+        *,
+        context: ExecutionContext,
+        node: str | type[N],
+        input: Mapping[str, Any],
+        node_id: str = "node",
+        params: Mapping[str, Any] | Params | None = None,
+        input_fields: Mapping[str, ValueType] | None = None,
+        output_fields: Mapping[str, ValueType] | None = None,
+    ) -> WorkflowExecutionResult:
+        """
+        Run a single node through the full execution pipeline.
+
+        This is the programmatic counterpart of treating each node as an
+        independent tool call: a one-node workflow is assembled, validated,
+        and executed with the configured algorithm and context hooks.
+        """
+        workflow = await self.build_single_node_workflow(
+            node,
+            node_id=node_id,
+            params=params,
+            input_fields=input_fields,
+            output_fields=output_fields,
+        )
+        return await self.execute(
+            context=context,
+            workflow=workflow,
+            input=input,
         )
 
 
