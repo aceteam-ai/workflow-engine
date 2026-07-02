@@ -601,10 +601,6 @@ def validate_value_schema(schema: Any) -> ValueSchema:
     # idempotent: if the schema is already a ValueSchema, just return it
     if isinstance(schema, BaseValueSchema):
         return schema
-    if isinstance(schema, Mapping):
-        data = dict(schema)
-        if data.get("type") == "string" and data.get("format") == "date-time":
-            return DateValueSchema.model_validate(data)
     try:
         return ValueSchemaValue.model_validate(schema).root
     except ValidationError as e:

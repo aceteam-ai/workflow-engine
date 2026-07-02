@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
+from decimal import Decimal
 from typing import TYPE_CHECKING, Annotated
 
-from pydantic import BeforeValidator, ConfigDict, PlainSerializer
+from pydantic import BeforeValidator, PlainSerializer
 
-from .datetime_utils import parse_iso8601_datetime, to_utc_datetime
 from .primitives import FloatValue, IntegerValue, StringValue
 from .value import Value
 
@@ -13,13 +13,61 @@ if TYPE_CHECKING:
     from ..context import ExecutionContext
 
 
+def _assume_utc(dt: datetime) -> datetime:
+    """Return a timezone-aware UTC datetime.
+
+    Naive datetimes are treated as UTC rather than the host local timezone.
+    Workflow values cross process and platform boundaries, so interpreting
+    missing tzinfo as local time would make the same input mean different
+    instants on different machines.
+    """
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc)
+
+
+def _parse_iso8601_datetime(value: str) -> datetime:
+    """Parse a strict ISO 8601 datetime string into UTC."""
+    text = value.strip()
+    if not text:
+        raise ValueError("Empty datetime string")
+
+    # Reject opaque numeric strings (e.g. Slack message timestamps).
+    numeric = text.replace(".", "", 1)
+    if numeric.isdigit():
+        raise ValueError(f"Expected ISO 8601 datetime, got numeric string: {value!r}")
+
+    if text.endswith("Z"):
+        text = text[:-1] + "+00:00"
+
+    return _assume_utc(datetime.fromisoformat(text))
+
+
+def _to_utc_datetime(value: datetime | Decimal | int | float | str) -> datetime:
+    if isinstance(value, datetime):
+        return _assume_utc(value)
+    if isinstance(value, bool):
+        raise TypeError("bool is not a valid datetime")
+    if isinstance(value, Decimal):
+        return datetime.fromtimestamp(float(value), tz=timezone.utc)
+    if isinstance(value, int):
+        return datetime.fromtimestamp(value, tz=timezone.utc)
+    if isinstance(value, float):
+        return datetime.fromtimestamp(value, tz=timezone.utc)
+    if isinstance(value, str):
+        return _parse_iso8601_datetime(value)
+    raise TypeError(f"Cannot convert {type(value).__name__} to datetime")
+
+
 def _serialize_datetime_for_json(value: datetime) -> str:
     return value.isoformat()
 
 
+# JSON has no datetime type. Pydantic emits `type: string` with `format: date-time`
+# (from the JSON Schema Validation spec) because the wire representation is ISO 8601.
 _UtcDateTimeRoot = Annotated[
     datetime,
-    BeforeValidator(to_utc_datetime),
+    BeforeValidator(_to_utc_datetime),
     PlainSerializer(
         _serialize_datetime_for_json,
         return_type=str,
@@ -31,15 +79,16 @@ _UtcDateTimeRoot = Annotated[
 class DateValue(Value[_UtcDateTimeRoot]):
     """A timezone-aware UTC instant serialized as ISO 8601."""
 
-    model_config = Value.model_config | ConfigDict(
-        json_schema_extra={"format": "date-time"},
-    )
-
+    # Pyright reads Annotated[datetime, BeforeValidator(...)] as "constructor takes
+    # datetime only", but BeforeValidator(_to_utc_datetime) coerces int/float/Decimal/
+    # ISO strings at runtime. Widening _UtcDateTimeRoot's Annotated inner type would
+    # fix __init__ typing but also widen .root to the union — we want .root to stay
+    # datetime.
     if TYPE_CHECKING:
 
         def __init__(
             self,
-            root: datetime | int | float | str,
+            root: datetime | Decimal | int | float | str,
             /,
         ) -> None: ...
 
@@ -60,7 +109,7 @@ def cast_float_to_date(
     value: FloatValue,
     context: ExecutionContext,
 ) -> DateValue:
-    return DateValue(float(value.root))
+    return DateValue(value.root)
 
 
 @StringValue.register_cast_to(DateValue)
@@ -68,7 +117,7 @@ def cast_string_to_date(
     value: StringValue,
     context: ExecutionContext,
 ) -> DateValue:
-    return DateValue(parse_iso8601_datetime(value.root))
+    return DateValue(_parse_iso8601_datetime(value.root))
 
 
 @DateValue.register_cast_to(StringValue)
@@ -79,4 +128,4 @@ def cast_date_to_string(
     return StringValue(value.root.isoformat())
 
 
-__all__ = ["DateValue"]
+__all__ = ("DateValue",)
