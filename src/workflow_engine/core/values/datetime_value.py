@@ -14,6 +14,8 @@ if TYPE_CHECKING:
 
 
 def _to_utc_datetime(value: datetime | Decimal | int | float | str) -> datetime:
+    if value is None:
+        raise ValueError("Expected datetime")
     if isinstance(value, bool):
         raise TypeError("bool is not a valid datetime")
     if isinstance(value, (datetime, str)):

@@ -42,6 +42,9 @@ from .data import (
     GatherMappingNode,
     GatherSequenceNode,
 )
+from .datetime import (
+    NowNode,
+)
 from .error import (
     ErrorNode,
 )
@@ -84,6 +87,7 @@ __all__ = [
     "NegateNode",
     "NotEqualNode",
     "NotNode",
+    "NowNode",
     "OrNode",
     "PowerNode",
     "RoundNode",

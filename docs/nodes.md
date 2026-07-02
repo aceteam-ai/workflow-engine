@@ -207,3 +207,17 @@ Always raises a `WorkflowException`. Useful for testing error handling or for ex
 | -------------------------- | ------------- |
 | **Input** `info`           | `StringValue` |
 | **Parameter** `error_name` | `StringValue` |
+
+## Date and Time
+
+### Now
+
+Outputs the current UTC date and time.
+
+| Field           | Type        |
+| --------------- | ----------- |
+| **Output** `now` | `DateValue` |
+
+```json
+{ "type": "Now", "id": "now1", "params": {} }
+```
