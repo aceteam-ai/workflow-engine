@@ -18,6 +18,7 @@ import pytest
 from workflow_engine import (
     BooleanValue,
     Data,
+    DateValue,
     Empty,
     FileValue,
     FloatValue,
@@ -35,6 +36,7 @@ from workflow_engine.core.values.rounding import RoundingMode, RoundingModeValue
 from workflow_engine.core.values.schema import (
     BaseValueSchema,
     BooleanValueSchema,
+    DateValueSchema,
     FieldSchemaMappingValue,
     FloatValueSchema,
     IntegerValueSchema,
@@ -401,6 +403,57 @@ def test_null_schema_aliasing():
     u2 = U(None)
     t2 = T.model_validate(u2)
     assert t2 == u2
+
+
+@pytest.mark.unit
+def test_date_schema_roundtrip():
+    T = DateValue
+    schema = T.to_value_schema()
+    assert isinstance(schema, DateValueSchema)
+    U = schema.to_value_cls()
+    assert U == T
+    assert U.to_value_schema() == schema
+
+    t1 = T("2026-07-01T07:17:05Z")
+    u1 = U.model_validate(t1)
+    assert u1 == t1
+
+    u2 = U("2026-07-02T12:00:00+00:00")
+    t2 = T.model_validate(u2)
+    assert t2 == u2
+
+
+@pytest.mark.unit
+def test_date_schema_manual():
+    T = DateValue
+    json_schema = {
+        "type": "string",
+        "format": "date-time",
+    }
+    schema = validate_value_schema(json_schema)
+    assert isinstance(schema, DateValueSchema)
+    U = schema.to_value_cls()
+    assert U == T
+
+    t1 = T("2026-07-01T07:17:05Z")
+    u1 = U.model_validate(t1)
+    assert u1 == t1
+
+
+@pytest.mark.unit
+def test_date_schema_aliasing():
+    T = DateValue
+    json_schema = {
+        "x-value-type": "DateValue",
+    }
+    schema = validate_value_schema(json_schema)
+    assert isinstance(schema, BaseValueSchema)
+    U = schema.to_value_cls()
+    assert U == DateValue
+
+    t1 = T("2026-07-01T07:17:05Z")
+    u1 = U.model_validate(t1)
+    assert u1 == t1
 
 
 @pytest.mark.unit

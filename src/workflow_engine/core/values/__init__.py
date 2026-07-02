@@ -17,6 +17,7 @@ from .data import (
     resolve_path,
     serialize_data_mapping,
 )
+from .datetime_value import DateValue
 from .extraction import Entity, ExtractionResult, ExtractionResultValue, Relation
 from .file import File, FileValue
 from .json import JSON, JSONValue
@@ -50,6 +51,7 @@ __all__ = [
     "Data",
     "DataMapping",
     "DataValue",
+    "DateValue",
     "Entity",
     "ExtractionResult",
     "ExtractionResultValue",
