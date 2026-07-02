@@ -6,6 +6,9 @@ This project uses [PEP 440](https://peps.python.org/pep-0440/) versioning with r
 
 ## [Unreleased]
 
+### Added
+- **`DateValue`** — first-class ISO 8601 datetime type for human-facing instants, with casts from Unix seconds and strict ISO string parsing (#169).
+
 ## [2.0.0rc13] - 2026-06-29
 
 ### Added

@@ -26,6 +26,7 @@ from pydantic_core import PydanticUndefined
 from ...utils.hash import json_digest
 from ...utils.model import ImmutableBaseModel
 from .data import Data, DataValue, build_data_type
+from .datetime_value import DateValue
 from .mapping import StringMapValue
 from .primitives import (
     BooleanValue,
@@ -414,6 +415,18 @@ class StringValueSchema(BaseValueSchema):
         return _build_constrained_cls(StringValue, _STRING_FIELD_MAP, extras)
 
 
+class DateValueSchema(BaseValueSchema):
+    type: Final[Literal["string"]]
+    format: Final[Literal["date-time"]]
+
+    @override
+    def build_value_cls(
+        self,
+        *extra_defs: Mapping[str, ValueSchema],
+    ) -> type[DateValue]:
+        return DateValue
+
+
 class SequenceValueSchema(BaseValueSchema):
     type: Final[Literal["array"]]
     items: ValueSchema
@@ -566,6 +579,7 @@ class ReferenceValueSchema(BaseValueSchema):
 type ValueSchema = (
     BooleanValueSchema
     | DataValueSchema
+    | DateValueSchema
     | FloatValueSchema
     | IntegerValueSchema
     | NullValueSchema
@@ -587,6 +601,10 @@ def validate_value_schema(schema: Any) -> ValueSchema:
     # idempotent: if the schema is already a ValueSchema, just return it
     if isinstance(schema, BaseValueSchema):
         return schema
+    if isinstance(schema, Mapping):
+        data = dict(schema)
+        if data.get("type") == "string" and data.get("format") == "date-time":
+            return DateValueSchema.model_validate(data)
     try:
         return ValueSchemaValue.model_validate(schema).root
     except ValidationError as e:
@@ -616,6 +634,7 @@ class FieldSchemaMappingValue(StringMapValue[ValueSchemaValue]):
 __all__ = [
     "BooleanValueSchema",
     "DataValueSchema",
+    "DateValueSchema",
     "FieldSchemaMappingValue",
     "FloatValueSchema",
     "IntegerValueSchema",
