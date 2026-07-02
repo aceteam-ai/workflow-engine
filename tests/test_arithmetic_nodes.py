@@ -5,17 +5,21 @@ import pytest
 from workflow_engine import (
     Edge,
     FloatValue,
+    IntegerValue,
     SequenceValue,
+    ValidationContext,
     Workflow,
     WorkflowEngine,
     WorkflowExecutionResultStatus,
 )
 from workflow_engine.contexts import InMemoryExecutionContext
 from workflow_engine.core.stakeholder import StakeholderLevel
-from workflow_engine.core.values.data import DataMapping
+from workflow_engine.core.values import get_data_fields
 from workflow_engine.core.values.rounding import RoundingMode
 from workflow_engine.nodes import (
     AbsoluteValueNode,
+    AddNode,
+    ConstantIntegerNode,
     DivideNode,
     MaximumNode,
     MinimumNode,
@@ -25,7 +29,10 @@ from workflow_engine.nodes import (
     RoundNode,
     SubtractNode,
 )
-from workflow_engine.nodes.arithmetic import _divide_with_remainder
+from workflow_engine.nodes.arithmetic import (
+    _argument_field_name,
+    _divide_with_remainder,
+)
 
 
 @pytest.fixture
@@ -38,143 +45,30 @@ def context() -> InMemoryExecutionContext:
     return InMemoryExecutionContext()
 
 
-async def _run_unary(
-    engine: WorkflowEngine,
-    context: InMemoryExecutionContext,
-    *,
-    node_cls,
-    node_id: str,
-    input_value: float | int,
-    output_key: str,
-    params: dict | None = None,
-) -> DataMapping:
-    workflow = Workflow(
-        input_node=(input_node := engine.create_input_node(a=FloatValue)),
-        output_node=(
-            output_node := engine.create_output_node(**{output_key: FloatValue})
-        ),
-        inner_nodes=[
-            node := engine.create_node(node_cls, id=node_id, params=params or {}),
-        ],
-        edges=[
-            Edge.from_nodes(
-                source=input_node,
-                source_key="a",
-                target=node,
-                target_key="a",
-            ),
-            Edge.from_nodes(
-                source=node,
-                source_key=output_key,
-                target=output_node,
-                target_key=output_key,
-            ),
-        ],
-    )
-    result = await engine.execute(
-        context=context,
-        workflow=workflow,
-        input={"a": input_value},
-    )
-    assert result.status is WorkflowExecutionResultStatus.SUCCESS
-    assert result.output is not None
-    return result.output
-
-
-async def _run_binary(
-    engine: WorkflowEngine,
-    context: InMemoryExecutionContext,
-    *,
-    node_cls,
-    node_id: str,
-    a: float | int,
-    b: float | int,
-    output_key: str | tuple[str, ...],
-    input_keys: tuple[str, str] = ("a", "b"),
-    params: dict | None = None,
-) -> DataMapping:
-    left_key, right_key = input_keys
-    output_keys = (output_key,) if isinstance(output_key, str) else output_key
-    workflow = Workflow(
-        input_node=(
-            input_node := engine.create_input_node(
-                **{left_key: FloatValue, right_key: FloatValue},
-            )
-        ),
-        output_node=(
-            output_node := engine.create_output_node(
-                **{key: FloatValue for key in output_keys},
-            )
-        ),
-        inner_nodes=[
-            node := engine.create_node(node_cls, id=node_id, params=params or {}),
-        ],
-        edges=[
-            Edge.from_nodes(
-                source=input_node,
-                source_key=left_key,
-                target=node,
-                target_key=left_key,
-            ),
-            Edge.from_nodes(
-                source=input_node,
-                source_key=right_key,
-                target=node,
-                target_key=right_key,
-            ),
-            *(
-                Edge.from_nodes(
-                    source=node,
-                    source_key=key,
-                    target=output_node,
-                    target_key=key,
-                )
-                for key in output_keys
-            ),
-        ],
-    )
-    result = await engine.execute(
-        context=context,
-        workflow=workflow,
-        input={left_key: a, right_key: b},
-    )
-    assert result.status is WorkflowExecutionResultStatus.SUCCESS
-    assert result.output is not None
-    return result.output
-
-
 @pytest.mark.unit
 @pytest.mark.asyncio
 async def test_subtract(engine: WorkflowEngine, context: InMemoryExecutionContext):
-    output = await _run_binary(
-        engine,
-        context,
-        node_cls=SubtractNode,
-        node_id="sub",
-        a=10,
-        b=3,
-        output_key="difference",
-        input_keys=("minuend", "subtrahend"),
+    result = await engine.execute_node(
+        context=context,
+        node=SubtractNode,
+        input={"minuend": 10, "subtrahend": 3},
     )
-    assert output["difference"] == 7
+    assert result.status is WorkflowExecutionResultStatus.SUCCESS
+    assert result.output["difference"] == 7
 
 
 @pytest.mark.unit
 @pytest.mark.asyncio
 async def test_divide(engine: WorkflowEngine, context: InMemoryExecutionContext):
-    output = await _run_binary(
-        engine,
-        context,
-        node_cls=DivideNode,
-        node_id="div",
-        a=10,
-        b=3,
-        output_key=("quotient", "integer_quotient", "remainder"),
-        input_keys=("dividend", "divisor"),
+    result = await engine.execute_node(
+        context=context,
+        node=DivideNode,
+        input={"dividend": 10, "divisor": 3},
     )
-    assert output["quotient"] == Decimal("10") / Decimal("3")
-    assert output["integer_quotient"] == 3
-    assert output["remainder"] == 1
+    assert result.status is WorkflowExecutionResultStatus.SUCCESS
+    assert result.output["quotient"] == Decimal("10") / Decimal("3")
+    assert result.output["integer_quotient"] == 3
+    assert result.output["remainder"] == 1
 
 
 @pytest.mark.unit
@@ -182,19 +76,15 @@ async def test_divide(engine: WorkflowEngine, context: InMemoryExecutionContext)
 async def test_divide_exact_quotient_with_integer_part(
     engine: WorkflowEngine, context: InMemoryExecutionContext
 ):
-    output = await _run_binary(
-        engine,
-        context,
-        node_cls=DivideNode,
-        node_id="div",
-        a=7,
-        b=2,
-        output_key=("quotient", "integer_quotient", "remainder"),
-        input_keys=("dividend", "divisor"),
+    result = await engine.execute_node(
+        context=context,
+        node=DivideNode,
+        input={"dividend": 7, "divisor": 2},
     )
-    assert output["quotient"] == 3.5
-    assert output["integer_quotient"] == 3
-    assert output["remainder"] == 1
+    assert result.status is WorkflowExecutionResultStatus.SUCCESS
+    assert result.output["quotient"] == 3.5
+    assert result.output["integer_quotient"] == 3
+    assert result.output["remainder"] == 1
 
 
 @pytest.mark.unit
@@ -230,44 +120,14 @@ async def test_divide_by_zero(
     engine: WorkflowEngine,
     context: InMemoryExecutionContext,
 ):
-    workflow = Workflow(
-        input_node=(
-            input_node := engine.create_input_node(
-                dividend=FloatValue,
-                divisor=FloatValue,
-            )
-        ),
-        output_node=(output_node := engine.create_output_node(quotient=FloatValue)),
-        inner_nodes=[divide := engine.create_node(DivideNode, id="div")],
-        edges=[
-            Edge.from_nodes(
-                source=input_node,
-                source_key="dividend",
-                target=divide,
-                target_key="dividend",
-            ),
-            Edge.from_nodes(
-                source=input_node,
-                source_key="divisor",
-                target=divide,
-                target_key="divisor",
-            ),
-            Edge.from_nodes(
-                source=divide,
-                source_key="quotient",
-                target=output_node,
-                target_key="quotient",
-            ),
-        ],
-    )
-    result = await engine.execute(
+    result = await engine.execute_node(
         context=context,
-        workflow=workflow,
+        node=DivideNode,
         input={"dividend": 1, "divisor": 0},
     )
     assert result.status is WorkflowExecutionResultStatus.ERROR
-    assert "div" in result.errors.node_errors
-    error = result.errors.node_errors["div"][0]
+    assert "node" in result.errors.node_errors
+    error = result.errors.node_errors["node"][0]
     assert error is not None
     assert error.level is StakeholderLevel.USER
     assert "divide by zero" in error.message.lower()
@@ -276,17 +136,13 @@ async def test_divide_by_zero(
 @pytest.mark.unit
 @pytest.mark.asyncio
 async def test_power(engine: WorkflowEngine, context: InMemoryExecutionContext):
-    output = await _run_binary(
-        engine,
-        context,
-        node_cls=PowerNode,
-        node_id="pow",
-        a=2,
-        b=10,
-        output_key="power",
-        input_keys=("base", "exponent"),
+    result = await engine.execute_node(
+        context=context,
+        node=PowerNode,
+        input={"base": 2, "exponent": 10},
     )
-    assert output["power"] == 1024
+    assert result.status is WorkflowExecutionResultStatus.SUCCESS
+    assert result.output["power"] == 1024
 
 
 @pytest.mark.unit
@@ -294,28 +150,9 @@ async def test_power(engine: WorkflowEngine, context: InMemoryExecutionContext):
 async def test_multiply_scalar(
     engine: WorkflowEngine, context: InMemoryExecutionContext
 ):
-    workflow = Workflow(
-        input_node=(input_node := engine.create_input_node(values=FloatValue)),
-        output_node=(output_node := engine.create_output_node(product=FloatValue)),
-        inner_nodes=[multiply := engine.create_node(MultiplyNode, id="mul")],
-        edges=[
-            Edge.from_nodes(
-                source=input_node,
-                source_key="values",
-                target=multiply,
-                target_key="values",
-            ),
-            Edge.from_nodes(
-                source=multiply,
-                source_key="product",
-                target=output_node,
-                target_key="product",
-            ),
-        ],
-    )
-    result = await engine.execute(
+    result = await engine.execute_node(
         context=context,
-        workflow=workflow,
+        node=MultiplyNode,
         input={"values": 6},
     )
     assert result.status is WorkflowExecutionResultStatus.SUCCESS
@@ -327,30 +164,9 @@ async def test_multiply_scalar(
 async def test_multiply_sequence(
     engine: WorkflowEngine, context: InMemoryExecutionContext
 ):
-    workflow = Workflow(
-        input_node=(
-            input_node := engine.create_input_node(values=SequenceValue[FloatValue])
-        ),
-        output_node=(output_node := engine.create_output_node(product=FloatValue)),
-        inner_nodes=[multiply := engine.create_node(MultiplyNode, id="mul")],
-        edges=[
-            Edge.from_nodes(
-                source=input_node,
-                source_key="values",
-                target=multiply,
-                target_key="values",
-            ),
-            Edge.from_nodes(
-                source=multiply,
-                source_key="product",
-                target=output_node,
-                target_key="product",
-            ),
-        ],
-    )
-    result = await engine.execute(
+    result = await engine.execute_node(
         context=context,
-        workflow=workflow,
+        node=MultiplyNode,
         input={"values": [2, 3, 4]},
     )
     assert result.status is WorkflowExecutionResultStatus.SUCCESS
@@ -363,30 +179,9 @@ async def test_multiply_empty_sequence(
     engine: WorkflowEngine,
     context: InMemoryExecutionContext,
 ):
-    workflow = Workflow(
-        input_node=(
-            input_node := engine.create_input_node(values=SequenceValue[FloatValue])
-        ),
-        output_node=(output_node := engine.create_output_node(product=FloatValue)),
-        inner_nodes=[multiply := engine.create_node(MultiplyNode, id="mul")],
-        edges=[
-            Edge.from_nodes(
-                source=input_node,
-                source_key="values",
-                target=multiply,
-                target_key="values",
-            ),
-            Edge.from_nodes(
-                source=multiply,
-                source_key="product",
-                target=output_node,
-                target_key="product",
-            ),
-        ],
-    )
-    result = await engine.execute(
+    result = await engine.execute_node(
         context=context,
-        workflow=workflow,
+        node=MultiplyNode,
         input={"values": []},
     )
     assert result.status is WorkflowExecutionResultStatus.SUCCESS
@@ -454,34 +249,13 @@ async def test_min_and_max_sequence(
 async def test_min_empty_sequence(
     engine: WorkflowEngine, context: InMemoryExecutionContext
 ):
-    workflow = Workflow(
-        input_node=(
-            input_node := engine.create_input_node(values=SequenceValue[FloatValue])
-        ),
-        output_node=(output_node := engine.create_output_node(minimum=FloatValue)),
-        inner_nodes=[min_node := engine.create_node(MinimumNode, id="min")],
-        edges=[
-            Edge.from_nodes(
-                source=input_node,
-                source_key="values",
-                target=min_node,
-                target_key="values",
-            ),
-            Edge.from_nodes(
-                source=min_node,
-                source_key="minimum",
-                target=output_node,
-                target_key="minimum",
-            ),
-        ],
-    )
-    result = await engine.execute(
+    result = await engine.execute_node(
         context=context,
-        workflow=workflow,
+        node=MinimumNode,
         input={"values": []},
     )
     assert result.status is WorkflowExecutionResultStatus.ERROR
-    assert "min" in result.errors.node_errors
+    assert "node" in result.errors.node_errors
 
 
 @pytest.mark.unit
@@ -489,25 +263,21 @@ async def test_min_empty_sequence(
 async def test_negate_and_abs(
     engine: WorkflowEngine, context: InMemoryExecutionContext
 ):
-    negated = await _run_unary(
-        engine,
-        context,
-        node_cls=NegateNode,
-        node_id="neg",
-        input_value=5,
-        output_key="negated",
+    negated = await engine.execute_node(
+        context=context,
+        node=NegateNode,
+        input={"a": 5},
     )
-    assert negated["negated"] == -5
+    assert negated.status is WorkflowExecutionResultStatus.SUCCESS
+    assert negated.output["negated"] == -5
 
-    absolute = await _run_unary(
-        engine,
-        context,
-        node_cls=AbsoluteValueNode,
-        node_id="abs",
-        input_value=-5,
-        output_key="absolute",
+    absolute = await engine.execute_node(
+        context=context,
+        node=AbsoluteValueNode,
+        input={"a": -5},
     )
-    assert absolute["absolute"] == 5
+    assert absolute.status is WorkflowExecutionResultStatus.SUCCESS
+    assert absolute.output["absolute"] == 5
 
 
 @pytest.mark.unit
@@ -515,16 +285,14 @@ async def test_negate_and_abs(
 async def test_round_half_even(
     engine: WorkflowEngine, context: InMemoryExecutionContext
 ):
-    output = await _run_unary(
-        engine,
-        context,
-        node_cls=RoundNode,
-        node_id="round",
-        input_value=2.5,
-        output_key="rounded",
+    result = await engine.execute_node(
+        context=context,
+        node=RoundNode,
         params={"digits": 0, "rounding_mode": "half_even"},
+        input={"a": 2.5},
     )
-    assert output["rounded"] == 2
+    assert result.status is WorkflowExecutionResultStatus.SUCCESS
+    assert result.output["rounded"] == 2
 
 
 @pytest.mark.unit
@@ -532,16 +300,14 @@ async def test_round_half_even(
 async def test_round_half_away_from_zero(
     engine: WorkflowEngine, context: InMemoryExecutionContext
 ):
-    output = await _run_unary(
-        engine,
-        context,
-        node_cls=RoundNode,
-        node_id="round",
-        input_value=2.5,
-        output_key="rounded",
+    result = await engine.execute_node(
+        context=context,
+        node=RoundNode,
         params={"digits": 0, "rounding_mode": "half_away_from_zero"},
+        input={"a": 2.5},
     )
-    assert output["rounded"] == 3
+    assert result.status is WorkflowExecutionResultStatus.SUCCESS
+    assert result.output["rounded"] == 3
 
 
 @pytest.mark.unit
@@ -581,35 +347,162 @@ async def test_round_decimal_fractions_exact(
     context: InMemoryExecutionContext,
 ):
     """Round preserves Decimal exactness (0.1 + 0.2 stays 0.3 at one decimal place)."""
-    workflow = Workflow(
-        input_node=(input_node := engine.create_input_node(a=FloatValue)),
-        output_node=(output_node := engine.create_output_node(rounded=FloatValue)),
+    result = await engine.execute_node(
+        context=context,
+        node=RoundNode,
+        params={"digits": 1, "rounding_mode": "half_away_from_zero"},
+        input={"a": Decimal("0.1") + Decimal("0.2")},
+    )
+    assert result.status is WorkflowExecutionResultStatus.SUCCESS
+    assert result.output == {"rounded": 0.3}
+
+
+@pytest.fixture
+def chained_add_workflow(engine: WorkflowEngine) -> Workflow:
+    return Workflow(
+        input_node=(
+            input_node := engine.create_input_node(
+                c=IntegerValue,
+            )
+        ),
+        output_node=(
+            output_node := engine.create_output_node(
+                sum=IntegerValue,
+            )
+        ),
         inner_nodes=[
-            round_node := engine.create_node(
-                RoundNode,
-                id="round",
-                params={"digits": 1, "rounding_mode": "half_away_from_zero"},
+            a := engine.create_node(
+                ConstantIntegerNode,
+                id="a",
+                params=dict(value=42),
+            ),
+            b := engine.create_node(
+                ConstantIntegerNode,
+                id="b",
+                params=dict(value=2025),
+            ),
+            a_plus_b := engine.create_node(
+                AddNode,
+                id="a+b",
+            ),
+            a_plus_b_plus_c := engine.create_node(
+                AddNode,
+                id="a+b+c",
             ),
         ],
         edges=[
             Edge.from_nodes(
                 source=input_node,
-                source_key="a",
-                target=round_node,
+                source_key="c",
+                target=a_plus_b_plus_c,
+                target_key="b",
+            ),
+            Edge.from_nodes(
+                source=a,
+                source_key="value",
+                target=a_plus_b,
                 target_key="a",
             ),
             Edge.from_nodes(
-                source=round_node,
-                source_key="rounded",
+                source=b,
+                source_key="value",
+                target=a_plus_b,
+                target_key="b",
+            ),
+            Edge.from_nodes(
+                source=a_plus_b,
+                source_key="sum",
+                target=a_plus_b_plus_c,
+                target_key="a",
+            ),
+            Edge.from_nodes(
+                source=a_plus_b_plus_c,
+                source_key="sum",
                 target=output_node,
-                target_key="rounded",
+                target_key="sum",
             ),
         ],
     )
-    result = await engine.execute(
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_add_three_arguments(
+    engine: WorkflowEngine, context: InMemoryExecutionContext
+):
+    result = await engine.execute_node(
         context=context,
-        workflow=workflow,
-        input={"a": Decimal("0.1") + Decimal("0.2")},
+        node=AddNode,
+        params={"num_arguments": 3},
+        input={"a": 10, "b": 20, "c": 30},
     )
     assert result.status is WorkflowExecutionResultStatus.SUCCESS
-    assert result.output == {"rounded": 0.3}
+    assert result.output == {"sum": 60}
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_add_thirty_arguments(
+    engine: WorkflowEngine, context: InMemoryExecutionContext
+):
+    n = 30
+    names = [_argument_field_name(i) for i in range(n)]
+    result = await engine.execute_node(
+        context=context,
+        node=AddNode,
+        params={"num_arguments": n},
+        input={name: i + 1 for i, name in enumerate(names)},
+    )
+    assert result.status is WorkflowExecutionResultStatus.SUCCESS
+    assert result.output == {"sum": sum(range(1, n + 1))}
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_add_thousand_argument_field_names(engine: WorkflowEngine):
+    add = engine.create_node(AddNode, id="add", params={"num_arguments": 1000})
+    validation_context = ValidationContext()
+    fields = [
+        (name, value_type, field_info.title)
+        for name, (value_type, field_info) in get_data_fields(
+            await add.input_type(validation_context)
+        ).items()
+    ]
+    assert len(fields) == 1000
+    assert fields[0] == ("a", FloatValue, "A")
+    assert fields[25] == ("z", FloatValue, "Z")
+    assert fields[26] == ("aa", FloatValue, "AA")
+    assert fields[701] == ("zz", FloatValue, "ZZ")
+    assert fields[702] == ("aaa", FloatValue, "AAA")
+    assert fields[999] == ("all", FloatValue, "ALL")
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_add_exact_decimal_fractions(
+    engine: WorkflowEngine, context: InMemoryExecutionContext
+):
+    """AddNode sums decimal fractions exactly (0.1 + 0.2 == 0.3)."""
+    result = await engine.execute_node(
+        context=context,
+        node=AddNode,
+        input={"a": 0.1, "b": 0.2},
+    )
+    assert result.status is WorkflowExecutionResultStatus.SUCCESS
+    assert result.output["sum"] == 0.3
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_chained_add_workflow(
+    engine: WorkflowEngine,
+    context: InMemoryExecutionContext,
+    chained_add_workflow: Workflow,
+):
+    result = await engine.execute(
+        context=context,
+        workflow=chained_add_workflow,
+        input={"c": -256},
+    )
+    assert result.status is WorkflowExecutionResultStatus.SUCCESS
+    assert result.output == {"sum": 42 + 2025 - 256}

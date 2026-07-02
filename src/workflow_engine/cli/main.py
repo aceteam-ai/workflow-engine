@@ -28,7 +28,8 @@ from workflow_engine.core.config import WorkflowEngineConfig
 from workflow_engine.core.context import ValidationContext
 from workflow_engine.core.edge import Edge
 from workflow_engine.core.engine import WorkflowEngine
-from workflow_engine.core.values.data import Data, DataValue
+from workflow_engine.core.execution import WorkflowExecutionResultStatus
+from workflow_engine.core.values.data import Data, DataMapping, DataValue
 from workflow_engine.core.values.mapping import StringMapValue
 from workflow_engine.core.values.schema import validate_value_schema
 from workflow_engine.core.values.sequence import SequenceValue
@@ -68,6 +69,18 @@ def _load_input(value: str) -> Any:
         return json.loads(text)
     except json.JSONDecodeError as e:
         raise click.ClickException(f"Invalid JSON in {source}: {e}") from e
+
+
+def _echo_data_mapping(output: DataMapping) -> None:
+    click.echo(
+        json.dumps(
+            output,
+            indent=2,
+            default=lambda o: o.model_dump(mode="json")
+            if hasattr(o, "model_dump")
+            else str(o),
+        )
+    )
 
 
 def _compact_value_schema(value_cls: type[Value]) -> dict[str, Any]:
@@ -398,34 +411,26 @@ async def node_run(
     engine = await _build_engine()
     params = _load_input(params_arg)
     raw_input = _load_input(input_arg)
-    instance = engine.create_node(name, id=name, params=params)
-    val_ctx = ValidationContext(
-        node_registry=engine.node_registry,
-        value_registry=engine.value_registry,
+    context = LocalContext(base_dir=str(base_dir))
+    result = await engine.execute_node(
+        context=context,
+        node=name,
+        node_id=name,
+        params=params,
+        input=raw_input,
     )
-    in_t = await instance.input_type(val_ctx)
-    out_t = await instance.output_type(val_ctx)
-    exec_ctx = LocalContext(base_dir=str(base_dir))
-    exec_ctx.validation_context = val_ctx
-    validated_input = in_t.model_validate(raw_input)
-    output = await instance(
-        context=exec_ctx,
-        input_type=in_t,
-        output_type=out_t,
-        input={k: getattr(validated_input, k) for k in in_t.model_fields},
-    )
-    if hasattr(output, "model_dump_json"):
-        click.echo(output.model_dump_json(indent=2))
-    else:
-        click.echo(
-            json.dumps(
-                output,
-                indent=2,
-                default=lambda o: o.model_dump(mode="json")
-                if hasattr(o, "model_dump")
-                else str(o),
-            )
+    if result.status is WorkflowExecutionResultStatus.SUCCESS:
+        _echo_data_mapping(result.output)
+        return
+    if result.status is WorkflowExecutionResultStatus.YIELDED:
+        yield_detail = "; ".join(
+            f"{node_id}: {message}" for node_id, message in result.node_yields.items()
         )
+        raise click.ClickException(f"Node yielded: {yield_detail}")
+    messages = result.errors.messages()
+    if len(messages) == 1:
+        raise click.ClickException(messages[0])
+    raise click.ClickException("\n".join(messages))
 
 
 # ---------- workflow ----------

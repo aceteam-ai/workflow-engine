@@ -330,6 +330,18 @@ class WorkflowErrors(ImmutableBaseModel):
             },
         )
 
+    def messages(self) -> list[str]:
+        """Collect human-readable error messages from all visible errors."""
+        messages: list[str] = []
+        for error in self.workflow_errors:
+            if error is not None:
+                messages.append(error.message)
+        for errors in self.node_errors.values():
+            for error in errors:
+                if error is not None:
+                    messages.append(error.message)
+        return messages
+
 
 class LegacyWorkflowErrors(ImmutableBaseModel):
     """

@@ -124,24 +124,34 @@ derived type name. You only need to make sure the module is imported; add it to
 
 ## 5. Write a test
 
+Use `WorkflowEngine.execute_node` to run the node through the full execution
+pipeline without hand-wiring a one-node workflow:
+
 ```python
 import pytest
-from workflow_engine import IntegerValue, StringValue
-from workflow_engine.contexts import InMemoryContext
+from workflow_engine import WorkflowEngine, WorkflowExecutionResultStatus
+from workflow_engine.contexts import InMemoryExecutionContext
+
+
+@pytest.fixture
+def engine() -> WorkflowEngine:
+    return WorkflowEngine()
 
 
 @pytest.mark.unit
-async def test_my_node():
-    node = MyNode(id="test")
-    context = InMemoryContext()
-    result = await node.run(
-        context=context,
-        input_type=MyInput,
-        output_type=MyOutput,
-        input=MyInput(text=StringValue("hello")),
+@pytest.mark.asyncio
+async def test_my_node(engine: WorkflowEngine):
+    result = await engine.execute_node(
+        context=InMemoryExecutionContext(),
+        node=MyNode,
+        input={"text": "hello"},
     )
-    assert result.length == IntegerValue(5)
+    assert result.status is WorkflowExecutionResultStatus.SUCCESS
+    assert result.output["length"] == 5
 ```
+
+See `tests/test_arithmetic_nodes.py` for more examples, including dynamic nodes
+where `params` controls the inferred input shape.
 
 ## Node versioning
 

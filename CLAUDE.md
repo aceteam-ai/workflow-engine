@@ -21,7 +21,7 @@ uv run pytest -m unit          # Unit tests only
 uv run pytest -m integration   # Integration tests only
 
 # Run a single test file or function
-uv run pytest tests/test_addition.py
+uv run pytest tests/test_arithmetic_nodes.py
 uv run pytest tests/test_value.py::TestValue::test_cast
 
 # Linting and formatting
@@ -53,7 +53,7 @@ src/workflow_engine/
 ├── core/           # Base classes: Node, Workflow, Edge, Context, Value
 │   └── values/     # Value type system (primitives, file, json, sequence, mapping)
 ├── nodes/          # Built-in node implementations (arithmetic, conditional, iteration)
-├── contexts/       # Storage backends (LocalContext, InMemoryContext)
+├── contexts/       # Storage backends (LocalContext, InMemoryExecutionContext)
 ├── execution/      # Execution strategies (TopologicalExecutionAlgorithm)
 └── utils/          # Helpers (immutable base models, semver)
 ```
@@ -187,10 +187,15 @@ To cut a new release:
 ### Execution Flow
 
 1. Load/build a `Workflow` (validates DAG structure, no cycles, types match)
-2. Create a `Context` (LocalContext for files, InMemoryContext for testing)
+2. Create a `Context` (LocalContext for files, InMemoryExecutionContext for testing)
 3. Create an `ExecutionAlgorithm` (TopologicalExecutionAlgorithm)
 4. Call `algorithm.execute(context, workflow, input_data)`
 5. Handle `WorkflowErrors` and output data
+
+To run one node as a tool call (tests, SDK, agents), use
+`WorkflowEngine.execute_node(context=..., node=..., input=...)` instead of
+hand-wiring a single-node workflow. Input/output fields are inferred from the
+node's resolved types, including dynamic shapes driven by `params`.
 
 ### Error Handling
 

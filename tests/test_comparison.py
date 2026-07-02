@@ -1,10 +1,6 @@
 import pytest
 
 from workflow_engine import (
-    BooleanValue,
-    Edge,
-    FloatValue,
-    Workflow,
     WorkflowEngine,
     WorkflowExecutionResultStatus,
 )
@@ -20,6 +16,7 @@ from workflow_engine.nodes import (
     NotNode,
     OrNode,
 )
+from workflow_engine.nodes.comparison import _argument_field_name
 
 
 @pytest.fixture
@@ -27,38 +24,24 @@ def engine() -> WorkflowEngine:
     return WorkflowEngine()
 
 
-async def _run_comparison(
+@pytest.fixture
+def context() -> InMemoryExecutionContext:
+    return InMemoryExecutionContext()
+
+
+async def _comparison_result(
     engine: WorkflowEngine,
+    context: InMemoryExecutionContext,
     node_cls: type,
     a: float,
     b: float,
     params: dict | None = None,
 ) -> bool:
-    workflow = Workflow(
-        input_node=(input_node := engine.create_input_node(a=FloatValue, b=FloatValue)),
-        output_node=(output_node := engine.create_output_node(result=BooleanValue)),
-        inner_nodes=[
-            cmp := engine.create_node(node_cls, id="cmp", params=params or {})
-        ],
-        edges=[
-            Edge.from_nodes(
-                source=input_node, source_key="a", target=cmp, target_key="a"
-            ),
-            Edge.from_nodes(
-                source=input_node, source_key="b", target=cmp, target_key="b"
-            ),
-            Edge.from_nodes(
-                source=cmp,
-                source_key="result",
-                target=output_node,
-                target_key="result",
-            ),
-        ],
-    )
-    result = await engine.execute(
-        context=InMemoryExecutionContext(),
-        workflow=workflow,
-        input={"a": FloatValue(a), "b": FloatValue(b)},
+    result = await engine.execute_node(
+        context=context,
+        node=node_cls,
+        params=params,
+        input={"a": a, "b": b},
     )
     assert result.status is WorkflowExecutionResultStatus.SUCCESS
     return result.output["result"].root
@@ -83,96 +66,83 @@ async def _run_comparison(
     ],
 )
 async def test_comparison_nodes(
-    engine: WorkflowEngine, node_cls: type, a: float, b: float, expected: bool
+    engine: WorkflowEngine,
+    context: InMemoryExecutionContext,
+    node_cls: type,
+    a: float,
+    b: float,
+    expected: bool,
 ):
-    assert await _run_comparison(engine, node_cls, a, b) is expected
+    assert await _comparison_result(engine, context, node_cls, a, b) is expected
 
 
 @pytest.mark.asyncio
-async def test_equal_default_is_exact(engine: WorkflowEngine):
+async def test_equal_default_is_exact(
+    engine: WorkflowEngine, context: InMemoryExecutionContext
+):
     """By default (rel_tol=0, abs_tol=0) Equal is an exact comparison."""
     # 0.1 + 0.2 != 0.3 in binary floating point.
-    assert await _run_comparison(engine, EqualNode, 0.1 + 0.2, 0.3) is False
-    assert await _run_comparison(engine, NotEqualNode, 0.1 + 0.2, 0.3) is True
+    assert await _comparison_result(engine, context, EqualNode, 0.1 + 0.2, 0.3) is False
+    assert (
+        await _comparison_result(engine, context, NotEqualNode, 0.1 + 0.2, 0.3) is True
+    )
     # Large magnitudes that differ by 1 are NOT silently treated as equal.
-    assert await _run_comparison(engine, EqualNode, 1e9, 1e9 + 1) is False
+    assert await _comparison_result(engine, context, EqualNode, 1e9, 1e9 + 1) is False
 
 
 @pytest.mark.asyncio
-async def test_equal_rel_tol_absorbs_rounding(engine: WorkflowEngine):
+async def test_equal_rel_tol_absorbs_rounding(
+    engine: WorkflowEngine, context: InMemoryExecutionContext
+):
     """An explicit rel_tol lets Equal treat 0.1 + 0.2 and 0.3 as equal."""
     params = {"rel_tol": 1e-9}
-    assert await _run_comparison(engine, EqualNode, 0.1 + 0.2, 0.3, params) is True
-    assert await _run_comparison(engine, NotEqualNode, 0.1 + 0.2, 0.3, params) is False
+    assert (
+        await _comparison_result(engine, context, EqualNode, 0.1 + 0.2, 0.3, params)
+        is True
+    )
+    assert (
+        await _comparison_result(engine, context, NotEqualNode, 0.1 + 0.2, 0.3, params)
+        is False
+    )
 
 
 @pytest.mark.asyncio
-async def test_equal_abs_tol_near_zero(engine: WorkflowEngine):
+async def test_equal_abs_tol_near_zero(
+    engine: WorkflowEngine, context: InMemoryExecutionContext
+):
     """abs_tol handles values near zero where rel_tol alone is too strict."""
     params = {"rel_tol": 0.0, "abs_tol": 1e-6}
-    assert await _run_comparison(engine, EqualNode, 0.0, 1e-9, params) is True
-    assert await _run_comparison(engine, EqualNode, 0.0, 1e-3, params) is False
+    assert (
+        await _comparison_result(engine, context, EqualNode, 0.0, 1e-9, params) is True
+    )
+    assert (
+        await _comparison_result(engine, context, EqualNode, 0.0, 1e-3, params) is False
+    )
 
 
 @pytest.mark.asyncio
-async def test_not_node(engine: WorkflowEngine):
-    workflow = Workflow(
-        input_node=(input_node := engine.create_input_node(a=BooleanValue)),
-        output_node=(output_node := engine.create_output_node(result=BooleanValue)),
-        inner_nodes=[node := engine.create_node(NotNode, id="not")],
-        edges=[
-            Edge.from_nodes(
-                source=input_node, source_key="a", target=node, target_key="a"
-            ),
-            Edge.from_nodes(
-                source=node,
-                source_key="result",
-                target=output_node,
-                target_key="result",
-            ),
-        ],
-    )
-    result = await engine.execute(
-        context=InMemoryExecutionContext(),
-        workflow=workflow,
-        input={"a": BooleanValue(True)},
+async def test_not_node(engine: WorkflowEngine, context: InMemoryExecutionContext):
+    result = await engine.execute_node(
+        context=context,
+        node=NotNode,
+        input={"a": True},
     )
     assert result.status is WorkflowExecutionResultStatus.SUCCESS
     assert result.output["result"].root is False
 
 
-async def _run_variadic_logic(
-    engine: WorkflowEngine, node_cls: type, values: list[bool]
+async def _variadic_logic_result(
+    engine: WorkflowEngine,
+    context: InMemoryExecutionContext,
+    node_cls: type,
+    values: list[bool],
 ) -> bool:
-    n = len(values)
-    keys = [chr(ord("a") + i) for i in range(n)]
-    workflow = Workflow(
-        input_node=(
-            input_node := engine.create_input_node(**{k: BooleanValue for k in keys})
-        ),
-        output_node=(output_node := engine.create_output_node(result=BooleanValue)),
-        inner_nodes=[
-            logic := engine.create_node(
-                node_cls, id="logic", params=dict(num_arguments=n)
-            )
-        ],
-        edges=[
-            Edge.from_nodes(source=input_node, source_key=k, target=logic, target_key=k)
-            for k in keys
-        ]
-        + [
-            Edge.from_nodes(
-                source=logic,
-                source_key="result",
-                target=output_node,
-                target_key="result",
-            ),
-        ],
-    )
-    result = await engine.execute(
-        context=InMemoryExecutionContext(),
-        workflow=workflow,
-        input={k: BooleanValue(v) for k, v in zip(keys, values)},
+    keys = [_argument_field_name(i) for i in range(len(values))]
+    result = await engine.execute_node(
+        context=context,
+        node=node_cls,
+        params={"num_arguments": len(values)},
+        input=dict(zip(keys, values)),
     )
     assert result.status is WorkflowExecutionResultStatus.SUCCESS
     return result.output["result"].root
@@ -188,8 +158,13 @@ async def _run_variadic_logic(
         ([True, True, False], False),
     ],
 )
-async def test_and_variadic(engine: WorkflowEngine, values: list[bool], expected: bool):
-    assert await _run_variadic_logic(engine, AndNode, values) is expected
+async def test_and_variadic(
+    engine: WorkflowEngine,
+    context: InMemoryExecutionContext,
+    values: list[bool],
+    expected: bool,
+):
+    assert await _variadic_logic_result(engine, context, AndNode, values) is expected
 
 
 @pytest.mark.asyncio
@@ -202,5 +177,10 @@ async def test_and_variadic(engine: WorkflowEngine, values: list[bool], expected
         ([False, False, True], True),
     ],
 )
-async def test_or_variadic(engine: WorkflowEngine, values: list[bool], expected: bool):
-    assert await _run_variadic_logic(engine, OrNode, values) is expected
+async def test_or_variadic(
+    engine: WorkflowEngine,
+    context: InMemoryExecutionContext,
+    values: list[bool],
+    expected: bool,
+):
+    assert await _variadic_logic_result(engine, context, OrNode, values) is expected
