@@ -38,14 +38,17 @@ class MessageItem(Data):
 
 
 @pytest.mark.unit
-def test_optional_value_construction_raw_python():
-    item = MessageItem(sender_id=None, text="hello")
+def test_optional_value_construction_explicit_members():
+    item = MessageItem(
+        sender_id=NullValue(None),
+        text=StringValue("hello"),
+    )
     assert isinstance(item.sender_id, NullValue)
     assert item.text.root == "hello"
 
 
 @pytest.mark.unit
-def test_optional_value_construction_explicit_members():
+def test_optional_value_construction_with_integer_member():
     item = MessageItem(
         sender_id=IntegerValue(42),
         text=StringValue("hello"),

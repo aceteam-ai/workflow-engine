@@ -25,13 +25,6 @@ class MessageItem(Data):
     text: OptionalString
 
 
-def build_message_from_raw_python() -> MessageItem:
-    return MessageItem(
-        sender_id=None,
-        text="hello",
-    )
-
-
 def build_message_from_members() -> MessageItem:
     return MessageItem(
         sender_id=IntegerValue(42),

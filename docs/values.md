@@ -208,7 +208,7 @@ def as_decimals(value: FloatValue | SequenceValue[FloatValue]) -> list[Decimal]:
     return [item.root for item in value.root]
 ```
 
-At construction time, Pydantic coerces raw Python values into the matching member. Use `isinstance` on members in node code — not on `UnionValue` itself.
+At construction time, pass explicit member instances (`FloatValue(1.5)`, `NullValue(None)`, …). Pydantic still coerces raw Python values when deserializing (`model_validate`, JSON). Use `isinstance` on members in node code — not on `UnionValue` itself.
 
 ### Optional fields: `OptionalValue`
 
@@ -223,8 +223,8 @@ class MessageItem(Data):
     sender_id: OptionalInteger
     text: OptionalValue[StringValue]
 
-MessageItem(sender_id=None, text="hello")
-MessageItem(sender_id=42, text=StringValue("hi"))
+MessageItem(sender_id=NullValue(None), text=StringValue("hello"))
+MessageItem(sender_id=IntegerValue(42), text=StringValue("hi"))
 MessageItem(sender_id=NullValue(None), text=NullValue(None))
 ```
 

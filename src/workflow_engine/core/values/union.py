@@ -8,26 +8,26 @@ cast values are always an instance of one member (``FloatValue`` or
 ``isinstance(x, FloatValue)`` / ``isinstance(x, SequenceValue)`` in node code.
 
 The public ``UnionValue`` helper wraps an internal ``_UnionType`` in
-``Annotated`` so pyright accepts concrete members (and raw Python coercions) at
-``Data`` construction time. For optional fields use ``OptionalValue[T]``
-(shorthand for ``UnionValue[T, NullValue]``).
+``Annotated`` so pyright accepts concrete member types at ``Data`` construction
+time. For optional fields use ``OptionalValue[T]`` (shorthand for
+``UnionValue[T, NullValue]``).
 """
 
 from __future__ import annotations
 
 from collections.abc import Iterable
-from datetime import datetime
-from decimal import Decimal
 from typing import (
     TYPE_CHECKING,
     Annotated,
     Any,
     ClassVar,
     TypeVar,
+    cast,
     get_args,
     get_origin,
 )
 
+from overrides import override
 from pydantic import GetCoreSchemaHandler
 from pydantic.fields import FieldInfo
 from pydantic_core import core_schema
@@ -40,6 +40,7 @@ if TYPE_CHECKING:
     from .schema import ValueSchema
 
 _T = TypeVar("_T", bound=Value)
+_V = TypeVar("_V", bound=Value)
 
 # Reuse identical unions built from schema round-trips or repeated subscripts.
 _UNION_TYPE_CACHE: dict[tuple[tuple[str, tuple], ...], type[Value]] = {}
@@ -120,6 +121,24 @@ class _UnionType(Value[Any], register=False):
             anyOf=[member.to_value_schema() for member in members],
         )
 
+    # HACK: cast_from_union registers under target key "Value" (any subclass), but
+    # Value.get_caster looks up by concrete target origin names ("FloatValue", …).
+    # Fall back to the generic "Value" entry when a specific lookup misses.
+    @classmethod
+    @override
+    def get_caster(cls, t: type[_V]) -> Caster[Value, _V] | None:
+        caster = super().get_caster(t)
+        if caster is not None:
+            return cast(Caster[Value, _V], caster)
+
+        converters = cls._get_casters()
+        if "Value" not in converters or not issubclass(t, Value):
+            return None
+
+        generic_caster = converters["Value"]
+        result = generic_caster(cls, t)
+        return cast(Caster[Value, _V], result) if result is not None else None
+
 
 class _UnionMarker:
     """Pydantic metadata binding a construction-time union to its runtime type."""
@@ -144,41 +163,12 @@ class _UnionMarker:
         return f"_UnionMarker({self.union_type!r})"
 
 
-def _member_construction_types(member: ValueType) -> tuple[type[Any], ...]:
-    """Return Value and raw Python types accepted at Data field construction."""
-    from .datetime_value import DateValue
-    from .primitives import (
-        BooleanValue,
-        FloatValue,
-        IntegerValue,
-        NullValue,
-        StringValue,
-    )
-
-    if member is NullValue:
-        return (NullValue, type(None))
-    if member is BooleanValue:
-        return (BooleanValue, bool)
-    if member is IntegerValue:
-        return (IntegerValue, int)
-    if member is FloatValue:
-        return (FloatValue, int, float)
-    if member is StringValue:
-        return (StringValue, str)
-    if member is DateValue:
-        return (DateValue, datetime, Decimal, int, float, str)
-    return (member,)
-
-
 def _construction_union(*members: ValueType) -> Any:
     construction_type: Any | None = None
     for member in members:
-        for candidate in _member_construction_types(member):
-            construction_type = (
-                candidate
-                if construction_type is None
-                else construction_type | candidate
-            )
+        construction_type = (
+            member if construction_type is None else construction_type | member
+        )
     if construction_type is None:
         raise TypeError("UnionValue requires at least one member type")
     return construction_type
@@ -289,6 +279,33 @@ def cast_to_union(
                 casted = (await result) if is_coroutine(result) else result  # pyright: ignore[reportGeneralTypeIssues]
                 return casted  # type: ignore[return-value]
         raise ValueError(f"Cannot convert {value} to {target_type}")
+
+    return _cast
+
+
+@_UnionType.register_generic_cast_to(Value)  # pyright: ignore[reportArgumentType]
+def cast_from_union(
+    source_type: type[_UnionType],
+    target_type: type[Value],
+) -> Caster[Value, Value] | None:
+    """
+    Cast from a union to another Value type.
+
+    Statically permissive: registered when *any* union member can cast to
+    *target_type*. Runtime strict: the value must be an instance of a member
+    that can actually cast to *target_type*.
+    """
+    members = get_union_members(source_type)
+    if members is None:
+        return None
+    if not any(member.can_cast_to(target_type) for member in members):
+        return None
+
+    async def _cast(
+        value: Value,
+        context: ExecutionContext,
+    ) -> Value:
+        return await value.cast_to(target_type, context=context)
 
     return _cast
 

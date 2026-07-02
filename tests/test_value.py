@@ -22,6 +22,7 @@ from workflow_engine.core.values.value import (
     get_origin_and_args,
     get_value_type_key,
 )
+from workflow_engine.utils.asynchronous import is_coroutine
 
 UnionFloatValues = UnionValue[FloatValue, SequenceValue[FloatValue]]
 
@@ -754,6 +755,63 @@ def test_union_value_edge_validation():
         fields={"out": (IntegerValue, Field(title="Out", description="The output."))},
     )
     edge.validate_types(source_type=int_source, target_type=Target)
+
+
+@pytest.mark.unit
+def test_union_value_can_cast_to_member_target():
+    """Union sources are statically castable when any member can reach the target."""
+    union_type = resolve_union_type(UnionValue[FloatValue, SequenceValue[FloatValue]])
+
+    assert union_type.can_cast_to(FloatValue)
+    assert not union_type.can_cast_to(BooleanValue)
+
+
+@pytest.mark.unit
+def test_union_value_edge_validation_to_concrete_target():
+    """Edges from union outputs accept targets any member can cast to."""
+    from pydantic import Field
+
+    union_type = resolve_union_type(UnionValue[FloatValue, SequenceValue[FloatValue]])
+    Source = build_data_type(
+        name="UnionOutSource",
+        fields={
+            "out": (
+                union_type,
+                Field(title="Out", description="The output."),
+            ),
+        },
+    )
+    Target = build_data_type(
+        name="FloatTarget",
+        fields={"inp": (FloatValue, Field(title="In", description="The input."))},
+    )
+    edge = Edge(
+        source_id="src",
+        source_key="out",
+        target_id="tgt",
+        target_key="inp",
+    )
+    edge.validate_types(source_type=Source, target_type=Target)
+
+
+@pytest.mark.unit
+async def test_union_value_cast_from_union(context):
+    """Casting from a union succeeds only for members assignable to the target."""
+    union_type = resolve_union_type(UnionValue[FloatValue, SequenceValue[FloatValue]])
+
+    caster = union_type.get_caster(FloatValue)
+    assert caster is not None
+
+    raw = caster(FloatValue(1.5), context=context)
+    result = (await raw) if is_coroutine(raw) else raw  # pyright: ignore[reportGeneralTypeIssues]
+    assert isinstance(result, FloatValue)
+    assert result.root == Decimal("1.5")
+
+    seq = SequenceValue[FloatValue]([FloatValue(1.0)])
+    with pytest.raises(ValueError, match="Cannot convert"):
+        raw = caster(seq, context=context)
+        if is_coroutine(raw):
+            await raw  # pyright: ignore[reportGeneralTypeIssues]
 
 
 if __name__ == "__main__":
