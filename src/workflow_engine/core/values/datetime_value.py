@@ -13,37 +13,21 @@ if TYPE_CHECKING:
     from ..context import ExecutionContext
 
 
-def _assume_utc(dt: datetime) -> datetime:
-    """Return a timezone-aware UTC datetime.
-
-    Naive datetimes are treated as UTC rather than the host local timezone.
-    Workflow values cross process and platform boundaries, so interpreting
-    missing tzinfo as local time would make the same input mean different
-    instants on different machines.
-    """
-    if dt.tzinfo is None:
-        return dt.replace(tzinfo=timezone.utc)
-    return dt.astimezone(timezone.utc)
-
-
-def _parse_iso8601_datetime(value: str) -> datetime:
-    """Parse a strict ISO 8601 datetime string into UTC."""
-    return _assume_utc(datetime.fromisoformat(value))
-
-
 def _to_utc_datetime(value: datetime | Decimal | int | float | str) -> datetime:
-    if isinstance(value, datetime):
-        return _assume_utc(value)
     if isinstance(value, bool):
         raise TypeError("bool is not a valid datetime")
+    if isinstance(value, (datetime, str)):
+        dt = value if isinstance(value, datetime) else datetime.fromisoformat(value)
+        # Naive datetimes are UTC, not local time — values cross machines and timezones.
+        if dt.tzinfo is None:
+            return dt.replace(tzinfo=timezone.utc)
+        return dt.astimezone(timezone.utc)
     if isinstance(value, Decimal):
         return datetime.fromtimestamp(float(value), tz=timezone.utc)
     if isinstance(value, int):
         return datetime.fromtimestamp(value, tz=timezone.utc)
     if isinstance(value, float):
         return datetime.fromtimestamp(value, tz=timezone.utc)
-    if isinstance(value, str):
-        return _parse_iso8601_datetime(value)
     raise TypeError(f"Cannot convert {type(value).__name__} to datetime")
 
 
@@ -108,7 +92,7 @@ def cast_string_to_date(
     value: StringValue,
     context: ExecutionContext,
 ) -> DateValue:
-    return DateValue(_parse_iso8601_datetime(value.root))
+    return DateValue(value.root)
 
 
 @DateValue.register_cast_to(StringValue)
