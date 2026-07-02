@@ -11,6 +11,7 @@ from workflow_engine import (
     Data,
     Edge,
     ExecutionContext,
+    IntegerValue,
     Node,
     NodeTypeInfo,
     Params,
@@ -35,8 +36,7 @@ class RetryableOutput(Data):
 
 
 class RetryableParams(Params):
-    fail_count: int
-    """Number of times to fail before succeeding."""
+    fail_count: IntegerValue
 
 
 class RetryableNode(Node[RetryableInput, RetryableOutput, RetryableParams]):
@@ -74,7 +74,7 @@ class RetryableNode(Node[RetryableInput, RetryableOutput, RetryableParams]):
             RetryableNode._attempt_counts[self.id] = 0
         RetryableNode._attempt_counts[self.id] += 1
 
-        if RetryableNode._attempt_counts[self.id] <= self.params.fail_count:
+        if RetryableNode._attempt_counts[self.id] <= self.params.fail_count.root:
             raise ShouldRetry.for_user(
                 f"Temporary failure (attempt {RetryableNode._attempt_counts[self.id]})",
                 node=self,
@@ -116,7 +116,7 @@ class RetryableNode2(Node[RetryableInput, RetryableOutput, RetryableParams]):
             RetryableNode2._attempt_counts[self.id] = 0
         RetryableNode2._attempt_counts[self.id] += 1
 
-        if RetryableNode2._attempt_counts[self.id] <= self.params.fail_count:
+        if RetryableNode2._attempt_counts[self.id] <= self.params.fail_count.root:
             raise ShouldRetry.for_user(
                 f"Temporary failure (attempt {RetryableNode2._attempt_counts[self.id]})",
                 node=self,
@@ -161,7 +161,7 @@ class CustomRetryNode(Node[RetryableInput, RetryableOutput, RetryableParams]):
             CustomRetryNode._attempt_counts[self.id] = 0
         CustomRetryNode._attempt_counts[self.id] += 1
 
-        if CustomRetryNode._attempt_counts[self.id] <= self.params.fail_count:
+        if CustomRetryNode._attempt_counts[self.id] <= self.params.fail_count.root:
             raise ShouldRetry.for_user(
                 f"Temporary failure (attempt {CustomRetryNode._attempt_counts[self.id]})",
                 node=self,

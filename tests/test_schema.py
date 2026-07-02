@@ -46,6 +46,7 @@ from workflow_engine.core.values.schema import (
     StringMapValueSchema,
     StringValueSchema,
 )
+from workflow_engine.core.values.union import resolve_union_type
 from workflow_engine.files import (
     JSONFileValue,
     JSONLinesFileValue,
@@ -595,7 +596,7 @@ def test_sequence_schema_aliasing():
 
 @pytest.mark.unit
 def test_union_schema_roundtrip():
-    T = UnionValue[FloatValue, SequenceValue[FloatValue]]
+    T = resolve_union_type(UnionValue[FloatValue, SequenceValue[FloatValue]])
     schema = T.to_value_schema()
     from workflow_engine.core.values.schema import UnionValueSchema
 
@@ -607,7 +608,7 @@ def test_union_schema_roundtrip():
 
 @pytest.mark.unit
 def test_union_schema_manual():
-    T = UnionValue[FloatValue, SequenceValue[FloatValue]]
+    T = resolve_union_type(UnionValue[FloatValue, SequenceValue[FloatValue]])
     json_schema = {
         "anyOf": [
             {"x-value-type": "FloatValue"},

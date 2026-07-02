@@ -3,6 +3,8 @@
 Built-in arithmetic nodes.
 """
 
+from __future__ import annotations
+
 from collections.abc import Sequence
 from decimal import Decimal
 from math import prod
@@ -27,6 +29,8 @@ from ..core import (
 )
 from ..core.values import build_data_type
 from ..core.values.rounding import RoundingMode, RoundingModeValue
+
+NumericValues = UnionValue[FloatValue, SequenceValue[FloatValue]]
 
 
 def _argument_field_name(index: int) -> str:
@@ -73,7 +77,7 @@ class DivideParams(Params):
 
 
 def _decimal_values_from_union(
-    value: UnionValue[FloatValue, SequenceValue[FloatValue]],
+    value: FloatValue | SequenceValue[FloatValue],
 ) -> Sequence[Decimal]:
     if isinstance(value, FloatValue):
         return [value.root]
@@ -122,7 +126,7 @@ class UnaryFloatInput(Data):
 
 
 class UnionFloatInput(Data):
-    values: UnionValue[FloatValue, SequenceValue[FloatValue]] = Field(
+    values: NumericValues = Field(
         title="Values",
         description="The numbers to combine, as a single value or a sequence.",
     )

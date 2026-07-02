@@ -1,35 +1,35 @@
 # workflow_engine/core/values/union.py
 """
-Type-level union ports for the Value system.
+Union Value types.
 
-UnionValue is annotation-only: it describes a port that accepts any of several
-member types, but validated and cast values are always an instance of one member
-(``FloatValue`` or ``SequenceValue[FloatValue]``), never a ``UnionValue`` wrapper.
-Use ``isinstance(x, FloatValue)`` / ``isinstance(x, SequenceValue)`` in node code,
-not ``isinstance(x, UnionValue)``.
+``UnionValue[A, B, ...]`` accepts any of several member types. Validated and
+cast values are always an instance of one member (``FloatValue`` or
+``SequenceValue[FloatValue]``), never a wrapper object. Use
+``isinstance(x, FloatValue)`` / ``isinstance(x, SequenceValue)`` in node code.
 
-UnionValue is intentionally unlike ``SequenceValue[T]`` and other generic Value
-types. Those wrap runtime data in a ``root`` field and parameterize Pydantic's
-single RootModel generic slot (``Value[Sequence[T]]``). A union port has no
-``root`` — it only constrains which concrete types a field may hold.
-
-That combination — variadic arity (``anyOf`` can have N members) and no ``root``
-— cannot be expressed as ``Generic[Unpack[Ts]]`` on ``Value[Any]``. Pydantic's
-``RootModel.__class_getitem__`` accepts only one type argument (the root), so
-``UnionValue[FloatValue, SequenceValue[FloatValue]]`` raises "Too many arguments"
-if we try TypeVarTuple like a normal generic.
-
-Instead, ``UnionValue[A, B, ...]`` builds (or reuses) a cached dynamic subclass
-that stores members on ``_union_members_``. ``get_origin_and_args`` in value.py
-recognizes that attribute and normalizes to ``(UnionValue, (A, B, ...))`` so the
-existing casting and type-key machinery keeps working.
+The public ``UnionValue`` helper wraps an internal ``_UnionType`` in
+``Annotated`` so pyright accepts concrete members (and raw Python coercions) at
+``Data`` construction time. For optional fields use ``OptionalValue[T]``
+(shorthand for ``UnionValue[T, NullValue]``).
 """
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, ClassVar
+from collections.abc import Iterable
+from datetime import datetime
+from decimal import Decimal
+from typing import (
+    TYPE_CHECKING,
+    Annotated,
+    Any,
+    ClassVar,
+    TypeVar,
+    get_args,
+    get_origin,
+)
 
 from pydantic import GetCoreSchemaHandler
+from pydantic.fields import FieldInfo
 from pydantic_core import core_schema
 
 from ...utils.asynchronous import is_coroutine
@@ -39,12 +39,14 @@ if TYPE_CHECKING:
     from ..context import ExecutionContext
     from .schema import ValueSchema
 
+_T = TypeVar("_T", bound=Value)
+
 # Reuse identical unions built from schema round-trips or repeated subscripts.
 _UNION_TYPE_CACHE: dict[tuple[tuple[str, tuple], ...], type[Value]] = {}
 
 
 def get_union_members(value_type: ValueType) -> tuple[ValueType, ...] | None:
-    """Return member types if *value_type* is a UnionValue, else None."""
+    """Return member types if *value_type* is a union, else None."""
     members: tuple[ValueType, ...] | None = getattr(value_type, "_union_members_", None)
     if members:
         return members
@@ -52,7 +54,7 @@ def get_union_members(value_type: ValueType) -> tuple[ValueType, ...] | None:
 
 
 def union_value_type(*members: ValueType) -> ValueType:
-    """Build or reuse a UnionValue type accepting any of *members*."""
+    """Build or reuse an internal union type accepting any of *members*."""
     if not members:
         raise TypeError("UnionValue requires at least one member type")
     for member in members:
@@ -65,14 +67,12 @@ def union_value_type(*members: ValueType) -> ValueType:
         return cached
 
     member_names = ", ".join(member.__name__ for member in members)
-    # Dynamic subclass rather than a Pydantic generic specialization — see module
-    # docstring. register=False keeps these out of the ValueRegistry.
     union_cls = type(
         f"UnionValue[{member_names}]",
-        (UnionValue,),
+        (_UnionType,),
         {
             "_union_members_": members,
-            "__module__": UnionValue.__module__,
+            "__module__": _UnionType.__module__,
         },
         register=False,
     )
@@ -80,22 +80,18 @@ def union_value_type(*members: ValueType) -> ValueType:
     return union_cls
 
 
-class UnionValue(Value[Any], register=False):
+class _UnionType(Value[Any], register=False):
     """
-    A port type accepting any one of several Value types.
+    Internal union type accepting any one of several Value types.
 
-    Annotation-only: when used as a ``Data`` field type, validation and casting
-    produce an instance of one member (``A`` or ``B``), not a ``UnionValue`` instance.
-
-    Construct parameterized unions with ``UnionValue[A, B, ...]``.
+    Use the public ``UnionValue`` helper on ``Data`` fields instead of
+    referencing this class directly.
     """
 
-    # Set on dynamic subclasses built by union_value_type(); empty on the base.
     _union_members_: ClassVar[tuple[ValueType, ...]] = ()
 
     @classmethod
     def __class_getitem__(cls, members: Any) -> ValueType:
-        # Bypass Pydantic RootModel.__class_getitem__ — it only supports one arg.
         if not isinstance(members, tuple):
             members = (members,)
         return union_value_type(*members)
@@ -108,9 +104,7 @@ class UnionValue(Value[Any], register=False):
     ) -> core_schema.CoreSchema:
         members = get_union_members(source_type)
         if not members:
-            # Bare UnionValue (unparameterized) — valid as a type form, not as data.
             return core_schema.any_schema()
-        # Validate field values against any member; stored value is the concrete member.
         return core_schema.union_schema(
             [handler.generate_schema(member) for member in members]
         )
@@ -122,22 +116,158 @@ class UnionValue(Value[Any], register=False):
         members = get_union_members(cls)
         if not members:
             return super().to_value_schema()
-        # No root field to derive a schema from — assemble anyOf from members.
         return UnionValueSchema(
             anyOf=[member.to_value_schema() for member in members],
         )
+
+
+class _UnionMarker:
+    """Pydantic metadata binding a construction-time union to its runtime type."""
+
+    __slots__ = ("union_type",)
+
+    def __init__(self, union_type: ValueType) -> None:
+        self.union_type = union_type
+
+    def __get_pydantic_core_schema__(
+        self,
+        source_type: Any,
+        handler: GetCoreSchemaHandler,
+    ) -> core_schema.CoreSchema:
+        return self.union_type.__get_pydantic_core_schema__(self.union_type, handler)
+
+    def __repr__(self) -> str:
+        members = get_union_members(self.union_type)
+        if members:
+            names = ", ".join(member.__name__ for member in members)
+            return f"_UnionMarker(UnionValue[{names}])"
+        return f"_UnionMarker({self.union_type!r})"
+
+
+def _member_construction_types(member: ValueType) -> tuple[type[Any], ...]:
+    """Return Value and raw Python types accepted at Data field construction."""
+    from .datetime_value import DateValue
+    from .primitives import (
+        BooleanValue,
+        FloatValue,
+        IntegerValue,
+        NullValue,
+        StringValue,
+    )
+
+    if member is NullValue:
+        return (NullValue, type(None))
+    if member is BooleanValue:
+        return (BooleanValue, bool)
+    if member is IntegerValue:
+        return (IntegerValue, int)
+    if member is FloatValue:
+        return (FloatValue, int, float)
+    if member is StringValue:
+        return (StringValue, str)
+    if member is DateValue:
+        return (DateValue, datetime, Decimal, int, float, str)
+    return (member,)
+
+
+def _construction_union(*members: ValueType) -> Any:
+    construction_type: Any | None = None
+    for member in members:
+        for candidate in _member_construction_types(member):
+            construction_type = (
+                candidate
+                if construction_type is None
+                else construction_type | candidate
+            )
+    if construction_type is None:
+        raise TypeError("UnionValue requires at least one member type")
+    return construction_type
+
+
+def _union_value(*members: ValueType) -> Any:
+    union_type = union_value_type(*members)
+    return Annotated[_construction_union(*members), _UnionMarker(union_type)]
+
+
+class _UnionValueFactory:
+    """Build union annotations via call or subscript syntax."""
+
+    def __call__(self, *members: ValueType) -> Any:
+        return _union_value(*members)
+
+    def __getitem__(self, members: ValueType | tuple[ValueType, ...]) -> Any:
+        if not isinstance(members, tuple):
+            members = (members,)
+        return _union_value(*members)
+
+
+UnionValue = _UnionValueFactory()
+
+
+class _OptionalValueFactory:
+    """Build optional union annotations: ``member | NullValue``."""
+
+    def __call__(self, member: type[_T]) -> Any:
+        return _optional_value(member)
+
+    def __getitem__(self, member: type[_T]) -> Any:
+        return _optional_value(member)
+
+
+def _optional_value(member: type[_T]) -> Any:
+    from .primitives import NullValue
+
+    return _union_value(member, NullValue)
+
+
+OptionalValue = _OptionalValueFactory()
+
+
+def resolve_union_type(
+    annotation: Any,
+    *,
+    metadata: Iterable[Any] = (),
+) -> ValueType:
+    """
+    Resolve a ``Data`` field annotation to its runtime union ``Value`` type.
+
+    Accepts internal union subclasses and ``Annotated[..., _UnionMarker(...)]``
+    from ``UnionValue`` / ``OptionalValue``.
+    """
+    for item in metadata:
+        if isinstance(item, _UnionMarker):
+            return item.union_type
+
+    origin = get_origin(annotation)
+    if origin is Annotated:
+        for item in get_args(annotation)[1:]:
+            if isinstance(item, _UnionMarker):
+                return item.union_type
+        raise TypeError(
+            "Annotated Data field must include union metadata "
+            f"(use UnionValue or OptionalValue), got {annotation!r}"
+        )
+
+    if isinstance(annotation, type) and issubclass(annotation, Value):
+        return annotation
+
+    raise TypeError(f"Field annotation is not a Value type: {annotation!r}")
+
+
+def resolve_union_type_from_field(field_info: FieldInfo) -> ValueType:
+    """Resolve a ``Data`` model field to its runtime union ``Value`` type."""
+    assert field_info.annotation is not None
+    return resolve_union_type(field_info.annotation, metadata=field_info.metadata)
 
 
 SourceType = Value
 TargetType = Value
 
 
-# Registered on Value so every source type inherits it; get_caster looks up by
-# target origin name "UnionValue" (see get_origin_and_args in value.py).
-@Value.register_generic_cast_to(UnionValue)  # pyright: ignore[reportArgumentType]
+@Value.register_generic_cast_to(_UnionType)  # pyright: ignore[reportArgumentType]
 def cast_to_union(
     source_type: type[SourceType],
-    target_type: type[UnionValue],
+    target_type: type[_UnionType],
 ) -> Caster[SourceType, TargetType] | None:
     members = get_union_members(target_type)
     if not members:
@@ -149,8 +279,6 @@ def cast_to_union(
         value: SourceType,
         context: ExecutionContext,
     ) -> TargetType:
-        # Casting to a union yields a concrete member, not a UnionValue wrapper.
-        # Precedence: exact member match first, then first castable member in order.
         for member in members:
             if isinstance(value, member):
                 return value  # type: ignore[return-value]
@@ -166,7 +294,6 @@ def cast_to_union(
 
 
 __all__ = [
+    "OptionalValue",
     "UnionValue",
-    "get_union_members",
-    "union_value_type",
 ]

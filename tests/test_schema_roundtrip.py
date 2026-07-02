@@ -24,6 +24,7 @@ from workflow_engine import (
     WorkflowValue,
 )
 from workflow_engine.core.values.data import DataValue, get_data_schema
+from workflow_engine.core.values.union import resolve_union_type
 from workflow_engine.core.values.value import ValueRegistry, get_origin_and_args
 from workflow_engine.files import (
     JSONFileValue,
@@ -126,7 +127,7 @@ def test_string_map_value_type_roundtrip(item_type: ValueType):
 @pytest.mark.unit
 def test_union_value_type_roundtrip():
     """UnionValue[A, B] → schema → to_value_cls() returns the same type."""
-    value_cls = UnionValue[FloatValue, SequenceValue[FloatValue]]
+    value_cls = resolve_union_type(UnionValue[FloatValue, SequenceValue[FloatValue]])
     result = _value_type_roundtrip(value_cls)
     assert result == value_cls, f"Expected {value_cls!r}, got {result!r}"
 
