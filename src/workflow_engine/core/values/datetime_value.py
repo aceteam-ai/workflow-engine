@@ -28,11 +28,7 @@ def _assume_utc(dt: datetime) -> datetime:
 
 def _parse_iso8601_datetime(value: str) -> datetime:
     """Parse a strict ISO 8601 datetime string into UTC."""
-    text = value.strip()
-    if not text:
-        raise ValueError("Empty datetime string")
-
-    return _assume_utc(datetime.fromisoformat(text))
+    return _assume_utc(datetime.fromisoformat(value))
 
 
 def _to_utc_datetime(value: datetime | Decimal | int | float | str) -> datetime:
