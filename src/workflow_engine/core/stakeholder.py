@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from enum import StrEnum
 
 
@@ -24,11 +26,17 @@ class StakeholderLevel(StrEnum):
     # Runs workflows built by builders.
     USER = "USER"
 
-    def __lt__(self, other: "StakeholderLevel") -> bool:  # pyright: ignore[reportIncompatibleMethodOverride]
+    def __lt__(self, other: StakeholderLevel) -> bool:  # pyright: ignore[reportIncompatibleMethodOverride]
         return _STAKEHOLDER_LEVELS.index(self) < _STAKEHOLDER_LEVELS.index(other)
 
-    def __gt__(self, other: "StakeholderLevel") -> bool:  # pyright: ignore[reportIncompatibleMethodOverride]
+    def __le__(self, other: StakeholderLevel) -> bool:  # pyright: ignore[reportIncompatibleMethodOverride]
+        return _STAKEHOLDER_LEVELS.index(self) <= _STAKEHOLDER_LEVELS.index(other)
+
+    def __gt__(self, other: StakeholderLevel) -> bool:  # pyright: ignore[reportIncompatibleMethodOverride]
         return _STAKEHOLDER_LEVELS.index(self) > _STAKEHOLDER_LEVELS.index(other)
+
+    def __ge__(self, other: StakeholderLevel) -> bool:  # pyright: ignore[reportIncompatibleMethodOverride]
+        return _STAKEHOLDER_LEVELS.index(self) >= _STAKEHOLDER_LEVELS.index(other)
 
 
 _STAKEHOLDER_LEVELS = (
