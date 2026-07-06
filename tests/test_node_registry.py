@@ -74,6 +74,64 @@ class SampleNodeB(Node[Empty, Empty, Empty]):
         return Empty()
 
 
+class SampleNodeC(Node[Empty, Empty, Empty]):
+    TYPE_INFO = NodeTypeInfo.from_parameter_type(
+        display_name="Test C",
+        version="1.0.0",
+        parameter_type=Empty,
+    )
+
+    @classmethod
+    @override
+    def static_input_type(cls) -> Type[Empty]:
+        return Empty
+
+    @classmethod
+    @override
+    def static_output_type(cls) -> Type[Empty]:
+        return Empty
+
+    @override
+    async def run(
+        self,
+        *,
+        context: ExecutionContext,
+        input_type: Type[Empty],
+        output_type: Type[Empty],
+        input: Empty,
+    ):
+        return Empty()
+
+
+class SampleNodeAv2(Node[Empty, Empty, Empty]):
+    TYPE_INFO = NodeTypeInfo.from_parameter_type(
+        display_name="Test A v2",
+        version="2.0.0",
+        parameter_type=Empty,
+    )
+
+    @classmethod
+    @override
+    def static_input_type(cls) -> Type[Empty]:
+        return Empty
+
+    @classmethod
+    @override
+    def static_output_type(cls) -> Type[Empty]:
+        return Empty
+
+    @override
+    async def run(
+        self,
+        *,
+        context: ExecutionContext,
+        input_type: Type[Empty],
+        output_type: Type[Empty],
+        input: Empty,
+    ):
+        return Empty()
+
+
 class TestImmutableNodeRegistry:
     """Tests for ImmutableNodeRegistry."""
 
@@ -404,35 +462,6 @@ class TestNodeRegistryExtend:
 
     def test_extend_allows_adding_new_nodes(self):
         """Test that extended registry can register new nodes."""
-
-        class SampleNodeC(Node[Empty, Empty, Empty]):
-            TYPE_INFO = NodeTypeInfo.from_parameter_type(
-                display_name="Test C",
-                version="1.0.0",
-                parameter_type=Empty,
-            )
-
-            @classmethod
-            @override
-            def static_input_type(cls) -> Type[Empty]:
-                return Empty
-
-            @classmethod
-            @override
-            def static_output_type(cls) -> Type[Empty]:
-                return Empty
-
-            @override
-            async def run(
-                self,
-                *,
-                context: ExecutionContext,
-                input_type: Type[Empty],
-                output_type: Type[Empty],
-                input: Empty,
-            ):
-                return Empty()
-
         original = (
             NodeRegistry.builder(lazy=False).register(SampleNodeA, name="TestA").build()
         )
@@ -445,35 +474,6 @@ class TestNodeRegistryExtend:
 
     def test_extend_allows_overriding_nodes(self):
         """Test that extended registry can override existing nodes."""
-
-        class SampleNodeAv2(Node[Empty, Empty, Empty]):
-            TYPE_INFO = NodeTypeInfo.from_parameter_type(
-                display_name="Test A v2",
-                version="2.0.0",
-                parameter_type=Empty,
-            )
-
-            @classmethod
-            @override
-            def static_input_type(cls) -> Type[Empty]:
-                return Empty
-
-            @classmethod
-            @override
-            def static_output_type(cls) -> Type[Empty]:
-                return Empty
-
-            @override
-            async def run(
-                self,
-                *,
-                context: ExecutionContext,
-                input_type: Type[Empty],
-                output_type: Type[Empty],
-                input: Empty,
-            ):
-                return Empty()
-
         original = (
             NodeRegistry.builder(lazy=False).register(SampleNodeA, name="TestA").build()
         )
