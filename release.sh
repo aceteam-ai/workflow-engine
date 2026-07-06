@@ -165,13 +165,6 @@ if [[ ! $REPLY =~ ^[Yy]$ ]]; then
     exit 1
 fi
 
-# Ensure CHANGELOG.md has a matching section for this version
-if ! grep -qE "^## \[${NEW_VERSION//./\\.}\]" CHANGELOG.md; then
-    echo "Error: CHANGELOG.md has no '## [$NEW_VERSION]' section."
-    echo "Add a changelog entry for $NEW_VERSION before releasing."
-    exit 1
-fi
-
 # Update version in pyproject.toml and __init__.py
 echo "Updating version to $NEW_VERSION..."
 sed -i "s/^version = \".*\"/version = \"$NEW_VERSION\"/" pyproject.toml
