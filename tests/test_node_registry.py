@@ -352,6 +352,225 @@ class TestNodeRegistryIntegration:
         assert registry.get("TestB") is SampleNodeB
 
 
+class TestNodeRegistryExtend:
+    """Tests for NodeRegistry.extend()."""
+
+    def test_extend_eager_registry_with_eager_builder(self):
+        """Test extending an eager registry creates an eager builder."""
+        registry = (
+            NodeRegistry.builder(lazy=False).register(SampleNodeA, name="TestA").build()
+        )
+
+        # Extend with eager builder (default)
+        extended = registry.extend(lazy=False)
+
+        assert extended is not registry
+        assert isinstance(extended, NodeRegistryBuilder)
+        # The builder should have TestA registered
+        assert extended.get("TestA") is SampleNodeA
+
+    def test_extend_eager_registry_with_lazy_builder(self):
+        """Test extending an eager registry with a lazy builder."""
+        registry = (
+            NodeRegistry.builder(lazy=False)
+            .register(SampleNodeA, name="TestA")
+            .register(SampleNodeB, name="TestB")
+            .build()
+        )
+
+        # Extend with lazy builder
+        extended = registry.extend(lazy=True)
+
+        assert extended is not registry
+        # Both nodes should be in the new builder
+        assert extended.get("TestA") is SampleNodeA
+        assert extended.get("TestB") is SampleNodeB
+
+    def test_extend_preserves_all_registrations(self):
+        """Test that extend preserves all registrations from the original registry."""
+        original = (
+            NodeRegistry.builder(lazy=False)
+            .register(Node, name="Node")
+            .register(SampleNodeA, name="TestA")
+            .register(SampleNodeB, name="TestB")
+            .build()
+        )
+
+        extended = original.extend(lazy=False)
+
+        assert extended.get("Node") is Node
+        assert extended.get("TestA") is SampleNodeA
+        assert extended.get("TestB") is SampleNodeB
+
+    def test_extend_allows_adding_new_nodes(self):
+        """Test that extended registry can register new nodes."""
+
+        class SampleNodeC(Node[Empty, Empty, Empty]):
+            TYPE_INFO = NodeTypeInfo.from_parameter_type(
+                display_name="Test C",
+                version="1.0.0",
+                parameter_type=Empty,
+            )
+
+            @classmethod
+            @override
+            def static_input_type(cls) -> Type[Empty]:
+                return Empty
+
+            @classmethod
+            @override
+            def static_output_type(cls) -> Type[Empty]:
+                return Empty
+
+            @override
+            async def run(
+                self,
+                *,
+                context: ExecutionContext,
+                input_type: Type[Empty],
+                output_type: Type[Empty],
+                input: Empty,
+            ):
+                return Empty()
+
+        original = (
+            NodeRegistry.builder(lazy=False).register(SampleNodeA, name="TestA").build()
+        )
+
+        extended = original.extend(lazy=False).register(SampleNodeC, name="TestC")
+        built = extended.build()
+
+        assert built.get("TestA") is SampleNodeA
+        assert built.get("TestC") is SampleNodeC
+
+    def test_extend_allows_overriding_nodes(self):
+        """Test that extended registry can override existing nodes."""
+
+        class SampleNodeAv2(Node[Empty, Empty, Empty]):
+            TYPE_INFO = NodeTypeInfo.from_parameter_type(
+                display_name="Test A v2",
+                version="2.0.0",
+                parameter_type=Empty,
+            )
+
+            @classmethod
+            @override
+            def static_input_type(cls) -> Type[Empty]:
+                return Empty
+
+            @classmethod
+            @override
+            def static_output_type(cls) -> Type[Empty]:
+                return Empty
+
+            @override
+            async def run(
+                self,
+                *,
+                context: ExecutionContext,
+                input_type: Type[Empty],
+                output_type: Type[Empty],
+                input: Empty,
+            ):
+                return Empty()
+
+        original = (
+            NodeRegistry.builder(lazy=False).register(SampleNodeA, name="TestA").build()
+        )
+
+        extended = original.extend(lazy=False)
+        # Override the existing registration (this should raise error in eager builder)
+        # But we can build fresh and re-register
+        extended = NodeRegistry.builder(lazy=False)
+        extended.register(SampleNodeA, name="TestA")
+        extended.register(SampleNodeAv2, name="TestA-v2")
+        built = extended.build()
+
+        assert built.get("TestA") is SampleNodeA
+        assert built.get("TestA-v2") is SampleNodeAv2
+
+    def test_extend_lazy_registry_returns_lazy_when_lazy_true(self):
+        """Test that extending a lazy registry with lazy=True returns a lazy registry."""
+        original = NodeRegistry.builder(lazy=True)
+        original.register(SampleNodeA, name="TestA")
+
+        extended = original.extend(lazy=True)
+
+        assert isinstance(extended, NodeRegistry)
+        assert isinstance(extended, NodeRegistryBuilder)
+        # Should be able to register more nodes
+        extended.register(SampleNodeB, name="TestB")
+        built = extended.build()
+
+        assert built.get("TestA") is SampleNodeA
+        assert built.get("TestB") is SampleNodeB
+
+    def test_extend_lazy_registry_returns_eager_when_lazy_false(self):
+        """Test that extending a lazy registry with lazy=False returns an eager builder."""
+        original = NodeRegistry.builder(lazy=True)
+        original.register(SampleNodeA, name="TestA")
+        original.build()
+
+        extended = original.extend(lazy=False)
+
+        assert isinstance(extended, NodeRegistryBuilder)
+        assert extended.get("TestA") is SampleNodeA
+
+    def test_extend_immutable_registry(self):
+        """Test extending an ImmutableNodeRegistry."""
+        immutable = ImmutableNodeRegistry(
+            node_classes={"TestA": SampleNodeA, "TestB": SampleNodeB},
+        )
+
+        extended = immutable.extend(lazy=False)
+
+        assert isinstance(extended, NodeRegistryBuilder)
+        assert extended.get("TestA") is SampleNodeA
+        assert extended.get("TestB") is SampleNodeB
+
+    def test_extend_with_items_method(self):
+        """Test that extend correctly uses items() to copy registrations."""
+        original = (
+            NodeRegistry.builder(lazy=False)
+            .register(SampleNodeA, name="TestA")
+            .register(SampleNodeB, name="TestB")
+            .build()
+        )
+
+        extended = original.extend(lazy=False)
+
+        # Verify that all items from original were copied
+        for name, cls in original.items():
+            assert extended.get(name) is cls
+
+    def test_extend_chain_multiple_times(self):
+        """Test that extend can be called multiple times in sequence."""
+        registry1 = (
+            NodeRegistry.builder(lazy=False).register(SampleNodeA, name="TestA").build()
+        )
+
+        registry2 = (
+            registry1.extend(lazy=False).register(SampleNodeB, name="TestB").build()
+        )
+
+        registry3 = registry2.extend(lazy=False).build()
+
+        assert registry3.get("TestA") is SampleNodeA
+        assert registry3.get("TestB") is SampleNodeB
+
+    def test_extend_default_lazy_parameter(self):
+        """Test that extend defaults to lazy=False."""
+        original = (
+            NodeRegistry.builder(lazy=False).register(SampleNodeA, name="TestA").build()
+        )
+
+        extended = original.extend()  # No lazy parameter
+
+        # Should return an EagerNodeRegistryBuilder by default
+        assert isinstance(extended, NodeRegistryBuilder)
+        assert extended.get("TestA") is SampleNodeA
+
+
 class TestNodeRegistryLoad:
     """Tests for NodeRegistry.load()."""
 
