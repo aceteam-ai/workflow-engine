@@ -6,6 +6,13 @@ This project uses [PEP 440](https://peps.python.org/pep-0440/) versioning with r
 
 ## [Unreleased]
 
+## [2.0.0rc15] - 2026-07-06
+
+### Fixed
+
+- `NodeRegistry.extend()` now handles reregistration correctly (#180).
+- `StakeholderLevel.__le__` / `__ge__` now match the semantic ordering (#176, #179).
+
 ## [2.0.0rc14] - 2026-07-02
 
 ### Added
@@ -107,6 +114,42 @@ This project uses [PEP 440](https://peps.python.org/pep-0440/) versioning with r
 
 - Shared test fixtures and node types lifted into `tests/conftest.py` so per-file test files no longer re-declare them (#124).
 - Dependency bumps: `pytest` 9.0.2 → 9.0.3 (#120), `python-dotenv` 1.2.1 → 1.2.2 (#119), `cryptography` 46.0.6 → 46.0.7 (#118).
+
+## [2.0.0rc10] - 2026-04-13
+
+### Added
+
+- Convenience instantiators for `WorkflowException` and `ValidatedWorkflow` added to the top-level exports (#112).
+
+### Changed
+
+- `Context.on_node_error` is now restricted to `WorkflowException`, matching the exception type it is always invoked with (#112).
+
+## [2.0.0rc9] - 2026-04-06
+
+### Fixed
+
+- Restored a missing `StakeholderLevel` import that broke the stakeholder-level exception system introduced in rc8 (#111).
+
+### Internal
+
+- Enabled the RUF lint rule set (#111).
+
+## [2.0.0rc8] - 2026-04-01
+
+### Changed
+
+- **Breaking:** Replaced the `UserException` system with stakeholder-level exceptions, so error visibility is expressed through `StakeholderLevel` rather than a single user-facing exception type (#110).
+- **Breaking:** Nodes now support static input and output types via `static_input_type` / `static_output_type`, alongside the existing dynamic (`params`-driven) type resolution (#109).
+- `on_node_start` may now return a `Workflow` to short-circuit and replace an expanded node (#106).
+- `ForEach` no longer expands for empty sequences (#100).
+- Streamlined asyncio-related performance (#105).
+- Enforced display-name readability for nodes and fields (#101).
+
+### Internal
+
+- Added a pre-commit hook for automatic formatting, with ruff handling import ordering.
+- Dependency bumps: `cryptography` 46.0.5 → 46.0.6 (#104), `pygments` 2.19.2 → 2.20.0 (#103), `requests` 2.32.5 → 2.33.0 (#102).
 
 ## [2.0.0rc7] - 2026-03-24
 
