@@ -141,6 +141,13 @@ fi
 
 echo "New version: $NEW_VERSION"
 
+# Ensure the changelog has a matching section for this version
+if ! grep -qE "^## \[${NEW_VERSION//./\\.}\]" CHANGELOG.md; then
+    echo "Error: CHANGELOG.md has no '## [$NEW_VERSION]' section."
+    echo "Add a changelog entry for $NEW_VERSION before releasing."
+    exit 1
+fi
+
 # Get commit history since last tag
 echo ""
 echo "Changes since $LATEST_TAG:"

@@ -13,6 +13,10 @@ This project uses [PEP 440](https://peps.python.org/pep-0440/) versioning with r
 - `NodeRegistry.extend()` now handles reregistration correctly (#180).
 - `StakeholderLevel.__le__` / `__ge__` now match the semantic ordering (#176, #179).
 
+### Internal
+
+- `release.sh` now aborts if `CHANGELOG.md` has no section for the version being released, so releases can't be tagged without documented changes (#173).
+
 ## [2.0.0rc14] - 2026-07-02
 
 ### Added
