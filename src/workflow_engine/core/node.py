@@ -686,8 +686,8 @@ class NodeRegistry(ABC):
         Extend the registry with a new builder.
         """
         builder = NodeRegistry.builder(lazy=lazy)
-        for _, cls in self.items():
-            builder.register(cls)
+        for name, cls in self.items():
+            builder.register(cls, name=name)
         return builder
 
     # NODE CREATION METHODS
