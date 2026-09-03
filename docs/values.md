@@ -187,7 +187,7 @@ The full casting graph is visualized in the repository: [typecast_graph.svg](typ
 `Result[T]` is a tagged ok/err value: exactly one of an `ok` payload (`T`) or
 an `err` payload (a structured `ResultError`) is set, and which one is
 recorded explicitly by a `tag` field. Unlike `UnionValue[T, ErrValue]`, a
-`Result[T]` is always an instance of the single `Result` class — the tag
+`Result[T]` is always an instance of the single `Result` class: the tag
 travels with the value instead of being inferred from which member type
 validated. That is what makes `Result[Result[T]]` representable: each level
 keeps its own tag, so nesting never collapses or loses a level on the way to
@@ -222,14 +222,14 @@ err.unwrap_err()     # ResultError(...)
 
 `error_class` is a closed vocabulary rather than a free-form string so that
 callers (retry policies, circuit breakers, run ledgers) can key off one field
-instead of string-matching `message`. It is aligned with the workflow-engine
-error classification used elsewhere in the engine.
+instead of string-matching `message`. It is aligned with the error
+classification proposed for `NodeException` in #186.
 
 ### The published wire shape
 
 See [`schema/result.md`](../schema/result.md) for the full published contract.
 In short, `Result[T]` serializes as a tagged object with exactly the keys relevant to
-its arm — `tag` plus `ok`, or `tag` plus `err`, never both:
+its arm: `tag` plus `ok`, or `tag` plus `err`, never both.
 
 ```json
 {"tag": "ok", "ok": <T's serialized value>}
@@ -263,9 +263,9 @@ tags:
 }
 ```
 
-The value-type schema (`Result[T].to_value_schema()`) mirrors this shape —
+The value-type schema (`Result[T].to_value_schema()`) mirrors this shape:
 `x-value-type` set to e.g. `"Result[FloatValue]"`, plus `ok` (the schema for
-`T`) and `err` (the fixed `ResultError` schema) — rather than the generic
+`T`) and `err` (the fixed `ResultError` schema), rather than the generic
 `properties`/`required` shape a plain `Data` record would produce. This keeps
 `Result` round-tripping through its own dedicated schema variant instead of
 being silently rebuilt as an ordinary 3-field record, which would lose the

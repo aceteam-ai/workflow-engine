@@ -82,57 +82,71 @@ instead of string-matching `message` or juggling three separate vocabularies.
 
 `Result[T].to_value_schema()` publishes a dedicated shape rather than the
 generic `properties`/`required` shape an ordinary record would produce, so
-that a receiving engine reconstructs a real `Result[T]` — with its ok/err
-identity intact — rather than a plain 3-field record. `x-value-type` follows
+that a receiving engine reconstructs a real `Result[T]`, with its ok/err
+identity intact, rather than a plain 3-field record. `x-value-type` follows
 this engine's usual convention (e.g. `"Result[FloatValue]"`).
+
+This is the exact, unabridged output of `Result[FloatValue].to_value_schema().model_dump(by_alias=True)`:
 
 ```json
 {
   "type": "object",
-  "x-value-type": "Result[FloatValue]",
   "ok": {
+    "title": "FloatValue",
     "type": "number",
-    "x-value-type": "FloatValue",
-    "title": "FloatValue"
+    "x-value-type": "FloatValue"
   },
   "err": {
-    "type": "object",
-    "title": "ResultError",
-    "properties": {
-      "error_class": {
-        "$ref": "#/$defs/ErrorClassValue",
-        "title": "Error Class",
-        "description": "The machine-readable classification of the error, from a closed vocabulary: timeout, unreachable, rate_limit, validation, permission, or systemic."
-      },
-      "name": {
-        "$ref": "#/$defs/StringValue",
-        "title": "Error Name",
-        "description": "The short, machine-readable name of the error."
-      },
-      "message": {
-        "$ref": "#/$defs/StringValue",
-        "title": "Message",
-        "description": "The user-facing description of what went wrong."
-      },
-      "node_id": {
-        "$ref": "#/$defs/StringValue",
-        "title": "Node ID",
-        "description": "The identifier of the node that produced the error."
-      }
-    },
-    "additionalProperties": false,
-    "required": ["error_class", "name", "message", "node_id"],
     "$defs": {
       "ErrorClass": {
+        "title": "ErrorClass",
+        "description": "The closed-vocabulary, machine-readable classification of a ``Result`` err arm. A single field lets callers key retry policy, circuit breakers, and a run ledger off of one vocabulary instead of three.",
         "type": "string",
         "enum": ["timeout", "unreachable", "rate_limit", "validation", "permission", "systemic"]
       },
-      "ErrorClassValue": {"$ref": "#/$defs/ErrorClass"},
-      "StringValue": {"type": "string"}
-    }
-  }
+      "ErrorClassValue": {
+        "title": "ErrorClassValue",
+        "$ref": "#/$defs/ErrorClass"
+      },
+      "StringValue": {
+        "title": "StringValue",
+        "type": "string"
+      }
+    },
+    "title": "ResultError",
+    "description": "The structured error carried by a ``Result[T]`` err arm.",
+    "type": "object",
+    "properties": {
+      "error_class": {
+        "title": "Error Class",
+        "description": "The machine-readable classification of the error, from a closed vocabulary: timeout, unreachable, rate_limit, validation, permission, or systemic.",
+        "$ref": "#/$defs/ErrorClassValue"
+      },
+      "name": {
+        "title": "Error Name",
+        "description": "The short, machine-readable name of the error.",
+        "$ref": "#/$defs/StringValue"
+      },
+      "message": {
+        "title": "Message",
+        "description": "The user-facing description of what went wrong.",
+        "$ref": "#/$defs/StringValue"
+      },
+      "node_id": {
+        "title": "Node ID",
+        "description": "The identifier of the node that produced the error.",
+        "$ref": "#/$defs/StringValue"
+      }
+    },
+    "additionalProperties": false,
+    "required": ["error_class", "name", "message", "node_id"]
+  },
+  "x-value-type": "Result[FloatValue]"
 }
 ```
+
+(The `ErrorClass` `description` above has embedded newlines collapsed to spaces for
+readability in this document; the real output preserves them literally.)
 
 `ok` here is `T`'s own value schema (recursively, for nested `Result[Result[T]]`);
 `err` is always this same fixed `ResultError` shape.
@@ -141,7 +155,7 @@ this engine's usual convention (e.g. `"Result[FloatValue]"`).
 
 This document covers the `Result[T]` value type only. `attempt`, the
 eliminator vocabulary (`partition`, `unwrap_or`, `all_ok`, `first_error`),
-and the hints channel are separate, later contracts — see #199 for the
+and the hints channel are separate, later contracts. See #199 for the
 overall sequencing.
 
 See also: [`docs/values.md`](../docs/values.md#result-values) for the
