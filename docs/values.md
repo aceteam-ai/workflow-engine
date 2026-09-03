@@ -227,16 +227,17 @@ error classification used elsewhere in the engine.
 
 ### The published wire shape
 
-`Result[T]` serializes as a tagged object:
+See [`schema/result.md`](../schema/result.md) for the full published contract.
+In short, `Result[T]` serializes as a tagged object with exactly the keys relevant to
+its arm — `tag` plus `ok`, or `tag` plus `err`, never both:
 
 ```json
-{"tag": "ok", "ok": <T's serialized value>, "err": null}
+{"tag": "ok", "ok": <T's serialized value>}
 ```
 
 ```json
 {
   "tag": "err",
-  "ok": null,
   "err": {
     "error_class": "timeout",
     "name": "FetchTimeout",
@@ -246,14 +247,19 @@ error classification used elsewhere in the engine.
 }
 ```
 
-Both `ok` and `err` keys are always present; exactly one is non-null,
-matching `tag`. Nesting preserves both levels' tags:
+The root is a discriminated union of two variant shapes (`tag: "ok"` with
+`ok`, or `tag: "err"` with `err`), not a single object with two optional
+sibling fields defaulting to `null`. That matters for round-tripping: a
+sibling-fields shape would use `null` as the "this arm is absent" sentinel,
+which is indistinguishable from a populated `ok` payload that is itself
+`null` (e.g. `Result[NullValue]`). Routing on `tag` first means the payload
+is only ever validated against its own type. Nesting preserves both levels'
+tags:
 
 ```json
 {
   "tag": "ok",
-  "ok": {"tag": "err", "ok": null, "err": {"...": "..."}},
-  "err": null
+  "ok": {"tag": "err", "err": {"...": "..."}}
 }
 ```
 

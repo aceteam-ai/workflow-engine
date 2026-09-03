@@ -12,20 +12,24 @@ schema.
 
 ## Value shape
 
-A serialized `Result[T]` instance is always an object with exactly these
-three keys. `tag` says which arm is populated; the other two keys are always
-present, and exactly one of them is non-null, matching `tag`.
+A serialized `Result[T]` instance is a tagged object: `tag` says which arm is
+populated, and exactly the matching payload key is present. This is a
+discriminated union of two shapes, not a single object with two optional
+sibling fields that default to `null`. That distinction is load-bearing: a
+sibling-fields shape would use `null` as the "this arm is absent" sentinel,
+which is indistinguishable from a populated `ok` payload that is itself
+`null` (e.g. `T = NullValue`). Routing on `tag` first means the payload is
+only ever validated against its own type, never against a sentinel.
 
-| Key   | Type                          | Present when   |
-| ----- | ----------------------------- | -------------- |
-| `tag` | `"ok" \| "err"`                | always         |
-| `ok`  | `T`'s serialized value, or `null` | `tag == "ok"`  |
-| `err` | a `ResultError` object, or `null` | `tag == "err"` |
+| Shape | Keys present    |
+| ----- | ---------------- |
+| ok    | `tag: "ok"`, `ok: <T's serialized value>` |
+| err   | `tag: "err"`, `err: <ResultError object>` |
 
 ### `ok` example
 
 ```json
-{"tag": "ok", "ok": 3.14, "err": null}
+{"tag": "ok", "ok": 3.14}
 ```
 
 ### `err` example
@@ -33,7 +37,6 @@ present, and exactly one of them is non-null, matching `tag`.
 ```json
 {
   "tag": "err",
-  "ok": null,
   "err": {
     "error_class": "timeout",
     "name": "FetchTimeout",
@@ -52,15 +55,13 @@ Each level keeps its own `tag`. Nothing is lost or collapsed going in or out:
   "tag": "ok",
   "ok": {
     "tag": "err",
-    "ok": null,
     "err": {
       "error_class": "timeout",
       "name": "FetchTimeout",
       "message": "The upstream service did not respond in time.",
       "node_id": "fetch-1"
     }
-  },
-  "err": null
+  }
 }
 ```
 

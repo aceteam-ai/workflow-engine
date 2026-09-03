@@ -8,6 +8,7 @@ from workflow_engine import (
     Edge,
     FloatValue,
     IntegerValue,
+    SequenceValue,
     StringValue,
     Workflow,
     WorkflowEngine,
@@ -17,13 +18,21 @@ from workflow_engine.contexts.in_memory import InMemoryExecutionContext
 from workflow_engine.core import (
     ErrorClass,
     ErrorClassValue,
+    NullValue,
     Result,
     ResultError,
     ValidationContext,
     Value,
 )
-from workflow_engine.core.values.result import _ResultRoot
-from workflow_engine.nodes.data import GatherSequenceNode, SequenceParams
+from workflow_engine.core.values import validate_value_schema
+from workflow_engine.core.values.result import _ErrRoot, _OkRoot
+from workflow_engine.core.values.schema import ResultValueSchema
+from workflow_engine.nodes.data import (
+    ExpandSequenceNode,
+    GatherSequenceNode,
+    SequenceData,
+    SequenceParams,
+)
 
 
 @pytest.fixture
@@ -88,27 +97,51 @@ def test_unwrap_err_on_ok_raises():
 
 
 @pytest.mark.unit
-def test_tag_payload_invariant_enforced_ok_without_value():
-    with pytest.raises(ValidationError, match="must carry an ok value"):
-        _ResultRoot[FloatValue](tag="ok", ok=None, err=None)
+def test_ok_root_rejects_err_tag():
+    """
+    The root is a discriminated union of two variant models (_OkRoot /
+    _ErrRoot), not a single model with two optional sibling fields. That
+    structurally rules out a mismatched tag/payload instead of relying on a
+    hand-written invariant check.
+    """
+    with pytest.raises(ValidationError):
+        _OkRoot[FloatValue](tag="err", ok=FloatValue(1.0))  # type: ignore[arg-type]
 
 
 @pytest.mark.unit
-def test_tag_payload_invariant_enforced_ok_with_err_also_set():
-    with pytest.raises(ValidationError, match="must not carry an err value"):
-        _ResultRoot[FloatValue](tag="ok", ok=FloatValue(1.0), err=_error())
+def test_ok_root_requires_ok_payload():
+    with pytest.raises(ValidationError):
+        _OkRoot[FloatValue]()  # type: ignore[call-arg]
 
 
 @pytest.mark.unit
-def test_tag_payload_invariant_enforced_err_without_error():
-    with pytest.raises(ValidationError, match="must carry an err value"):
-        _ResultRoot[FloatValue](tag="err", ok=None, err=None)
+def test_err_root_requires_err_payload():
+    with pytest.raises(ValidationError):
+        _ErrRoot()  # type: ignore[call-arg]
 
 
 @pytest.mark.unit
 def test_error_class_is_closed_vocabulary():
     with pytest.raises(ValidationError):
         ErrorClassValue.model_validate("not_a_real_class")
+
+
+@pytest.mark.unit
+def test_ok_of_null_value_round_trips():
+    """
+    Regression test: an earlier design used Python None as the "this arm is
+    absent" sentinel on a single root model, which is indistinguishable from
+    a populated `ok: NullValue` payload (NullValue's own wire form is also
+    `null`), so Result[NullValue].ok(NullValue(None)) failed to validate back
+    in from its own dump. The discriminated-union root fixes this: `tag`
+    routes validation before the payload is ever checked against a sentinel.
+    """
+    value_type = Result[NullValue]
+    value = value_type.ok(NullValue(None))
+    dumped = value.model_dump(mode="json")
+    restored = value_type.model_validate(dumped)
+    assert restored.is_ok()
+    assert restored.unwrap_ok().root is None
 
 
 # --- Serialization: the published wire shape ---
@@ -118,7 +151,7 @@ def test_error_class_is_closed_vocabulary():
 def test_ok_wire_shape():
     value = Result[FloatValue].ok(FloatValue(2.5))
     dumped = value.model_dump(mode="json")
-    assert dumped == {"tag": "ok", "ok": 2.5, "err": None}
+    assert dumped == {"tag": "ok", "ok": 2.5}
 
 
 @pytest.mark.unit
@@ -133,7 +166,6 @@ def test_err_wire_shape():
     dumped = value.model_dump(mode="json")
     assert dumped == {
         "tag": "err",
-        "ok": None,
         "err": {
             "error_class": "rate_limit",
             "name": "RateLimited",
@@ -152,11 +184,7 @@ def test_nested_result_ok_of_ok_round_trips_with_both_tags():
     value = value_type.ok(Result[FloatValue].ok(FloatValue(9.0)))
 
     dumped = value.model_dump(mode="json")
-    assert dumped == {
-        "tag": "ok",
-        "ok": {"tag": "ok", "ok": 9.0, "err": None},
-        "err": None,
-    }
+    assert dumped == {"tag": "ok", "ok": {"tag": "ok", "ok": 9.0}}
 
     restored = value_type.model_validate(dumped)
     assert restored.is_ok()
@@ -193,7 +221,6 @@ def test_nested_result_err_round_trips():
     dumped = value.model_dump(mode="json")
     assert dumped == {
         "tag": "err",
-        "ok": None,
         "err": {
             "error_class": "systemic",
             "name": "OuterFailure",
@@ -225,17 +252,40 @@ def test_nested_result_schema_round_trips():
     assert rebuilt is value_cls
 
 
-@pytest.mark.unit
-def test_result_schema_is_not_mistaken_for_a_data_schema():
+def _round_trip_from_raw_json(value_cls: type[Result]) -> type[Value]:
     """
-    The wire shape must round-trip through the dedicated ResultValueSchema
-    variant, not fall through to DataValueSchema (which would silently
-    rebuild Result as a 3-field record and lose its ok/err identity).
-    """
-    from workflow_engine.core.values.schema import ResultValueSchema
+    Value type -> schema -> raw JSON (the wire form a host actually receives)
+    -> parsed back through the whole ValueSchema union -> Value type.
 
-    schema = Result[FloatValue].to_value_schema()
-    assert isinstance(schema, ResultValueSchema)
+    This is the real round-trip: it goes through validate_value_schema()
+    against the full ValueSchema union, not a schema object constructed
+    directly in Python (which trivially bypasses the union-matching this
+    test exists to check).
+    """
+    raw = value_cls.to_value_schema().model_dump(by_alias=True)
+    parsed = validate_value_schema(raw)
+    return parsed.to_value_cls()
+
+
+@pytest.mark.unit
+def test_result_schema_round_trips_from_raw_json():
+    value_cls = Result[FloatValue]
+    parsed = value_cls.to_value_schema().model_dump(by_alias=True)
+    # Must be recognized as a ResultValueSchema, not fall through to
+    # DataValueSchema or StringMapValueSchema (both also `type: "object"`;
+    # BaseValueSchema's extra="allow" would otherwise let `ok`/`err` validate
+    # as harmless extras on either of those, silently losing Result's
+    # ok/err identity on the way back in).
+    assert isinstance(validate_value_schema(parsed), ResultValueSchema)
+    assert _round_trip_from_raw_json(value_cls) is value_cls
+
+
+@pytest.mark.unit
+def test_nested_result_schema_round_trips_from_raw_json():
+    value_cls = Result[Result[IntegerValue]]
+    parsed = value_cls.to_value_schema().model_dump(by_alias=True)
+    assert isinstance(validate_value_schema(parsed), ResultValueSchema)
+    assert _round_trip_from_raw_json(value_cls) is value_cls
 
 
 # --- Casting: Result[S] -> Result[T] when S can cast to T ---
@@ -333,6 +383,47 @@ async def test_gather_sequence_of_results_preserves_index_and_tags(
     assert output.sequence[1].unwrap_err().name.root == "ElementFailure"
     assert output.sequence[2].is_ok()
     assert output.sequence[2].unwrap_ok().root == 3.0
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_expand_sequence_of_results_preserves_index_and_tags(
+    context: InMemoryExecutionContext,
+):
+    """
+    ExpandSequenceNode is the inverse of GatherSequenceNode and makes the same
+    claim: a required positional field per index, no absence handling. Checked
+    here since docs/values.md mentions it alongside GatherSequenceNode.
+    """
+    element_type = Result[FloatValue]
+    node = ExpandSequenceNode(
+        type="ExpandSequence",
+        id="expand",
+        params=SequenceParams(length=IntegerValue(2)),
+        element_type=element_type,
+    )
+    validation_context = ValidationContext()
+
+    input_type = await node.dynamic_input_type(validation_context)
+    assert input_type is SequenceData[element_type]
+    output_type = await node.dynamic_output_type(validation_context)
+
+    error = _error(name="ExpandFailure")
+    input_data = input_type(
+        sequence=SequenceValue[element_type](
+            root=[element_type.ok(FloatValue(1.0)), element_type.err(error)]
+        )
+    )
+
+    output = await node.run(
+        context=context,
+        input_type=input_type,
+        output_type=output_type,
+        input=input_data,
+    )
+    assert getattr(output, node.key(0)).is_ok()
+    assert getattr(output, node.key(1)).is_err()
+    assert getattr(output, node.key(1)).unwrap_err().name.root == "ExpandFailure"
 
 
 # --- Acceptance: a graph carrying Result elements validates and executes,

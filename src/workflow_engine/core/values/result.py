@@ -10,17 +10,26 @@ explicitly in the serialized form. That is what makes ``Result[Result[T]]``
 representable: each level keeps its own tag, so nothing is lost or collapsed
 on the way to the wire and back.
 
-See the published wire shape in docs/values.md and discussion #198 for the
-motivation.
+The root is a Pydantic discriminated union of two plain models (``_OkRoot`` /
+``_ErrRoot``) rather than a single model with two optional, sibling fields.
+The earlier sibling-fields shape used Python ``None`` as the "this arm is
+absent" sentinel, which is indistinguishable from a populated
+``ok: NullValue`` payload (``NullValue``'s own wire form is also ``null``),
+so ``Result[NullValue].ok(NullValue(None))`` failed to round-trip. The
+discriminated union routes on ``tag`` first, so the payload field is only
+ever validated against its own type, never against the sentinel.
+
+See the published wire shape in schema/result.md and docs/values.md, and
+discussion #198 for the motivation.
 """
 
 from __future__ import annotations
 
 from enum import StrEnum
-from typing import TYPE_CHECKING, Generic, Literal, Self, TypeVar
+from typing import TYPE_CHECKING, Annotated, Generic, Literal, Self, TypeVar, Union
 
 from overrides import override
-from pydantic import Field, model_validator
+from pydantic import Field
 
 from ...utils.model import ImmutableBaseModel
 from .data import Data, get_data_schema
@@ -88,42 +97,18 @@ class ResultError(Data):
     )
 
 
-class _ResultRoot(ImmutableBaseModel, Generic[T]):
-    """
-    The root wrapped by ``Result[T]``.
+class _OkRoot(ImmutableBaseModel, Generic[T]):
+    """The ok arm of a ``Result[T]``'s root. See ``Result`` for why this shape."""
 
-    Not itself part of the public Data/Value field contract (``tag`` is a
-    plain literal, not a Value), which is why this lives directly as a
-    ``Value`` root instead of a ``Data`` subclass. Exactly one of ``ok`` /
-    ``err`` is populated, matching ``tag``; enforced below rather than left as
-    an implicit convention.
-    """
+    tag: Literal["ok"] = "ok"
+    ok: T
 
-    tag: Literal["ok", "err"] = Field(
-        description="Which arm is populated.",
-    )
-    ok: T | None = Field(
-        default=None,
-        description="The success payload. Set if and only if tag == 'ok'.",
-    )
-    err: ResultError | None = Field(
-        default=None,
-        description="The structured error. Set if and only if tag == 'err'.",
-    )
 
-    @model_validator(mode="after")
-    def _check_tag_matches_payload(self) -> Self:
-        if self.tag == "ok":
-            if self.ok is None:
-                raise ValueError("Result tagged 'ok' must carry an ok value")
-            if self.err is not None:
-                raise ValueError("Result tagged 'ok' must not carry an err value")
-        else:
-            if self.err is None:
-                raise ValueError("Result tagged 'err' must carry an err value")
-            if self.ok is not None:
-                raise ValueError("Result tagged 'err' must not carry an ok value")
-        return self
+class _ErrRoot(ImmutableBaseModel):
+    """The err arm of a ``Result[T]``'s root. See ``Result`` for why this shape."""
+
+    tag: Literal["err"] = "err"
+    err: ResultError
 
 
 def _item_type(cls: type[Value]) -> ValueType:
@@ -132,7 +117,10 @@ def _item_type(cls: type[Value]) -> ValueType:
     return item_type
 
 
-class Result(Value[_ResultRoot[T]], Generic[T]):
+class Result(
+    Value[Annotated[Union[_OkRoot[T], _ErrRoot], Field(discriminator="tag")]],
+    Generic[T],
+):
     """
     A registered public value type: ok or err, tagged.
 
@@ -148,14 +136,11 @@ class Result(Value[_ResultRoot[T]], Generic[T]):
     @classmethod
     def ok(cls, value: T) -> Self:
         item_type = _item_type(cls)
-        root_cls = _ResultRoot[item_type]
-        return cls(root=root_cls(tag="ok", ok=value, err=None))  # type: ignore[arg-type]
+        return cls(root=_OkRoot[item_type](ok=value))  # type: ignore[arg-type]
 
     @classmethod
     def err(cls, error: ResultError) -> Self:
-        item_type = _item_type(cls)
-        root_cls = _ResultRoot[item_type]
-        return cls(root=root_cls(tag="err", ok=None, err=error))  # type: ignore[arg-type]
+        return cls(root=_ErrRoot(err=error))  # type: ignore[arg-type]
 
     def is_ok(self) -> bool:
         return self.root.tag == "ok"
@@ -164,14 +149,16 @@ class Result(Value[_ResultRoot[T]], Generic[T]):
         return self.root.tag == "err"
 
     def unwrap_ok(self) -> T:
-        if self.root.ok is None:
+        root = self.root
+        if not isinstance(root, _OkRoot):
             raise ValueError(f"{self!r} is err, not ok")
-        return self.root.ok
+        return root.ok
 
     def unwrap_err(self) -> ResultError:
-        if self.root.err is None:
+        root = self.root
+        if not isinstance(root, _ErrRoot):
             raise ValueError(f"{self!r} is ok, not err")
-        return self.root.err
+        return root.err
 
     @classmethod
     @override
