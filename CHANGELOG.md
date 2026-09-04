@@ -10,6 +10,10 @@ This project uses [PEP 440](https://peps.python.org/pep-0440/) versioning with r
 
 - **`Result[T]`**: a registered public value type, ok or err, with the err arm carrying a structured, closed-vocabulary error (`error_class`, `name`, `message`, `node_id`). Tagged rather than a bare union, so `Result[Result[T]]` round-trips with both tags intact and a validated value is always the single `Result` class (#200). The wire shape is published in `schema/result.md`.
 
+### Fixed
+
+- Removed the stale `License :: OSI Approved :: MIT License` classifier from `pyproject.toml`, which contradicted the `license = "LicenseRef-Elastic-2.0"` field set during the relicense in #184. There is no OSI classifier for Elastic License 2.0, so the `license` field alone now stands (#207).
+
 ## [2.0.0rc15] - 2026-07-06
 
 ### Fixed
