@@ -32,6 +32,7 @@ from ..utils.semver import (
     parse_semantic_version,
 )
 from .error import NodeException, ShouldYield, WorkflowException
+from .hints import Hints
 from .values import (
     Data,
     DataMapping,
@@ -175,6 +176,14 @@ class Node(ImmutableBaseModel, Generic[Input_contra, Output, Params_co]):
             "May affect what inputs are accepted by the node."
         ),
     )
+    hints: Hints = Field(
+        default_factory=Hints,
+        description=(
+            "Host-facing annotations for this node. A host may honor, clamp, "
+            "or ignore any hint; unlike params, hints never affect the "
+            "node's input/output types or the workflow's result."
+        ),
+    )
 
     # --------------------------------------------------------------------------
     # SUBCLASS DISPATCH
@@ -235,6 +244,20 @@ class Node(ImmutableBaseModel, Generic[Input_contra, Output, Params_co]):
             A new Node with ID '{namespace}/{self.id}'
         """
         return self.model_update(id=get_id_with_namespace(self.id, namespace))
+
+    # --------------------------------------------------------------------------
+    # HINTS
+
+    def without_hints(self) -> Self:
+        """
+        Create a copy of this node with all hints erased.
+
+        Used to test and demonstrate the hints contract: a workflow built
+        from nodes with ``without_hints()`` applied must produce the same
+        result as the original, since a host is always allowed to ignore
+        every hint.
+        """
+        return self.model_update(hints=Hints())
 
     # --------------------------------------------------------------------------
     # VERSIONING
