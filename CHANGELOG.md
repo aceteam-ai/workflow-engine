@@ -6,6 +6,10 @@ This project uses [PEP 440](https://peps.python.org/pep-0440/) versioning with r
 
 ## [Unreleased]
 
+### Added
+
+- **`Result[T]`**: a registered public value type, ok or err, with the err arm carrying a structured, closed-vocabulary error (`error_class`, `name`, `message`, `node_id`). Tagged rather than a bare union, so `Result[Result[T]]` round-trips with both tags intact and a validated value is always the single `Result` class (#200). The wire shape is published in `schema/result.md`.
+
 ## [2.0.0rc15] - 2026-07-06
 
 ### Fixed

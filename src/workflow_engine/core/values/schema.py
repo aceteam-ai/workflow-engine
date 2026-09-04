@@ -427,6 +427,30 @@ class DateValueSchema(BaseValueSchema):
         return DateValue
 
 
+class ResultValueSchema(BaseValueSchema):
+    """
+    Matches the wire shape published by ``Result[T].to_value_schema()``: a
+    tagged object with sibling ``ok`` / ``err`` members. ``ok`` and ``err``
+    are the *type* schemas for each arm (``err`` is always ``ResultError``'s
+    schema); the serialized *value* carries a ``tag`` plus exactly one
+    populated payload. See docs/values.md for the full wire contract.
+    """
+
+    type: Final[Literal["object"]]
+    ok: ValueSchema
+    err: ValueSchema
+
+    @override
+    def build_value_cls(
+        self,
+        *extra_defs: Mapping[str, ValueSchema],
+    ) -> ValueType:
+        from .result import result_value_type
+
+        item_type = self.ok.to_value_cls(self.defs, *extra_defs)
+        return result_value_type(item_type)
+
+
 class SequenceValueSchema(BaseValueSchema):
     type: Final[Literal["array"]]
     items: ValueSchema
@@ -583,6 +607,7 @@ type ValueSchema = (
     | FloatValueSchema
     | IntegerValueSchema
     | NullValueSchema
+    | ResultValueSchema
     | SequenceValueSchema
     | StringMapValueSchema
     | StringValueSchema
@@ -636,6 +661,7 @@ __all__ = [
     "IntegerValueSchema",
     "NullValueSchema",
     "ReferenceValueSchema",
+    "ResultValueSchema",
     "SequenceValueSchema",
     "StringMapValueSchema",
     "StringValueSchema",

@@ -182,6 +182,107 @@ result = await value.cast_to(FloatValue)  # FloatValue(42.0)
 
 The full casting graph is visualized in the repository: [typecast_graph.svg](typecast_graph.svg).
 
+## Result Values
+
+`Result[T]` is a tagged ok/err value: exactly one of an `ok` payload (`T`) or
+an `err` payload (a structured `ResultError`) is set, and which one is
+recorded explicitly by a `tag` field. Unlike `UnionValue[T, ErrValue]`, a
+`Result[T]` is always an instance of the single `Result` class: the tag
+travels with the value instead of being inferred from which member type
+validated. That is what makes `Result[Result[T]]` representable: each level
+keeps its own tag, so nesting never collapses or loses a level on the way to
+the wire and back.
+
+```python
+from workflow_engine import ErrorClass, ErrorClassValue, FloatValue, Result, ResultError, StringValue
+
+ok = Result[FloatValue].ok(FloatValue(3.14))
+ok.is_ok()       # True
+ok.unwrap_ok()   # FloatValue(3.14)
+
+error = ResultError(
+    error_class=ErrorClassValue(ErrorClass.TIMEOUT),
+    name=StringValue("FetchTimeout"),
+    message=StringValue("The upstream service did not respond in time."),
+    node_id=StringValue("fetch-1"),
+)
+err = Result[FloatValue].err(error)
+err.is_err()        # True
+err.unwrap_err()     # ResultError(...)
+```
+
+### The err arm: `ResultError`
+
+| Field         | Type              | Notes                                                     |
+| ------------- | ----------------- | ---------------------------------------------------------- |
+| `error_class` | `ErrorClassValue` | Closed vocabulary: `timeout`, `unreachable`, `rate_limit`, `validation`, `permission`, `systemic`. |
+| `name`        | `StringValue`     | Short, machine-readable name of the error.                 |
+| `message`     | `StringValue`     | User-facing description of what went wrong.                |
+| `node_id`     | `StringValue`     | The id of the node that produced the error (provenance).   |
+
+`error_class` is a closed vocabulary rather than a free-form string so that
+callers (retry policies, circuit breakers, run ledgers) can key off one field
+instead of string-matching `message`. It is aligned with the error
+classification proposed for `NodeException` in #186.
+
+### The published wire shape
+
+See [`schema/result.md`](../schema/result.md) for the full published contract.
+In short, `Result[T]` serializes as a tagged object with exactly the keys relevant to
+its arm: `tag` plus `ok`, or `tag` plus `err`, never both.
+
+```json
+{"tag": "ok", "ok": <T's serialized value>}
+```
+
+```json
+{
+  "tag": "err",
+  "err": {
+    "error_class": "timeout",
+    "name": "FetchTimeout",
+    "message": "The upstream service did not respond in time.",
+    "node_id": "fetch-1"
+  }
+}
+```
+
+The root is a discriminated union of two variant shapes (`tag: "ok"` with
+`ok`, or `tag: "err"` with `err`), not a single object with two optional
+sibling fields defaulting to `null`. That matters for round-tripping: a
+sibling-fields shape would use `null` as the "this arm is absent" sentinel,
+which is indistinguishable from a populated `ok` payload that is itself
+`null` (e.g. `Result[NullValue]`). Routing on `tag` first means the payload
+is only ever validated against its own type. Nesting preserves both levels'
+tags:
+
+```json
+{
+  "tag": "ok",
+  "ok": {"tag": "err", "err": {"...": "..."}}
+}
+```
+
+The value-type schema (`Result[T].to_value_schema()`) mirrors this shape:
+`x-value-type` set to e.g. `"Result[FloatValue]"`, plus `ok` (the schema for
+`T`) and `err` (the fixed `ResultError` schema), rather than the generic
+`properties`/`required` shape a plain `Data` record would produce. This keeps
+`Result` round-tripping through its own dedicated schema variant instead of
+being silently rebuilt as an ordinary 3-field record, which would lose the
+ok/err distinction.
+
+### Casting
+
+`Result[S]` casts to `Result[T]` when `S` can cast to `T`: the `ok` arm casts
+its payload, the `err` arm passes the `ResultError` through unchanged.
+
+### Gather-side typing
+
+A `SequenceValue[Result[T]]` needs no special handling from `GatherSequenceNode`
+or `ExpandSequenceNode`: both already require one value per index (see
+`nodes/data.py`), so an element that failed is present at its index tagged
+`err`, never absent or shifting the indices after it.
+
 ## Union Values
 
 `UnionValue[A, B, ...]` accepts any of several member types. Validated and cast values are always an instance of one member (`FloatValue`, `SequenceValue[FloatValue]`, …), never a wrapper object.
