@@ -932,3 +932,107 @@ def test_all_ok_data_schema_generation_does_not_crash():
     cls = AllOkData[FloatValue]
     schema = get_data_schema(cls)
     assert schema.model_dump(by_alias=True)["title"] == "AllOkData[FloatValue]"
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_all_ok_and_first_error_agree_on_which_error_is_first(
+    context: InMemoryExecutionContext,
+    validation_context: ValidationContext,
+):
+    """
+    AllOk short-circuits on the first err and FirstError reports the first
+    err. Nothing forces those two "firsts" to be the same one, because they
+    are separate scans in separate nodes. A graph that branches a sequence
+    into both and reports one error while failing on another would be
+    confusing in exactly the situation the eliminators exist for.
+
+    Pin the agreement with several errors present, so a node that scanned in
+    reverse or returned the last match would fail here rather than passing
+    by luck on a single-error input.
+    """
+    element_type = FloatValue
+    sequence = _seq(
+        Result[element_type].ok(FloatValue(1.0)),
+        Result[element_type].err(_error("First")),
+        Result[element_type].ok(FloatValue(2.0)),
+        Result[element_type].err(_error("Second")),
+        Result[element_type].err(_error("Third")),
+    )
+
+    all_ok = AllOkNode(type="AllOk", id="a", element_type=element_type)
+    all_ok_input_type = await all_ok.dynamic_input_type(validation_context)
+    all_ok_output = await all_ok.run(
+        context=context,
+        input_type=all_ok_input_type,
+        output_type=await all_ok.dynamic_output_type(validation_context),
+        input=all_ok_input_type(sequence=sequence),
+    )
+
+    first_error = FirstErrorNode(type="FirstError", id="f", element_type=element_type)
+    first_error_input_type = await first_error.dynamic_input_type(validation_context)
+    first_error_output = await first_error.run(
+        context=context,
+        input_type=first_error_input_type,
+        output_type=await first_error.output_type(validation_context),
+        input=first_error_input_type(sequence=sequence),
+    )
+
+    assert all_ok_output.result.is_err()
+    reported_by_all_ok = all_ok_output.result.unwrap_err()
+    reported_by_first_error = first_error_output.error.root
+
+    assert reported_by_first_error is not None
+    assert reported_by_all_ok.name.root == "First"
+    assert reported_by_first_error.name.root == "First"
+    assert reported_by_all_ok == reported_by_first_error
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_partition_and_unwrap_or_agree_on_which_elements_failed(
+    context: InMemoryExecutionContext,
+    validation_context: ValidationContext,
+):
+    """
+    Partition reports err positions via err_indices, and UnwrapOr substitutes
+    the default at exactly the positions that failed. Those are two different
+    code paths deciding the same thing, and a host that partitions to report
+    failures while unwrapping to build its artifact depends on them matching.
+    """
+    element_type = StringValue
+    default = StringValue("[missing]")
+    sequence = _seq(
+        Result[element_type].ok(StringValue("a")),
+        Result[element_type].err(_error("Boom")),
+        Result[element_type].ok(StringValue("c")),
+        Result[element_type].err(_error("Bang")),
+    )
+
+    partition = PartitionNode(type="Partition", id="p", element_type=element_type)
+    partition_input_type = await partition.dynamic_input_type(validation_context)
+    partition_output = await partition.run(
+        context=context,
+        input_type=partition_input_type,
+        output_type=await partition.dynamic_output_type(validation_context),
+        input=partition_input_type(sequence=sequence),
+    )
+
+    unwrap = UnwrapOrNode(type="UnwrapOr", id="u", element_type=element_type)
+    unwrap_input_type = await unwrap.dynamic_input_type(validation_context)
+    unwrap_output = await unwrap.run(
+        context=context,
+        input_type=unwrap_input_type,
+        output_type=await unwrap.dynamic_output_type(validation_context),
+        input=unwrap_input_type(sequence=sequence, default=default),
+    )
+
+    substituted_positions = [
+        index
+        for index, item in enumerate(unwrap_output.sequence.root)
+        if item == default
+    ]
+    err_positions = [index.root for index in partition_output.err_indices.root]
+
+    assert err_positions == [1, 3]
+    assert substituted_positions == err_positions
