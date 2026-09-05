@@ -4,7 +4,7 @@
 [![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-blue)](https://www.python.org/downloads/)
 [![License: Elastic License 2.0](https://img.shields.io/badge/license-Elastic%20License%202.0-blue)](LICENSE)
 
-A powerful, modular workflow orchestration system designed for composing complex computational tasks from smaller, configurable steps. This engine powers the workflow functionality in [AceTeam.ai](https://aceteam.ai/workflow-engine) and is now available as an open-source package.
+A powerful, modular workflow orchestration system designed for composing complex computational tasks from smaller, configurable steps. This engine powers the workflow functionality in [AceTeam.ai](https://aceteam.ai/workflow-engine).
 
 ## Overview
 
