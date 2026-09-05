@@ -89,17 +89,27 @@ def _compact_value_schema(value_cls: type[Value]) -> dict[str, Any]:
     Concrete types serialize as `{"x-value-type": "<Name>"}`. Generic
     composites unfold into the standard JSON Schema shape (`type: array`,
     `type: object` with `additionalProperties`, or full Data layout) with
-    `x-value-type` on the inner Value(s).
+    `x-value-type` on the inner Value(s). A fully-open item type (the bare
+    `Value` class, as in `SequenceValue[Value]`/`StringMapValue[Value]`) has
+    no `x-value-type` to resolve, so it renders as `items: true` /
+    `additionalProperties: true`, matching `SequenceValueSchema` /
+    `StringMapValueSchema`.
     """
     origin, args = get_origin_and_args(value_cls)
     if not args:
         return {"x-value-type": origin.__name__}
     if issubclass(origin, SequenceValue):
-        return {"type": "array", "items": _compact_value_schema(args[0])}
+        item_type = args[0]
+        items = True if item_type is Value else _compact_value_schema(item_type)
+        return {"type": "array", "items": items}
     if issubclass(origin, StringMapValue):
+        item_type = args[0]
+        additional_properties = (
+            True if item_type is Value else _compact_value_schema(item_type)
+        )
         return {
             "type": "object",
-            "additionalProperties": _compact_value_schema(args[0]),
+            "additionalProperties": additional_properties,
         }
     if issubclass(origin, DataValue):
         inner = args[0]

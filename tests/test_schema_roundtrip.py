@@ -381,6 +381,47 @@ def test_string_map_of_value_roundtrip():
     assert result == value_cls, f"Expected {value_cls!r}, got {result!r}"
 
 
+@pytest.mark.unit
+def test_sequence_of_value_roundtrip():
+    """
+    SequenceValue[Value] (the fully-open sequence, produced when a schema's
+    items is bare True) round-trips via items: True rather than trying to
+    delegate to an unparameterized Value, mirroring
+    test_string_map_of_value_roundtrip above.
+    """
+    from workflow_engine.core.values.value import Value
+
+    value_cls = SequenceValue[Value]
+    result = _value_type_roundtrip(value_cls)
+    assert result == value_cls, f"Expected {value_cls!r}, got {result!r}"
+
+
+@pytest.mark.unit
+def test_sequence_and_string_map_of_value_are_symmetric():
+    """
+    SequenceValue[Value] and StringMapValue[Value] are twins: both are the
+    fully-open container over the top Value type, and both must round-trip
+    the same way (items: True / additionalProperties: True), not just one
+    of the two.
+    """
+    from workflow_engine.core.values.schema import (
+        SequenceValueSchema,
+        StringMapValueSchema,
+    )
+    from workflow_engine.core.values.value import Value
+
+    sequence_schema = SequenceValue[Value].to_value_schema()
+    assert isinstance(sequence_schema, SequenceValueSchema)
+    assert sequence_schema.items is True
+
+    string_map_schema = StringMapValue[Value].to_value_schema()
+    assert isinstance(string_map_schema, StringMapValueSchema)
+    assert string_map_schema.additionalProperties is True
+
+    assert sequence_schema.to_value_cls() == SequenceValue[Value]
+    assert string_map_schema.to_value_cls() == StringMapValue[Value]
+
+
 # --- Constrained generic containers round-trip without losing constraints ---
 
 
