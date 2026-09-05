@@ -15,6 +15,7 @@ from workflow_engine import (
     IntegerValue,
     JSONValue,
     NullValue,
+    Result,
     SequenceValue,
     StringMapValue,
     StringValue,
@@ -322,3 +323,90 @@ def test_nested_value_type_roundtrip():
     value_cls = StringMapValue[SequenceValue[StringMapValue[IntegerValue]]]
     result = _value_type_roundtrip(value_cls)
     assert result == value_cls, f"Expected {value_cls!r}, got {result!r}"
+
+
+# --- Generic containers of Result[T] (#215) ---
+#
+# Result[T] overrides to_value_schema() so it round-trips through its own
+# schema variant (ResultValueSchema), which is not the same shape as its raw
+# Pydantic model_json_schema() (a discriminated union). SequenceValue and
+# StringMapValue must delegate to the item type's own to_value_schema()
+# rather than trusting model_json_schema() to describe the item, or nesting
+# Result[T] inside them fails to round-trip.
+
+
+@pytest.mark.unit
+def test_sequence_of_result_value_type_roundtrip():
+    """SequenceValue[Result[T]] round-trips (the for_each(attempt(w)) shape)."""
+    value_cls = SequenceValue[Result[IntegerValue]]
+    result = _value_type_roundtrip(value_cls)
+    assert result == value_cls, f"Expected {value_cls!r}, got {result!r}"
+
+
+@pytest.mark.unit
+def test_string_map_of_result_value_type_roundtrip():
+    """StringMapValue[Result[T]] round-trips."""
+    value_cls = StringMapValue[Result[IntegerValue]]
+    result = _value_type_roundtrip(value_cls)
+    assert result == value_cls, f"Expected {value_cls!r}, got {result!r}"
+
+
+@pytest.mark.unit
+def test_doubly_nested_result_in_sequence_roundtrip():
+    """SequenceValue[Result[SequenceValue[T]]] round-trips at two levels of nesting."""
+    value_cls = SequenceValue[Result[SequenceValue[IntegerValue]]]
+    result = _value_type_roundtrip(value_cls)
+    assert result == value_cls, f"Expected {value_cls!r}, got {result!r}"
+
+
+@pytest.mark.unit
+def test_doubly_nested_result_in_string_map_roundtrip():
+    """StringMapValue[Result[StringMapValue[T]]] round-trips at two levels of nesting."""
+    value_cls = StringMapValue[Result[StringMapValue[IntegerValue]]]
+    result = _value_type_roundtrip(value_cls)
+    assert result == value_cls, f"Expected {value_cls!r}, got {result!r}"
+
+
+@pytest.mark.unit
+def test_string_map_of_value_roundtrip():
+    """
+    StringMapValue[Value] (the fully-open map, produced when a schema's
+    additionalProperties is bare True) round-trips via additionalProperties:
+    True rather than trying to delegate to an unparameterized Value.
+    """
+    from workflow_engine.core.values.value import Value
+
+    value_cls = StringMapValue[Value]
+    result = _value_type_roundtrip(value_cls)
+    assert result == value_cls, f"Expected {value_cls!r}, got {result!r}"
+
+
+# --- Constrained generic containers round-trip without losing constraints ---
+
+
+@pytest.mark.unit
+def test_constrained_sequence_roundtrip():
+    """A length-constrained SequenceValue[T] round-trips without losing the constraint."""
+    from workflow_engine.core.values.schema import _build_constrained_sequence_cls
+
+    original = _build_constrained_sequence_cls(
+        IntegerValue, {"minItems": 1, "maxItems": 5}
+    )
+    result = _value_type_roundtrip(original)
+    assert (
+        result.model_fields["root"].metadata == original.model_fields["root"].metadata
+    )
+
+
+@pytest.mark.unit
+def test_constrained_string_map_roundtrip():
+    """A size-constrained StringMapValue[T] round-trips without losing the constraint."""
+    from workflow_engine.core.values.schema import _build_constrained_map_cls
+
+    original = _build_constrained_map_cls(
+        StringValue, {"minProperties": 1, "maxProperties": 5}
+    )
+    result = _value_type_roundtrip(original)
+    assert (
+        result.model_fields["root"].metadata == original.model_fields["root"].metadata
+    )
