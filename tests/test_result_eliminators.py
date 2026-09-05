@@ -1024,7 +1024,9 @@ async def test_partition_and_unwrap_or_agree_on_which_elements_failed(
         context=context,
         input_type=unwrap_input_type,
         output_type=await unwrap.dynamic_output_type(validation_context),
-        input=unwrap_input_type(sequence=sequence, default=default),
+        input=unwrap_input_type.model_validate(
+            {"sequence": sequence, "default": default}
+        ),
     )
 
     substituted_positions = [
