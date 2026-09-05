@@ -26,7 +26,6 @@ discussion #198 for the motivation.
 from __future__ import annotations
 
 from collections.abc import Mapping
-from enum import StrEnum
 from typing import TYPE_CHECKING, Annotated, Any, Generic, Literal, Self, TypeVar, Union
 
 from overrides import override
@@ -35,6 +34,7 @@ from pydantic.json_schema import JsonSchemaValue
 from pydantic_core import core_schema
 
 from ...utils.model import ImmutableBaseModel
+from ..error import ErrorClass
 from .data import Data, get_data_schema
 from .primitives import StringValue
 from .value import Caster, Value, ValueType, get_origin_and_args
@@ -104,23 +104,6 @@ def _inline_refs(
         raise KeyError(f"Schema definition for {name!r} not found")
 
     return {k: _inline_refs(v, scopes) for k, v in node.items() if k != "$defs"}
-
-
-class ErrorClass(StrEnum):
-    """
-    The closed-vocabulary, machine-readable classification of a ``Result``
-    err arm.
-
-    A single field lets callers key retry policy, circuit breakers, and a run
-    ledger off of one vocabulary instead of three.
-    """
-
-    TIMEOUT = "timeout"
-    UNREACHABLE = "unreachable"
-    RATE_LIMIT = "rate_limit"
-    VALIDATION = "validation"
-    PERMISSION = "permission"
-    SYSTEMIC = "systemic"
 
 
 class ErrorClassValue(Value[ErrorClass]):

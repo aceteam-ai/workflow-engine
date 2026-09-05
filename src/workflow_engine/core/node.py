@@ -38,7 +38,7 @@ from ..utils.semver import (
     SEMANTIC_VERSION_PATTERN,
     parse_semantic_version,
 )
-from .error import NodeException, ShouldYield, WorkflowException
+from .error import ErrorClass, NodeException, ShouldYield, WorkflowException
 from .hints import Hints
 from .values import (
     Data,
@@ -477,6 +477,7 @@ class Node(ImmutableBaseModel, Generic[Input_contra, Output, Params_co]):
                     raise NodeException.for_user(
                         f"Input {input} for node {self.id} is invalid: {e}",
                         node=self,
+                        error_class=ErrorClass.VALIDATION,
                     ) from e
                 casted_input = get_data_dict(input_obj)
                 output = await context.on_node_start(

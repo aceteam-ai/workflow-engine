@@ -4,6 +4,7 @@ from __future__ import annotations
 from collections import defaultdict
 from collections.abc import Mapping, Sequence
 from datetime import datetime, timedelta, timezone
+from enum import StrEnum
 from traceback import format_exception
 from typing import TYPE_CHECKING, Self
 
@@ -17,6 +18,26 @@ if TYPE_CHECKING:
     from .workflow import Workflow
 
 
+class ErrorClass(StrEnum):
+    """
+    The closed-vocabulary, machine-readable classification of an error.
+
+    A single field lets callers key retry policy, circuit breakers, and a run
+    ledger off of one vocabulary instead of three. Defined here (rather than
+    in ``core/values/result.py``, where it originated) because
+    ``WorkflowException`` needs it and ``core/error.py`` must not import
+    ``core/values``; ``values/result.py`` re-exports it so the wire shape and
+    public import path are unchanged.
+    """
+
+    TIMEOUT = "timeout"
+    UNREACHABLE = "unreachable"
+    RATE_LIMIT = "rate_limit"
+    VALIDATION = "validation"
+    PERMISSION = "permission"
+    SYSTEMIC = "systemic"
+
+
 class WorkflowError(ImmutableBaseModel):
     """
     A serialized workflow exception.
@@ -28,6 +49,7 @@ class WorkflowError(ImmutableBaseModel):
     node_id: str | None = Field(default=None)
     cause: WorkflowError | str | None = Field(default=None)
     traceback: Sequence[str] | None = Field(default=None)
+    error_class: ErrorClass | None = Field(default=None)
 
     def filter(self, level: StakeholderLevel) -> Self | None:
         # remove errors that require a lower level of visibility to be seen
@@ -55,12 +77,14 @@ class WorkflowException(RuntimeError):
         *,
         level: StakeholderLevel,
         node_id: str | None = None,
+        error_class: ErrorClass | None = None,
     ):
         super().__init__(message)
         self.timestamp = datetime.now(timezone.utc).timestamp()
         self.level = level
         self.message = message
         self.node_id = node_id
+        self.error_class = error_class
 
     def dump(self) -> WorkflowError:
         return WorkflowError(
@@ -76,6 +100,7 @@ class WorkflowException(RuntimeError):
                 else str(self.__cause__)
             ),
             traceback=format_exception(self),
+            error_class=self.error_class,
         )
 
     @classmethod
@@ -150,8 +175,9 @@ class NodeException(WorkflowException):
         *,
         node: "Node",
         level: StakeholderLevel,
+        error_class: ErrorClass | None = None,
     ):
-        super().__init__(message, level=level, node_id=node.id)
+        super().__init__(message, level=level, node_id=node.id, error_class=error_class)
         self.node = node
 
     @classmethod
@@ -254,8 +280,9 @@ class ShouldRetry(NodeException):
         node: "Node",
         level: StakeholderLevel,
         backoff: timedelta = timedelta(seconds=1),
+        error_class: ErrorClass | None = None,
     ):
-        super().__init__(message, node=node, level=level)
+        super().__init__(message, node=node, level=level, error_class=error_class)
         self.backoff = backoff
 
 
@@ -419,6 +446,7 @@ class WorkflowErrorsBuilder:
 
 
 __all__ = [
+    "ErrorClass",
     "LegacyWorkflowErrors",
     "NodeException",
     "NodeExpansionException",

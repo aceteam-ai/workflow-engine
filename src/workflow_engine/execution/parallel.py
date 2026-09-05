@@ -20,6 +20,14 @@ from ..core import (
     WorkflowException,
     WorkflowExecutionResult,
 )
+from ..core.boundary import ErrorBoundaryNode
+from .boundary import (
+    BoundaryTracker,
+    abandon_retry_if_blocked,
+    flush_cancellations,
+    handle_failure,
+    materialize,
+)
 from .rate_limit import RateLimitRegistry
 from .retry import RetryTracker
 
@@ -103,6 +111,7 @@ class ParallelExecutionAlgorithm(ExecutionAlgorithm):
         running_tasks: dict[asyncio.Task[NodeResult], str] = {}  # task -> node_id
         errors = WorkflowErrorsBuilder()
         retry_tracker = RetryTracker(default_max_retries=self.max_retries)
+        tracker = BoundaryTracker()
 
         # Track nodes that are waiting for retry (node_id -> input)
         pending_retry: dict[str, DataMapping] = {}
@@ -171,6 +180,17 @@ class ParallelExecutionAlgorithm(ExecutionAlgorithm):
                         try:
                             node_result = task.result()
                         except WorkflowException as e:
+                            if await handle_failure(
+                                tracker,
+                                workflow,
+                                context,
+                                node_id,
+                                e,
+                                ready_nodes=None,
+                                pending_retry=pending_retry,
+                                retry_tracker=retry_tracker,
+                            ):
+                                continue
                             if self.error_handling == ErrorHandlingMode.FAIL_FAST:
                                 await self._cancel_all(running_tasks)
                                 raise
@@ -201,6 +221,15 @@ class ParallelExecutionAlgorithm(ExecutionAlgorithm):
                             node_max_retries = self._get_node_max_retries(node)
                             node_input = node_result.input
 
+                            # A boundary can fail elsewhere in this same
+                            # batch of completions; a member still in
+                            # backoff must not be re-dispatched once that
+                            # happens (fail-fast within the boundary).
+                            if await abandon_retry_if_blocked(
+                                tracker, workflow, context, node_id, node_input
+                            ):
+                                continue
+
                             if retry_tracker.should_retry(node_id, node_max_retries):
                                 retry_tracker.record_retry(node_id, should_retry_error)
                                 pending_retry[node_id] = node_input
@@ -217,7 +246,19 @@ class ParallelExecutionAlgorithm(ExecutionAlgorithm):
                                 )
                                 continue
 
-                            # Max retries exceeded - treat as failure
+                            # Max retries exceeded - contain in a boundary if
+                            # any, otherwise treat as a run-level failure.
+                            if await handle_failure(
+                                tracker,
+                                workflow,
+                                context,
+                                node_id,
+                                should_retry_error,
+                                ready_nodes=None,
+                                pending_retry=pending_retry,
+                                retry_tracker=retry_tracker,
+                            ):
+                                continue
                             if self.error_handling == ErrorHandlingMode.FAIL_FAST:
                                 await self._cancel_all(running_tasks)
                                 raise should_retry_error
@@ -227,9 +268,30 @@ class ParallelExecutionAlgorithm(ExecutionAlgorithm):
                                 continue
 
                         if isinstance(node_result.result, ValidatedWorkflow):
+                            if isinstance(node, ErrorBoundaryNode):
+                                tracker.register(
+                                    node_id=node_id,
+                                    node=node,
+                                    input=node_result.input,
+                                    input_type=input_type,
+                                    output_type=output_type,
+                                    subgraph=node_result.result,
+                                )
                             expansions_pending.append((node_id, node_result.result))
                         elif isinstance(node_result.result, Exception):
                             # Handle exception stored in NodeResult
+                            assert isinstance(node_result.result, WorkflowException)
+                            if await handle_failure(
+                                tracker,
+                                workflow,
+                                context,
+                                node_id,
+                                node_result.result,
+                                ready_nodes=None,
+                                pending_retry=pending_retry,
+                                retry_tracker=retry_tracker,
+                            ):
+                                continue
                             if self.error_handling == ErrorHandlingMode.FAIL_FAST:
                                 await self._cancel_all(running_tasks)
                                 raise node_result.result
@@ -254,14 +316,56 @@ class ParallelExecutionAlgorithm(ExecutionAlgorithm):
                             for nid, inp in workflow.get_ready_nodes(
                                 node_outputs=node_outputs,
                             ).items()
-                            if nid not in skip
+                            if nid not in skip and not tracker.is_blocked(nid)
                         }
                     else:
-                        ready_nodes = workflow.get_ready_successors(
-                            completed_this_batch,
-                            node_outputs,
-                            skip=skip,
-                        )
+                        ready_nodes = {
+                            nid: inp
+                            for nid, inp in workflow.get_ready_successors(
+                                completed_this_batch,
+                                node_outputs,
+                                skip=skip,
+                            ).items()
+                            if not tracker.is_blocked(nid)
+                        }
+
+                    # A boundary can become materializable here either
+                    # because it just failed above, or because this batch's
+                    # completions were the last thing it was waiting on to
+                    # drain (a member finishing or yielding).
+                    node_yields_set = set(node_yields)
+                    for b in tracker.pending():
+                        if tracker.can_materialize(
+                            b, in_flight=in_flight, node_yields=node_yields_set
+                        ):
+                            await flush_cancellations(
+                                tracker,
+                                workflow,
+                                context,
+                                b,
+                                node_outputs=node_outputs,
+                                in_flight=in_flight,
+                                node_yields=node_yields_set,
+                            )
+                            out_id = await materialize(
+                                tracker, workflow, context, b, node_outputs
+                            )
+                            newly_ready = workflow.get_ready_successors(
+                                [out_id],
+                                node_outputs,
+                                skip=set(node_outputs)
+                                | set(ready_nodes)
+                                | in_flight
+                                | pending_set
+                                | node_yields_set,
+                            )
+                            ready_nodes.update(
+                                {
+                                    nid: inp
+                                    for nid, inp in newly_ready.items()
+                                    if not tracker.is_blocked(nid)
+                                }
+                            )
 
                     for node_id, node_input in ready_nodes.items():
                         task = asyncio.create_task(
@@ -275,6 +379,23 @@ class ParallelExecutionAlgorithm(ExecutionAlgorithm):
                             )
                         )
                         running_tasks[task] = node_id
+
+                # Held boundaries (a member yielded) report the members that
+                # will not run this pass, even though they have not
+                # materialized. Nothing is in flight once the main loop has
+                # exited, so a still-pending boundary here can only be held
+                # open by a yielded member.
+                for b in tracker.pending():
+                    assert len(node_yields) > 0
+                    await flush_cancellations(
+                        tracker,
+                        workflow,
+                        context,
+                        b,
+                        node_outputs=node_outputs,
+                        in_flight=frozenset(),
+                        node_yields=frozenset(node_yields),
+                    )
 
                 # Short-circuit before attempting full output if errors were
                 # collected in CONTINUE mode, to avoid masking real errors with

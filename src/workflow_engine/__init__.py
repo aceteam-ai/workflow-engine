@@ -5,6 +5,7 @@ __version__ = "2.0.0rc15"
 from .core import (
     JSON,
     BooleanValue,
+    CancelReason,
     Caster,
     Data,
     DataMapping,
@@ -12,6 +13,7 @@ from .core import (
     DateValue,
     Edge,
     Empty,
+    ErrorBoundaryNode,
     ErrorClass,
     ErrorClassValue,
     ExecutionAlgorithm,
@@ -70,6 +72,7 @@ from .core import (
 __all__ = [
     "JSON",
     "BooleanValue",
+    "CancelReason",
     "Caster",
     "Data",
     "DataMapping",
@@ -77,6 +80,7 @@ __all__ = [
     "DateValue",
     "Edge",
     "Empty",
+    "ErrorBoundaryNode",
     "ErrorClass",
     "ErrorClassValue",
     "ExecutionAlgorithm",

@@ -45,7 +45,7 @@ from workflow_engine.files import (
 )
 
 # Ensure node types are registered (needed for WorkflowValue schema)
-from workflow_engine.nodes import AddNode  # noqa: F401
+from workflow_engine.nodes import AddNode, AttemptNode, ConstantStringNode  # noqa: F401
 
 
 def _value_type_roundtrip(value_cls: ValueType) -> ValueType:
@@ -637,3 +637,37 @@ def test_data_field_result_of_string_map_roundtrips():
     value_type = Result[StringMapValue[IntegerValue]]
     value = value_type.ok(StringMapValue[IntegerValue]({"a": IntegerValue(1)}))
     _data_field_value_roundtrip(value_type, value)
+
+
+# --- Node serialization with an inline Workflow param (#201) ---
+
+
+@pytest.mark.unit
+def test_attempt_node_roundtrip_with_inline_workflow():
+    """
+    AttemptNode's params carry an inline WorkflowValue, the same shape
+    ForEachNode uses (#199/#201): dump to a plain dict and rebuild via
+    model_validate, and the reconstructed node must be equal to the
+    original, including its nested inline workflow.
+    """
+    from workflow_engine.core.edge import Edge
+    from workflow_engine.core.engine import WorkflowEngine
+    from workflow_engine.core.workflow import Workflow
+
+    engine = WorkflowEngine()
+    inner = Workflow(
+        input_node=engine.create_input_node(x=StringValue),
+        inner_nodes=[
+            engine.create_node(ConstantStringNode, id="c", params=dict(value="hello")),
+        ],
+        output_node=engine.create_output_node(y=StringValue),
+        edges=[
+            Edge(source_id="c", source_key="value", target_id="output", target_key="y"),
+        ],
+    )
+    node = engine.create_node(AttemptNode, id="attempt", params=dict(workflow=inner))
+
+    dumped = node.model_dump(mode="json")
+    rebuilt = AttemptNode.model_validate(dumped)
+
+    assert rebuilt.model_dump(mode="json") == dumped
