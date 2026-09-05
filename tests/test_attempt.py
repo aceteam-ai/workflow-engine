@@ -201,6 +201,12 @@ class DownstreamEchoNode(Node[ProbeOutput, ProbeOutput, Params]):
 class FailOnceRetryParams(Params):
     fail_count: IntegerValue
     backoff_ms: IntegerValue = IntegerValue(10)
+    # Artificial delay before raising, so this node's ShouldRetry can be
+    # forced into a later dispatch batch than an instant sibling failure
+    # (deterministically exercising the "already blocked" path rather than
+    # relying on same-batch processing order, which asyncio does not
+    # guarantee).
+    delay_ms: IntegerValue = IntegerValue(0)
 
 
 class FailOnceRetryNode(Node[Empty, ProbeOutput, FailOnceRetryParams]):
@@ -234,6 +240,8 @@ class FailOnceRetryNode(Node[Empty, ProbeOutput, FailOnceRetryParams]):
         output_type: Type[ProbeOutput],
         input: Empty,
     ) -> ProbeOutput:
+        if self.params.delay_ms.root > 0:
+            await asyncio.sleep(self.params.delay_ms.root / 1000)
         n = FailOnceRetryNode.calls.get(self.id, 0) + 1
         FailOnceRetryNode.calls[self.id] = n
         if n <= self.params.fail_count.root:
@@ -1090,7 +1098,16 @@ class TestRetryAbandoned:
         retrying = engine.create_node(
             FailOnceRetryNode,
             id="r",
-            params=dict(fail_count=IntegerValue(5), backoff_ms=IntegerValue(5000)),
+            params=dict(
+                fail_count=IntegerValue(5),
+                backoff_ms=IntegerValue(5000),
+                # Forces this node's ShouldRetry into a dispatch batch after
+                # "boom" has already failed and failed the boundary, rather
+                # than leaving same-batch processing order (which asyncio
+                # does not guarantee) to decide whether the regression this
+                # test targets is actually exercised.
+                delay_ms=IntegerValue(30),
+            ),
         )
         failing = engine.create_node(
             FailingNode,
@@ -1133,6 +1150,51 @@ class TrivialIdentityOutput(Data):
     v: StringValue
 
 
+class SeqGateInput(Data):
+    items: SequenceValue[StringValue]
+
+
+class SeqGateNode(Node[SeqGateInput, SeqGateInput, AttemptSlowParams]):
+    """
+    Delays, then passes its input through unchanged.
+
+    Used only to force an "unrelated" node's own dispatch (and therefore its
+    expansion) into a dispatch batch strictly after some other, unrelated
+    part of the graph has already settled, rather than leaving that ordering
+    to same-tick asyncio scheduling (which is not guaranteed, and observed
+    to be flaky here across repeated runs).
+    """
+
+    TYPE_INFO: ClassVar[NodeTypeInfo] = NodeTypeInfo.from_parameter_type(
+        display_name="AttemptTestSeqGate",
+        description="Test helper that delays before passing a sequence through.",
+        version="1.0.0",
+        parameter_type=AttemptSlowParams,
+    )
+
+    @classmethod
+    @override
+    def static_input_type(cls) -> Type[SeqGateInput]:
+        return SeqGateInput
+
+    @classmethod
+    @override
+    def static_output_type(cls) -> Type[SeqGateInput]:
+        return SeqGateInput
+
+    @override
+    async def run(
+        self,
+        *,
+        context: ExecutionContext,
+        input_type: Type[SeqGateInput],
+        output_type: Type[SeqGateInput],
+        input: SeqGateInput,
+    ) -> SeqGateInput:
+        await asyncio.sleep(self.params.delay_ms.root / 1000)
+        return SeqGateInput(items=input.items)
+
+
 class TestBlockedNotReReadied:
     @pytest.mark.asyncio
     async def test_unrelated_expansion_does_not_restart_blocked_member(self):
@@ -1167,15 +1229,26 @@ class TestBlockedNotReReadied:
         for_each = engine.create_node(
             ForEachNode, id="for_each", params={"workflow": identity_inner}
         )
+        # "attempt" (0-input at the outer level) expands and dispatches its
+        # members ("boom", "c") in the first couple of batches, all
+        # essentially instant. "gate" deliberately takes long enough that,
+        # by the time it releases "for_each"'s own dispatch (and therefore
+        # its expansion, the "unrelated" one this test is about), "boom" has
+        # long since failed the boundary and "c"'s output is already
+        # sitting in node_outputs.
+        gate = engine.create_node(
+            SeqGateNode, id="gate", params=dict(delay_ms=IntegerValue(30))
+        )
 
         outer = Workflow(
             input_node=engine.create_input_node(items=SequenceValue[StringValue]),
-            inner_nodes=[attempt_node, for_each],
+            inner_nodes=[attempt_node, gate, for_each],
             output_node=engine.create_output_node(
                 results=SequenceValue[StringValue], result=Result[StringValue]
             ),
             edges=[
-                edge("input", "items", "for_each", "sequence"),
+                edge("input", "items", "gate", "items"),
+                edge("gate", "items", "for_each", "sequence"),
                 edge("for_each", "sequence", "output", "results"),
                 edge("attempt", "result", "output", "result"),
             ],
