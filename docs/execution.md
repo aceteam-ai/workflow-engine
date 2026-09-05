@@ -133,3 +133,21 @@ Some nodes (like `ForEach`, `If`, `IfElse`) are composite: they expand into sub-
 3. Execution continues with the expanded graph
 
 This expansion happens dynamically during execution, not at workflow construction time.
+
+## Error Boundaries
+
+`attempt` (`AttemptNode`, see [`schema/attempt.md`](../schema/attempt.md)) runs an inner workflow inside an error boundary, producing `Result[B]` instead of letting a failure inside it propagate to the run. It is an expanding node like `ForEach`, marked by the core-level `ErrorBoundaryNode` ABC. Both execution algorithms register a boundary at the single site where an `ErrorBoundaryNode` expands, keyed by the node's flat id; membership of every other node is a `/`-prefix test on that id, so ids stay flat and downstream ledger, resume, and pin machinery keeps working unmodified. Nesting is supported: a failure fails the innermost enclosing boundary, and an outer boundary's own failure blocks (and, once nothing under it is in flight or yielded, sweeps) everything inside it.
+
+### Semantics
+
+- **Contained, not classified.** Boundary containment is orthogonal to `ErrorHandlingMode`: a boundary-contained error never reaches run-level `errors`, in `FAIL_FAST` or `CONTINUE` mode.
+- **Yield wins.** If any member of a boundary has yielded in the current pass, the boundary does not materialize `err` in that pass. New scheduling inside the boundary still stops (fail-fast within the boundary: not-yet-dispatched members are reported cancelled, not run), in-flight members drain, the run returns `YIELDED`, and the boundary is re-evaluated from scratch on the resume pass. This is a deliberate divergence from run-level precedence (where, in `CONTINUE` mode, an unboundaried error takes precedence over a yield) because the boundary's whole purpose is to keep the run alive for a later resume, and a partially-committed `err` while a member is still suspended would either strand that member's remote work or invite an arm flip on the next pass.
+- **Drain, not kill.** A member already dispatched when its boundary fails runs to its own completion (success, failure, or yield) and gets its normal terminal hook (`on_node_finish` / `on_node_error` / `on_node_yield`). Nothing calls `task.cancel()` on a boundary member.
+- **Retries pass through.** A member's own `ShouldRetry` handling is unaffected by being inside a boundary. If retries are exhausted, that becomes the boundary's failure like any other. A member still in backoff when its boundary fails is not re-dispatched; it is reported cancelled instead (see below).
+
+### Hooks
+
+Two `ExecutionContext` hooks exist for boundaries, both with safe default implementations so a host that does not override them is unaffected:
+
+- `on_node_cancelled(node, input_type, output_type, input, boundary_id, reason, cause)`: fires once per pass for each member of a failed boundary that will not run this pass. `reason` is a `CancelReason`: `NOT_SCHEDULED` (the boundary failed before this member was dispatched; `input` is `None`) or `RETRY_ABANDONED` (the member was in `ShouldRetry` backoff; `input` is its input). Never fires for a member that was in flight (it gets its normal terminal hook instead), nor for a yielded member, nor for the boundary's own output node.
+- `on_boundary_error(node, input_type, output_type, input, error, output, cause)`: fires when a boundary materializes its `err` arm, after every member has settled and none yielded this pass. `node` is the boundary node itself (e.g. the `AttemptNode`); `output` is the mapping about to be written as the output of its output node, returnable (possibly replaced) like `on_node_finish`. A host that persists `output` against `node.id` may safely short-circuit the whole boundary from `on_node_start` on a later pass, since by construction nothing inside is suspended when this hook fires.
