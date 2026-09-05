@@ -425,6 +425,39 @@ def test_date_schema_roundtrip():
 
 
 @pytest.mark.unit
+def test_date_schema_has_no_docstring_description():
+    """
+    DateValue has a class docstring. Pydantic seeds a model's JSON Schema
+    `description` from the class docstring by default, so this docstring
+    would otherwise leak into published output the same way Value's did for
+    SequenceValue[Value]/StringMapValue[Value] before that leak was fixed.
+    """
+    schema = DateValue.to_value_schema()
+    assert schema.description is None
+
+
+@pytest.mark.unit
+def test_open_containers_have_no_leaked_docstring_description():
+    """
+    SequenceValue[Value].to_value_schema() used to emit an item schema whose
+    `description` was the entire Value class docstring (see
+    test_sequence_and_string_map_of_value_are_symmetric in
+    test_schema_roundtrip.py for the round-trip fix). Confirm the leak is
+    gone on both containers: with items/additionalProperties now `True`
+    there is no item schema object left to carry a description at all.
+    """
+    from workflow_engine.core.values.value import Value
+
+    sequence_schema = SequenceValue[Value].to_value_schema()
+    assert isinstance(sequence_schema, SequenceValueSchema)
+    assert sequence_schema.items is True
+
+    string_map_schema = StringMapValue[Value].to_value_schema()
+    assert isinstance(string_map_schema, StringMapValueSchema)
+    assert string_map_schema.additionalProperties is True
+
+
+@pytest.mark.unit
 def test_date_schema_manual():
     T = DateValue
     json_schema = {
@@ -616,6 +649,41 @@ def test_sequence_schema_aliasing():
 
 
 @pytest.mark.unit
+def test_sequence_schema_manual_bare_array():
+    """
+    A bare {"type": "array"} (no items) builds SequenceValue[Value], the
+    fully-open sequence, the same way a bare {"type": "object"} builds
+    StringMapValue[Value] (see test_string_map_schema_manual_bare_object).
+    """
+    from workflow_engine.core.values.value import Value
+
+    json_schema = {"type": "array"}
+    schema = validate_value_schema(json_schema)
+    assert isinstance(schema, SequenceValueSchema)
+    assert schema.items is True
+    U = schema.to_value_cls()
+    assert U == SequenceValue[Value]
+
+
+@pytest.mark.unit
+def test_sequence_schema_manual_explicit_items_true():
+    """
+    A schema with items spelled out explicitly as boolean True (not just
+    omitted, as in test_sequence_schema_manual_bare_array above) also builds
+    SequenceValue[Value]. This is the shape a host that has adopted the
+    matching items:true host-schema change is expected to emit.
+    """
+    from workflow_engine.core.values.value import Value
+
+    json_schema = {"type": "array", "items": True}
+    schema = validate_value_schema(json_schema)
+    assert isinstance(schema, SequenceValueSchema)
+    assert schema.items is True
+    U = schema.to_value_cls()
+    assert U == SequenceValue[Value]
+
+
+@pytest.mark.unit
 def test_union_schema_roundtrip():
     T = resolve_union_type(UnionValue[FloatValue, SequenceValue[FloatValue]])
     schema = T.to_value_schema()
@@ -723,6 +791,23 @@ def test_string_map_schema_manual():
         assert isinstance(schema.additionalProperties, ItemSchema)
         U = schema.to_value_cls()
         assert U == T
+
+
+@pytest.mark.unit
+def test_string_map_schema_manual_bare_object():
+    """
+    A bare {"type": "object"} (no additionalProperties) builds
+    StringMapValue[Value], the fully-open map, the array analogue of which is
+    test_sequence_schema_manual_bare_array above.
+    """
+    from workflow_engine.core.values.value import Value
+
+    json_schema = {"type": "object"}
+    schema = validate_value_schema(json_schema)
+    assert isinstance(schema, StringMapValueSchema)
+    assert schema.additionalProperties is True
+    U = schema.to_value_cls()
+    assert U == StringMapValue[Value]
 
 
 @pytest.mark.unit

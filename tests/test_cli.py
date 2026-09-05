@@ -81,6 +81,32 @@ def invoke_with_default_config(
 # ---------- schema ----------
 
 
+class TestCompactValueSchema:
+    """Unit tests for ``_compact_value_schema``, independent of any engine."""
+
+    def test_open_containers_render_as_boolean_any(self):
+        """
+        The fully-open item type (bare ``Value``, as in
+        ``SequenceValue[Value]``/``StringMapValue[Value]``) has no
+        ``x-value-type`` to resolve, so it renders as ``items: true`` /
+        ``additionalProperties: true`` rather than the unresolvable
+        ``{"x-value-type": "Value"}`` it used to emit.
+        """
+        from workflow_engine.cli.main import _compact_value_schema
+        from workflow_engine.core.values.mapping import StringMapValue
+        from workflow_engine.core.values.sequence import SequenceValue
+        from workflow_engine.core.values.value import Value
+
+        assert _compact_value_schema(SequenceValue[Value]) == {
+            "type": "array",
+            "items": True,
+        }
+        assert _compact_value_schema(StringMapValue[Value]) == {
+            "type": "object",
+            "additionalProperties": True,
+        }
+
+
 class TestSchema:
     def test_list_includes_concrete_types_and_excludes_generics(
         self, runner: CliRunner
