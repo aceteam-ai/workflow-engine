@@ -236,3 +236,77 @@ async def test_ignoring_hints_does_not_change_result(
     assert unhinted_result.status is WorkflowExecutionResultStatus.SUCCESS
     assert hinted_result.output == unhinted_result.output
     assert hinted_result.output == {"results": [2.0, 4.0, 6.0, 8.0, 10.0]}
+
+
+def test_without_hints_does_not_reach_into_a_nested_workflow(
+    engine: WorkflowEngine,
+):
+    """
+    ``Node.without_hints()`` clears a node's own hints and nothing else. A
+    ForEach carries an entire workflow in ``params.workflow``, and hints on
+    the nodes inside that nested workflow survive stripping.
+
+    This does not break the hints contract: no execution code reads
+    ``Node.hints`` at any depth, so a surviving nested hint still cannot
+    change a result. It does mean ``without_hints()`` is shallower than
+    "erase every node's hints" suggests, and that the contract test's
+    "stripped twin" is only stripped at the top level.
+
+    Pinned here so the limitation is a known, deliberate boundary rather
+    than an assumption someone later relies on. See the follow-up issue for
+    making it recurse.
+    """
+    inner = _double_workflow(engine)
+    hinted_inner = inner.model_update(
+        inner_nodes=[
+            node.model_update(hints=Hints(max_concurrency=7))
+            for node in inner.inner_nodes
+        ],
+    )
+    assert any(node.hints.max_concurrency == 7 for node in hinted_inner.inner_nodes), (
+        "fixture should have hinted at least one inner node"
+    )
+
+    outer = Workflow(
+        input_node=(
+            input_node := engine.create_input_node(sequence=SequenceValue[FloatValue])
+        ),
+        output_node=(
+            output_node := engine.create_output_node(results=SequenceValue[FloatValue])
+        ),
+        inner_nodes=[
+            for_each := engine.create_node(
+                ForEachNode,
+                id="for_each",
+                params=dict(workflow=hinted_inner),
+                hints=Hints(max_concurrency=1),
+            ),
+        ],
+        edges=[
+            Edge.from_nodes(
+                source=input_node,
+                source_key="sequence",
+                target=for_each,
+                target_key="sequence",
+            ),
+            Edge.from_nodes(
+                source=for_each,
+                source_key="sequence",
+                target=output_node,
+                target_key="results",
+            ),
+        ],
+    )
+
+    stripped = outer.without_hints()
+
+    # The top level is stripped, as documented.
+    for node in stripped.nodes:
+        assert node.hints == Hints()
+
+    # The nested workflow is not.
+    nested = stripped.nodes_by_id["for_each"].params.workflow.root
+    assert any(node.hints.max_concurrency == 7 for node in nested.inner_nodes), (
+        "expected nested hints to survive; if this now fails, without_hints() "
+        "recurses and this test should be replaced with the positive assertion"
+    )
