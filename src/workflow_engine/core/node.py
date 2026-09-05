@@ -20,7 +20,14 @@ from typing import (
 )
 
 from overrides import final, override
-from pydantic import ConfigDict, Field, ValidationError, model_validator
+from pydantic import (
+    ConfigDict,
+    Field,
+    SerializerFunctionWrapHandler,
+    ValidationError,
+    model_serializer,
+    model_validator,
+)
 from typing_extensions import overload
 
 from ..utils.asynchronous import gather
@@ -258,6 +265,19 @@ class Node(ImmutableBaseModel, Generic[Input_contra, Output, Params_co]):
         every hint.
         """
         return self.model_update(hints=Hints())
+
+    @model_serializer(mode="wrap")
+    def _serialize_omit_empty_hints(self, handler: SerializerFunctionWrapHandler):
+        """
+        Omit the ``hints`` key entirely when it carries nothing (i.e. it
+        serializes the same as a bare ``Hints()``), so a node that has never
+        touched this channel dumps exactly as it did before the channel
+        existed. A node with a real hint set is unaffected.
+        """
+        data = handler(self)
+        if not data.get("hints"):
+            data.pop("hints", None)
+        return data
 
     # --------------------------------------------------------------------------
     # VERSIONING

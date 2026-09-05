@@ -8,6 +8,8 @@ with ``Workflow.without_hints()`` applied, and asserting identical outputs
 under both execution algorithms.
 """
 
+import json
+
 import pytest
 
 from workflow_engine import (
@@ -163,6 +165,58 @@ def test_node_registry_load_preserves_hints(engine: WorkflowEngine):
 
     assert loaded.hints.max_concurrency == 3
     assert loaded.hints.model_dump()["future_hint"] == "value"
+
+
+@pytest.mark.unit
+def test_hints_dump_omits_max_concurrency_when_unset():
+    assert Hints().model_dump() == {}
+
+
+@pytest.mark.unit
+def test_node_dump_has_no_hints_key_when_hint_free(engine: WorkflowEngine):
+    """
+    A node that never touched the hints channel must dump exactly as it did
+    before the channel existed: no ``hints`` key at all, not
+    ``{"hints": {"max_concurrency": null}}``.
+    """
+    node = engine.create_node(AddNode, id="add")
+
+    dumped = node.model_dump()
+    assert "hints" not in dumped
+
+    dumped_json = json.loads(node.model_dump_json())
+    assert "hints" not in dumped_json
+
+
+@pytest.mark.unit
+def test_node_dump_includes_hints_when_a_hint_is_set(engine: WorkflowEngine):
+    """A node that does carry a hint serializes it unchanged."""
+    node = engine.create_node(AddNode, id="add", hints=Hints(max_concurrency=4))
+
+    dumped = node.model_dump()
+
+    assert dumped["hints"] == {"max_concurrency": 4}
+
+
+@pytest.mark.unit
+def test_node_hints_extra_key_survives_node_level_round_trip(engine: WorkflowEngine):
+    """
+    Omit-when-empty must not become omit-what-this-engine-doesn't-recognize:
+    a key this engine doesn't know about, but that was actually set, must
+    still survive a full node dump/validate round trip, not just a bare
+    ``Hints`` round trip.
+    """
+    node = engine.create_node(
+        AddNode,
+        id="add",
+        hints=Hints.model_validate({"future_hint": "clamp-me"}),
+    )
+
+    dumped = node.model_dump()
+    assert dumped["hints"] == {"future_hint": "clamp-me"}
+
+    reloaded = type(node).model_validate(dumped)
+    assert reloaded.hints.model_dump()["future_hint"] == "clamp-me"
 
 
 @pytest.mark.unit
