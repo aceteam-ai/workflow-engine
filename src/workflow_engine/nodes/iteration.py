@@ -34,6 +34,7 @@ from .data import (
     GatherSequenceNode,
     SequenceData,
     SequenceParams,
+    single_field_or_wrapped,
 )
 
 
@@ -107,9 +108,7 @@ class ForEachNode(Node[SequenceData, SequenceData | Empty, ForEachParams]):
     def _output_element_type(self, workflow: ValidatedWorkflow) -> Type[Value]:
         """Only valid when _has_no_output() is False."""
         assert not self._has_no_output(workflow)
-        if self._has_single_output(workflow):
-            return self._output_item_type(workflow)
-        return DataValue[workflow.output_type]
+        return single_field_or_wrapped(workflow.output_type)
 
     @override
     async def dynamic_input_type(

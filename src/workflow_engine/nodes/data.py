@@ -28,8 +28,27 @@ from ..core import (
     ValueType,
 )
 from ..core.values import build_data_type, get_data_dict, get_data_field
+from ..core.values.data import get_field_annotations
 
 V = TypeVar("V", bound=Value)
+
+
+def single_field_or_wrapped(data_type: type[Data]) -> ValueType:
+    """
+    Given a Data type, return the type of its single field if it has exactly
+    one, otherwise ``DataValue[data_type]`` wrapping the whole thing. This
+    also covers the zero-field case: a zero-field ``Data`` does not have
+    exactly one field either, so it falls through to the wrapped form.
+
+    Shared by ``ForEachNode``'s output-collapsing rule (``_output_element_type``,
+    only called when the inner workflow has at least one output field) and
+    ``AttemptNode``'s ``B`` rule for its ``Result[B]`` output.
+    """
+    fields = get_field_annotations(data_type)
+    if len(fields) == 1:
+        (field_type,) = fields.values()
+        return field_type
+    return DataValue[data_type]
 
 
 ################################################################################
@@ -440,4 +459,5 @@ __all__ = [
     "GatherDataNode",
     "GatherMappingNode",
     "GatherSequenceNode",
+    "single_field_or_wrapped",
 ]

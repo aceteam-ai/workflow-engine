@@ -71,6 +71,13 @@ class RetryTracker:
         state.last_error = error
         state.schedule_retry(error.backoff)
 
+    def discard(self, node_id: str) -> None:
+        """
+        Drop any retry state tracked for a node, e.g. because it is a member
+        of an error boundary that just failed and will not be re-dispatched.
+        """
+        self.states.pop(node_id, None)
+
     def get_pending_retries(self) -> list[str]:
         """Get nodes that are waiting for retry (in backoff)."""
         return [

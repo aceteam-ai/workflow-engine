@@ -6,10 +6,11 @@ from typing import TypeVar
 from overrides import EnforceOverrides
 
 from ..utils.env import get_env as _resolve_env_var
+from .boundary import CancelReason
 from .error import ShouldRetry, ShouldYield, WorkflowErrors, WorkflowException
 from .execution import WorkflowExecutionResult
 from .node import Node, NodeRegistry
-from .values import Data, DataMapping, FileValue, ValueRegistry
+from .values import Data, DataMapping, FileValue, ResultError, ValueRegistry
 from .workflow import ValidatedWorkflow, Workflow
 
 F = TypeVar("F", bound=FileValue)
@@ -187,6 +188,72 @@ class ExecutionContext(ABC, EnforceOverrides):
         attempt: the retry attempt number (1 for first retry, 2 for second, etc.)
         """
         pass
+
+    async def on_node_cancelled(
+        self,
+        *,
+        node: Node,
+        input_type: type[Data],
+        output_type: type[Data],
+        input: DataMapping | None,
+        boundary_id: str,
+        reason: CancelReason,
+        cause: WorkflowException,
+    ) -> None:
+        """
+        A hook that fires once per pass for each member of a failed error
+        boundary (see ``nodes/attempt.py``) that will not run this pass.
+
+        NOT_SCHEDULED: the boundary failed before this node was dispatched;
+        ``input`` is None because an upstream member never completed.
+        RETRY_ABANDONED: the node was in ``ShouldRetry`` backoff and is not
+        re-dispatched; ``input`` is the node's input.
+
+        ``cause`` is the exception that failed the boundary; ``cause.node_id``
+        is the sibling that failed, which may differ from ``node.id``.
+
+        Never fires for a node that was in flight when the boundary failed
+        (it gets its normal ``on_node_finish`` / ``on_node_error`` /
+        ``on_node_yield`` instead), nor for a yielded node, nor for the
+        boundary's own output node (which gets ``on_boundary_error`` instead,
+        once the boundary actually materializes).
+
+        In a pass where the boundary is held open by a yielded member (see
+        ``on_boundary_error``), this disposition is per pass: a node reported
+        cancelled here may still run on a later, resumed pass.
+        """
+        pass
+
+    async def on_boundary_error(
+        self,
+        *,
+        node: Node,
+        input_type: type[Data],
+        output_type: type[Data],
+        input: DataMapping,
+        error: ResultError,
+        output: DataMapping,
+        cause: WorkflowException,
+    ) -> DataMapping:
+        """
+        A hook that fires when an error boundary (see ``nodes/attempt.py``)
+        materializes its err arm: every member has settled, and none yielded
+        in this pass.
+
+        node: the boundary node itself (e.g. the ``AttemptNode``).
+        input: the input the boundary node was expanded with.
+        error: the structured error being materialized.
+        output: the mapping about to be written as the output of the
+                boundary's own output node.
+        cause: the exception that failed the boundary.
+
+        Return the output (possibly replaced), mirroring ``on_node_finish``.
+        A host that persists ``output`` against ``node.id`` may short-circuit
+        the whole boundary on a later pass from ``on_node_start``: that is
+        safe here specifically because, by construction, nothing inside the
+        boundary is suspended when this hook fires.
+        """
+        return output
 
     async def on_node_finish(
         self,
