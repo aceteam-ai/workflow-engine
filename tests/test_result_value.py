@@ -288,6 +288,121 @@ def test_nested_result_schema_round_trips_from_raw_json():
     assert _round_trip_from_raw_json(value_cls) is value_cls
 
 
+# --- __get_pydantic_json_schema__: model_json_schema() matches to_value_schema() (#220) ---
+#
+# Result[T]'s raw Pydantic schema (model_json_schema()) used to publish a
+# different shape than to_value_schema(): a discriminated union of the
+# internal _OkRoot[T] / _ErrRoot models, rather than the published ok/err
+# wire shape (schema/result.md). A __get_pydantic_json_schema__ hook on
+# Result makes model_json_schema() a projection of to_value_schema(), so
+# callers that hand raw model_json_schema() output to validate_value_schema()
+# (rather than going through to_value_schema()/get_data_schema()) see the
+# same shape everyone else does.
+
+
+@pytest.mark.unit
+def test_model_json_schema_matches_to_value_schema():
+    """
+    validate_value_schema(Result[T].model_json_schema()) equals
+    Result[T].to_value_schema(). This is the invariant the hook exists to
+    keep true: to_value_schema() is canonical, and Pydantic's own schema
+    generation is a projection of it, not a second, independent shape.
+    """
+    value_cls = Result[FloatValue]
+    assert validate_value_schema(value_cls.model_json_schema()) == (
+        value_cls.to_value_schema()
+    )
+
+
+@pytest.mark.unit
+def test_nested_model_json_schema_matches_to_value_schema():
+    """The same invariant holds for Result[Result[T]], nested one level."""
+    value_cls = Result[Result[IntegerValue]]
+    assert validate_value_schema(value_cls.model_json_schema()) == (
+        value_cls.to_value_schema()
+    )
+
+
+@pytest.mark.unit
+def test_model_json_schema_is_not_a_discriminated_union():
+    """
+    Pydantic's default schema for Result[T] (an untagged discriminated union
+    of _OkRoot[T] / _ErrRoot, keyed by "oneOf"/"discriminator") must not leak
+    through. model_json_schema() should publish the same ok/err object shape
+    as to_value_schema(), not the internal representation.
+    """
+    schema = Result[FloatValue].model_json_schema()
+    assert "oneOf" not in schema
+    assert "discriminator" not in schema
+    assert schema["type"] == "object"
+    assert "ok" in schema
+    assert "err" in schema
+
+
+def _find_ref_keys(node: object, path: str = "") -> list[str]:
+    """Collect the path of every "$ref" or "ref" key found anywhere in *node*."""
+    found: list[str] = []
+    if isinstance(node, dict):
+        for key, value in node.items():
+            if key in ("$ref", "ref"):
+                found.append(f"{path}/{key}")
+            found.extend(_find_ref_keys(value, f"{path}/{key}"))
+    elif isinstance(node, list):
+        for index, item in enumerate(node):
+            found.extend(_find_ref_keys(item, f"{path}[{index}]"))
+    return found
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    "value_cls",
+    [
+        pytest.param(Result[FloatValue], id="Result[FloatValue]"),
+        pytest.param(Result[Result[IntegerValue]], id="Result[Result[IntegerValue]]"),
+    ],
+)
+def test_model_json_schema_has_no_ref_anywhere(value_cls: type[Result]):
+    """
+    model_json_schema() must be fully self-contained: no "$ref" (or the
+    unaliased "ref") anywhere, at any depth. A $ref that Pydantic did not
+    generate itself, such as the err arm's own independently-generated
+    ResultError schema, is invisible to Pydantic's $ref bookkeeping: it scans
+    the whole assembled document for the literal key "$ref" and requires
+    each one to resolve against definitions it generated itself, which a
+    self-contained, independently-generated $defs block never satisfies even
+    though it is internally consistent. Inlining every reference, rather
+    than re-spelling the key to dodge that scan, is what keeps this the same
+    shape to_value_schema() publishes.
+    """
+    schema = value_cls.model_json_schema()
+    assert _find_ref_keys(schema) == []
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    "value_cls",
+    [
+        pytest.param(Result[FloatValue], id="Result[FloatValue]"),
+        pytest.param(Result[Result[IntegerValue]], id="Result[Result[IntegerValue]]"),
+    ],
+)
+def test_model_json_schema_exactly_equals_to_value_schema_dump(
+    value_cls: type[Result],
+):
+    """
+    Result[T].model_json_schema() equals
+    Result[T].to_value_schema().model_dump(mode="json", by_alias=True)
+    exactly, key for key, not just after both are re-parsed back through
+    validate_value_schema(). Parsing alone is too weak a check here: it
+    resolves by name rather than by JSON Pointer, so it would pass even if
+    the two spellings disagreed on $ref/$defs vs a self-contained,
+    fully-inlined shape.
+    """
+    assert value_cls.model_json_schema() == value_cls.to_value_schema().model_dump(
+        mode="json", by_alias=True
+    )
+
+
 # --- Casting: Result[S] -> Result[T] when S can cast to T ---
 
 
