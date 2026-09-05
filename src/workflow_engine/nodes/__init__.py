@@ -51,6 +51,12 @@ from .error import (
 from .iteration import (
     ForEachNode,
 )
+from .result import (
+    AllOkNode,
+    FirstErrorNode,
+    PartitionNode,
+    UnwrapOrNode,
+)
 from .text import (
     AppendToFileNode,
 )
@@ -58,6 +64,7 @@ from .text import (
 __all__ = [
     "AbsoluteValueNode",
     "AddNode",
+    "AllOkNode",
     "AndNode",
     "AppendToFileNode",
     "ConditionalInput",
@@ -71,6 +78,7 @@ __all__ = [
     "ExpandMappingNode",
     "ExpandSequenceNode",
     "FactorizationNode",
+    "FirstErrorNode",
     "ForEachNode",
     "GatherDataNode",
     "GatherMappingNode",
@@ -89,8 +97,10 @@ __all__ = [
     "NotNode",
     "NowNode",
     "OrNode",
+    "PartitionNode",
     "PowerNode",
     "RoundNode",
     "SubtractNode",
     "SumNode",
+    "UnwrapOrNode",
 ]
