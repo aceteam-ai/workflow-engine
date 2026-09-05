@@ -14,6 +14,7 @@ This project uses [PEP 440](https://peps.python.org/pep-0440/) versioning with r
 
 ### Fixed
 
+- **Hints no longer serialize when empty** (#217): a `Node` with no hints set now dumps with no `hints` key at all, instead of `{"hints": {"max_concurrency": null}}`. The hints channel (#203) was opt-in, but its addition had changed the serialized form of every existing node regardless of whether it used the feature. `max_concurrency` is omitted from a `Hints` dump when unset, and `hints` is omitted from a `Node` dump when it carries nothing, so a hint-free graph now round-trips byte-identical to its pre-hints form. A node that does carry a hint, or a `Hints` key this engine doesn't recognize (`extra="allow"`), still serializes unchanged.
 - Removed the stale `License :: OSI Approved :: MIT License` classifier from `pyproject.toml`, which contradicted the `license = "LicenseRef-Elastic-2.0"` field set during the relicense in #184. There is no OSI classifier for Elastic License 2.0, so the `license` field alone now stands (#207).
 
 ### Changed
