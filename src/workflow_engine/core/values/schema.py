@@ -309,8 +309,19 @@ class BaseValueSchema(ImmutableBaseModel):
         """
         Builds a Pydantic class from this schema. References, if any, are
         resolved using self.defs first, then any extra_defs in order of decreasing precedence.
+
+        Only reached for the catch-all ``Any`` shape (a bare
+        ``BaseValueSchema``): every other member of the ``ValueSchema`` union
+        overrides this method. That shape is also what a schema falls back to
+        when it fails to match any of the more specific members, e.g. a bare
+        ``items: {}``, ``additionalProperties: {}``, ``{}``, or a leaked
+        ``oneOf``. Name the offending schema in the error, rather than raising
+        a bare message that gives no clue which call produced it.
         """
-        raise NotImplementedError("Subclasses must implement this method")
+        raise NotImplementedError(
+            f"Cannot build a value class: schema matched no known "
+            f"ValueSchema shape: {self!r}"
+        )
 
     def to_field_info(
         self,
@@ -453,14 +464,17 @@ class ResultValueSchema(BaseValueSchema):
 
 class SequenceValueSchema(BaseValueSchema):
     type: Final[Literal["array"]]
-    items: ValueSchema
+    items: ValueSchema | Literal[True] = True
 
     @override
     def build_value_cls(
         self,
         *extra_defs: Mapping[str, ValueSchema],
     ) -> type[SequenceValue]:
-        T = self.items.to_value_cls(self.defs, *extra_defs)
+        if self.items is True:
+            T = Value
+        else:
+            T = self.items.to_value_cls(self.defs, *extra_defs)
         extras = dict(self.model_extra or {})
         if not extras:
             return SequenceValue[T]

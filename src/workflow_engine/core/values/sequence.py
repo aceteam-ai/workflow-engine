@@ -1,13 +1,18 @@
 # workflow_engine/core/values/sequence.py
 
 from collections.abc import Iterator, Sequence
-from typing import TYPE_CHECKING, Any, Generic, TypeVar, cast
+from typing import TYPE_CHECKING, Any, Generic, Literal, TypeVar, cast
 
 from overrides import override
 
 from ...utils.asynchronous import gather
 from .primitives import IntegerValue
-from .value import Caster, Value, get_origin_and_args
+from .value import (
+    Caster,
+    Value,
+    get_origin_and_args,
+    model_json_schema_without_docstring,
+)
 
 if TYPE_CHECKING:
     from ..context import ExecutionContext
@@ -53,6 +58,11 @@ class SequenceValue(Value[Sequence[T]], Generic[T]):
         Constraints (``minItems``/``maxItems``) and any other schema-level
         extras still come from ``model_json_schema()``, since those describe
         this sequence itself, not its item type.
+
+        ``SequenceValue[Value]`` (the fully-open sequence, used when a
+        schema's ``items`` is bare ``True``) has no concrete item type to
+        delegate to, so it round-trips as ``items: True`` directly, matching
+        ``SequenceValueSchema.build_value_cls()``.
         """
         from .schema import SequenceValueSchema
 
@@ -62,13 +72,17 @@ class SequenceValue(Value[Sequence[T]], Generic[T]):
             return super().to_value_schema()
         (item_type,) = args
 
-        raw = dict(cls.model_json_schema())
+        raw = dict(model_json_schema_without_docstring(cls))
         raw.pop("$defs", None)
         raw.pop("items", None)
 
+        items: "ValueSchema | Literal[True]" = (
+            True if item_type is Value else item_type.to_value_schema()
+        )
+
         return SequenceValueSchema(
             **raw,
-            items=item_type.to_value_schema(),
+            items=items,
             value_type=cls.__name__,
         )
 

@@ -1,6 +1,7 @@
 # workflow_engine/core/values/value.py
 from __future__ import annotations
 
+import inspect
 import re
 from abc import ABC, abstractmethod
 from collections.abc import Iterable, Mapping
@@ -9,6 +10,7 @@ from hashlib import md5
 from logging import getLogger
 from typing import (
     TYPE_CHECKING,
+    Any,
     Awaitable,
     ClassVar,
     Generic,
@@ -23,6 +25,7 @@ from typing import (
 
 from overrides import override
 from pydantic import PrivateAttr
+from pydantic.json_schema import GenerateJsonSchema
 
 from ...utils.asynchronous import is_coroutine
 from ...utils.model import ImmutableRootModel
@@ -122,6 +125,36 @@ class GenericCaster(Protocol, Generic[SourceType, TargetType]):  # type: ignore
 
 
 generic_pattern = re.compile(r"^[a-zA-Z]\w+\[.*\]$")
+
+
+class _NoDocstringGenerateJsonSchema(GenerateJsonSchema):
+    """
+    Pydantic seeds a model's JSON Schema ``description`` from the class's own
+    docstring by default (``GenerateJsonSchema.model_schema``, called for
+    *cls* itself and for every nested model reachable through ``$defs``).
+    That is an implementation detail of the Python source, not part of the
+    published wire contract, so drop it here instead of at every call site
+    that turns a Value or Data class into a schema.
+    """
+
+    @override
+    def model_schema(self, schema: Any) -> dict[str, Any]:
+        json_schema = super().model_schema(schema)
+        cls = schema["cls"]
+        if cls.__doc__ and json_schema.get("description") == inspect.cleandoc(
+            cls.__doc__
+        ):
+            del json_schema["description"]
+        return json_schema
+
+
+def model_json_schema_without_docstring(cls: type) -> dict[str, Any]:
+    """
+    Like ``cls.model_json_schema()``, but without Pydantic's default
+    docstring-derived ``description`` on *cls* itself or on any nested model
+    reachable through ``$defs``.
+    """
+    return cls.model_json_schema(schema_generator=_NoDocstringGenerateJsonSchema)
 
 
 class Value(ImmutableRootModel[T], Generic[T]):
@@ -304,7 +337,7 @@ class Value(ImmutableRootModel[T], Generic[T]):
     def to_value_schema(cls) -> "ValueSchema":
         from .schema import validate_value_schema  # avoid circular import
 
-        schema = cls.model_json_schema()
+        schema = model_json_schema_without_docstring(cls)
         schema["x-value-type"] = cls.__name__
         return validate_value_schema(schema)
 

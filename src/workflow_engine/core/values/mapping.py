@@ -7,7 +7,12 @@ from overrides import override
 
 from ...utils.asynchronous import gather
 from .primitives import StringValue
-from .value import Caster, Value, get_origin_and_args
+from .value import (
+    Caster,
+    Value,
+    get_origin_and_args,
+    model_json_schema_without_docstring,
+)
 
 if TYPE_CHECKING:
     from ..context import ExecutionContext
@@ -72,7 +77,7 @@ class StringMapValue(Value[Mapping[str, V]], Generic[V]):
             return super().to_value_schema()
         (item_type,) = args
 
-        raw = dict(cls.model_json_schema())
+        raw = dict(model_json_schema_without_docstring(cls))
         raw.pop("$defs", None)
         raw.pop("additionalProperties", None)
 
