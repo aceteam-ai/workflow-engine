@@ -271,23 +271,15 @@ async def test_partition_end_to_end_through_engine(
     inner-node-to-inner-node edge, rather than as a workflow's own external
     input.
 
-    That distinction is load-bearing, not stylistic: SequenceValue[Result[T]]
-    cannot itself be an InputNode/OutputNode field type today.
-    SequenceValue[T]'s to_value_schema() has no override, so it falls back to
-    Value.to_value_schema()'s default (cls.model_json_schema() plus a bare
-    x-value-type tag), which does not route the nested Result[T] field through
-    Result's own overridden to_value_schema(). The resulting schema embeds
-    Result's raw, un-tagged discriminated-union JSON Schema, which
-    validate_value_schema() cannot rebuild back into a value class
-    (NotImplementedError from BaseValueSchema.build_value_cls). Result[T]
-    alone round-trips correctly (see test_result_value.py); the gap is in
-    generic container Value types (SequenceValue, and likely others) not
-    delegating to an inner type's own to_value_schema() the way Result[T]
-    itself does for Result[Result[T]]. This predates and is orthogonal to
-    partition/unwrap_or/all_ok/first_error: it would equally block wiring the
-    Seq[Result[B]] output of for_each(attempt(w)) straight to a workflow's own
-    OutputNode. Worth a follow-up issue against Result[T] / SequenceValue[T];
-    out of scope here.
+    Historical note: this used to also be load-bearing, because
+    SequenceValue[Result[T]] could not itself be an InputNode/OutputNode field
+    type (#215 -- SequenceValue's to_value_schema() fell back to the generic
+    default instead of delegating to Result's own overridden
+    to_value_schema()). That gap is fixed now (see
+    test_seq_result_output_field_round_trips below); this test still uses the
+    inner-graph wiring because that is the realistic shape of
+    for_each(attempt(w))'s output feeding an inner eliminator node, not
+    because the direct wiring would fail.
     """
     from workflow_engine.nodes.data import (
         GatherSequenceNode,
@@ -365,6 +357,98 @@ async def test_partition_end_to_end_through_engine(
     assert [v.root for v in output["ok_indices"]] == [0]
     assert [e.root.name.root for e in output["errs"]] == ["E0"]
     assert [v.root for v in output["err_indices"]] == [1]
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_seq_result_output_field_round_trips(
+    engine: WorkflowEngine,
+    context: InMemoryExecutionContext,
+):
+    """
+    Regression test for #215: SequenceValue[Result[T]] can now be declared
+    directly as an OutputNode field, which is the shape for_each(attempt(w))
+    is meant to produce as a workflow's own output.
+
+    GatherSequenceNode still assembles the sequence (that is how
+    for_each(attempt(w)) itself works), but here it is wired straight to the
+    workflow's OutputNode field instead of through an inner eliminator node.
+    Declaring that field forces SequenceValue[Result[FloatValue]] through
+    to_value_schema() at node-construction time, and rebuilding the output
+    node's dynamic data type forces the schema back through build_value_cls()
+    -- both used to fail before generic containers delegated to their inner
+    type's to_value_schema().
+    """
+    from workflow_engine.nodes.data import GatherSequenceNode, SequenceParams
+
+    element_type = FloatValue
+    result_type = Result[element_type]
+
+    input_node = engine.create_input_node(
+        element_0=result_type,
+        element_1=result_type,
+    )
+    output_node = engine.create_output_node(results=SequenceValue[result_type])
+    gather = engine.create_node(
+        GatherSequenceNode,
+        id="gather",
+        params=SequenceParams(length=IntegerValue(2)),
+        element_type=result_type,
+    )
+    workflow = Workflow(
+        input_node=input_node,
+        output_node=output_node,
+        inner_nodes=[gather],
+        edges=[
+            Edge.from_nodes(
+                source=input_node,
+                source_key="element_0",
+                target=gather,
+                target_key="element_0",
+            ),
+            Edge.from_nodes(
+                source=input_node,
+                source_key="element_1",
+                target=gather,
+                target_key="element_1",
+            ),
+            Edge.from_nodes(
+                source=gather,
+                source_key="sequence",
+                target=output_node,
+                target_key="results",
+            ),
+        ],
+    )
+
+    result = await engine.execute(
+        context=context,
+        workflow=workflow,
+        input={
+            "element_0": result_type.ok(FloatValue(1.0)),
+            "element_1": result_type.err(_error("E0")),
+        },
+    )
+
+    assert result.status is WorkflowExecutionResultStatus.SUCCESS
+    output_seq = cast(SequenceValue, result.output["results"])
+    assert output_seq[0].is_ok()
+    assert output_seq[0].unwrap_ok() == FloatValue(1.0)
+    assert output_seq[1].is_err()
+    assert output_seq[1].unwrap_err().name.root == "E0"
+
+    # The dynamic output type is rebuilt from the declared field's schema via
+    # DataValueSchema.build_data_cls() -- the exact path that used to raise
+    # NotImplementedError. Confirm the rebuilt type itself round-trips a value.
+    # (output_type is a dynamically-built Data subclass, so field access goes
+    # through getattr rather than a statically-known attribute.)
+    validation_context = ValidationContext()
+    output_type = await output_node.dynamic_output_type(validation_context)
+    dumped = output_type.model_validate({"results": output_seq}).model_dump(mode="json")
+    restored = output_type.model_validate(dumped)
+    restored_results = cast(SequenceValue, getattr(restored, "results"))
+    assert restored_results[0].is_ok()
+    assert restored_results[1].is_err()
 
 
 ################################################################################
@@ -538,10 +622,10 @@ async def test_unwrap_or_end_to_end_through_engine(
 ):
     """
     Same GatherSequenceNode-assembled wiring as
-    test_partition_end_to_end_through_engine, and for the same reason:
-    SequenceValue[Result[T]] cannot itself be an InputNode field type today
-    (see that test's docstring for the pre-existing schema gap). unwrap_or's
-    own output (a plain Seq[T]) has no such problem.
+    test_partition_end_to_end_through_engine, for the same realistic-shape
+    reason (see that test's docstring; the schema gap it references, #215, is
+    now fixed). unwrap_or's own output (a plain Seq[T]) never had that
+    problem.
     """
     from workflow_engine.nodes.data import (
         GatherSequenceNode,

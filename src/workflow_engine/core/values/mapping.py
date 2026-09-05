@@ -1,7 +1,9 @@
 # workflow_engine/core/values/mapping.py
 
 from collections.abc import ItemsView, Iterator, KeysView, Mapping, ValuesView
-from typing import TYPE_CHECKING, Generic, Type, TypeVar, cast
+from typing import TYPE_CHECKING, Generic, Literal, Type, TypeVar, cast
+
+from overrides import override
 
 from ...utils.asynchronous import gather
 from .primitives import StringValue
@@ -9,6 +11,7 @@ from .value import Caster, Value, get_origin_and_args
 
 if TYPE_CHECKING:
     from ..context import ExecutionContext
+    from .schema import ValueSchema
 
 
 V = TypeVar("V", bound=Value)
@@ -46,6 +49,42 @@ class StringMapValue(Value[Mapping[str, V]], Generic[V]):
         if isinstance(key, StringValue):
             key = key.root
         return key in self.root
+
+    @classmethod
+    @override
+    def to_value_schema(cls) -> "ValueSchema":
+        """
+        Delegates to the value type's own ``to_value_schema()``. See
+        ``SequenceValue.to_value_schema()`` for why the generic default
+        (raw ``model_json_schema()``) is wrong for value types like
+        ``Result[T]`` that publish their own wire shape.
+
+        ``StringMapValue[Value]`` (the fully-open map, used when a schema's
+        ``additionalProperties`` is bare ``True``) has no concrete item type
+        to delegate to, so it round-trips as ``additionalProperties: True``
+        directly, matching ``StringMapValueSchema.build_value_cls()``.
+        """
+        from .schema import StringMapValueSchema
+
+        _origin, args = get_origin_and_args(cls)
+        if not args:
+            # Bare, unparameterized StringMapValue: no item type to delegate to.
+            return super().to_value_schema()
+        (item_type,) = args
+
+        raw = dict(cls.model_json_schema())
+        raw.pop("$defs", None)
+        raw.pop("additionalProperties", None)
+
+        additional_properties: "ValueSchema | Literal[True]" = (
+            True if item_type is Value else item_type.to_value_schema()
+        )
+
+        return StringMapValueSchema(
+            **raw,
+            additionalProperties=additional_properties,
+            value_type=cls.__name__,
+        )
 
 
 SourceType = TypeVar("SourceType", bound=Value)

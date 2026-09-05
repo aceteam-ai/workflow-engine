@@ -4,23 +4,27 @@ Values are type-safe, immutable wrappers around data. They are the currency of d
 
 ## Value Schemas and Type Resolution
 
-Value types serialize to JSON Schema via `to_value_schema()` (which uses Pydantic’s `model_json_schema()`). These schemas describe the structure of values for validation and type resolution.
+Value types serialize to JSON Schema via `to_value_schema()`. Most Value types (primitives, `FileValue` subclasses, etc.) get this for free from Pydantic's `model_json_schema()`, since Pydantic's own schema for those types already matches our wire shape. Generic containers (`SequenceValue[T]`, `StringMapValue[V]`) and types with their own tagged wire shape (`Result[T]`, unions) instead **delegate**: they call `to_value_schema()` on their inner type(s) directly and embed the result, rather than trusting Pydantic's automatically-generated nested schema for that inner type. This matters whenever the inner type's own `to_value_schema()` diverges from its raw Pydantic schema: `Result[T]`'s wire shape (`ok`/`err` siblings) is nothing like the discriminated union Pydantic generates for it, so `SequenceValue[Result[T]]` embeds `Result[T].to_value_schema()` directly instead of a `$ref` into Pydantic's internal `_OkRoot`/`_ErrRoot` definitions, which `validate_value_schema()` has no way to rebuild.
 
 ### How schema resolution works
 
 1. **Title-based lookup**: Each Value type can register itself in a `ValueRegistry` by name (e.g. `"IntegerValue"`, `"JSONValue"`). When a schema has a `title` that matches a registered type, it resolves to that type immediately.
 
-2. **$defs and $ref**: Nested and recursive types use JSON Schema `$defs` and `$ref`. For example, `SequenceValue[JSONValue]` produces a schema where the array’s `items` is a `$ref` to `#/$defs/JSONValue`. The registry can supply these defs via `extra_defs` so references resolve without embedding `$defs` in the schema.
+2. **Delegated containers embed, not reference**: `SequenceValue[T].to_value_schema()` sets `items` to `T.to_value_schema()` directly (and `StringMapValue[V]` does the same for `additionalProperties`), the same way `Result[T].to_value_schema()` sets `ok` to `T.to_value_schema()`. There is no `$ref`/`$defs` indirection at this level: the full nested schema is inlined, however deep the nesting goes, so each level's wire shape stays whatever that type itself publishes.
 
-3. **Composite def IDs**: For types nested beyond one level (e.g. `StringMapValue[SequenceValue[StringMapValue[IntegerValue]]]`), Pydantic generates composite def IDs such as `SequenceValue_StringMapValue_IntegerValue__`. These IDs are internal to that schema and do **not** correspond to any registry entry.
+3. **$defs and $ref elsewhere**: Pydantic's own `model_json_schema()` (used directly by `Data` classes, and to harvest schema-level extras like `minItems`/`maxItems` for constrained containers) still uses `$defs`/`$ref` for nested and recursive types. The registry can supply these defs via `extra_defs` so references resolve without embedding `$defs` in the schema.
 
-### Limitation: deeply nested generics require $defs
+4. **Composite def IDs**: For types nested beyond one level under `model_json_schema()` (e.g. `StringMapValue[SequenceValue[StringMapValue[IntegerValue]]]`), Pydantic generates composite def IDs such as `SequenceValue_StringMapValue_IntegerValue__`. These IDs are internal to that schema and do **not** correspond to any registry entry.
 
-For types with **one level of nesting** (e.g. `SequenceValue[JSONValue]`, `StringMapValue[IntegerValue]`), you can omit `$defs` from the schema and still resolve correctly by passing the registry’s types as `extra_defs`, since the referenced type (e.g. `JSONValue`) is registered.
+### Limitation: deeply nested generics require $defs when using model_json_schema() directly
+
+This limitation is about calling Pydantic's `model_json_schema()` directly (as `_roundtrip_without_defs` in `tests/test_schema_roundtrip.py` does) and stripping `$defs`; it does not apply to `to_value_schema()`, which never relies on Pydantic's def IDs for delegated containers (see above).
+
+For types with **one level of nesting** (e.g. `SequenceValue[JSONValue]`, `StringMapValue[IntegerValue]`), you can omit `$defs` from the raw Pydantic schema and still resolve correctly by passing the registry's types as `extra_defs`, since the referenced type (e.g. `JSONValue`) is registered.
 
 For **two or more levels of nesting**, resolution fails without `$defs`. The composite def IDs (like `SequenceValue_StringMapValue_IntegerValue__`) are schema-specific; they cannot be reconstructed from the registry alone. The registry only knows base types (`SequenceValue`, `StringMapValue`, `IntegerValue`), not parameterized combinations. If you strip `$defs`, those references cannot be resolved.
 
-**Takeaway**: Schemas with deeply nested generics must include `$defs` for full round-trip type resolution. This is a limitation of how Pydantic generates JSON Schema for recursive generics.
+**Takeaway**: Raw Pydantic schemas (`model_json_schema()`) with deeply nested generics must include `$defs` for full round-trip type resolution. This is a limitation of how Pydantic generates JSON Schema for recursive generics, separate from how `to_value_schema()` itself represents nested containers.
 
 ## Primitive Values
 
@@ -282,6 +286,14 @@ A `SequenceValue[Result[T]]` needs no special handling from `GatherSequenceNode`
 or `ExpandSequenceNode`: both already require one value per index (see
 `nodes/data.py`), so an element that failed is present at its index tagged
 `err`, never absent or shifting the indices after it.
+
+`SequenceValue[Result[T]]` (and `StringMapValue[Result[T]]`) can also be
+declared directly as an `InputNode`/`OutputNode` field: `SequenceValue` and
+`StringMapValue` delegate to their item type's own `to_value_schema()` (see
+"How schema resolution works" above), so the container's schema always embeds
+`Result[T]`'s own tagged wire shape, at any nesting depth. This is the shape
+`for_each(attempt(w))` produces, and it is what lets a workflow declare that
+result as its own output rather than only consuming it internally.
 
 ## Union Values
 
