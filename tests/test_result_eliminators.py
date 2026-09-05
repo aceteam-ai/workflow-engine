@@ -25,6 +25,8 @@ from workflow_engine.core import (
     WorkflowEngine,
     WorkflowExecutionResultStatus,
 )
+from workflow_engine.core.values.schema import validate_value_schema
+from workflow_engine.core.values.value import get_origin_and_args
 from workflow_engine.nodes.result import (
     AllOkData,
     AllOkNode,
@@ -1122,3 +1124,80 @@ async def test_partition_and_unwrap_or_agree_on_which_elements_failed(
 
     assert err_positions == [1, 3]
     assert substituted_positions == err_positions
+
+
+################################################################################
+# raw model_json_schema() -> validate_value_schema() -> to_value_cls() (#220)
+#
+# Each of these nodes has a Result-typed input (built dynamically from
+# element_type). Before #220, the raw Pydantic schema for that input type hit
+# NotImplementedError when fed through validate_value_schema().to_value_cls()
+# rather than get_data_schema()'s own to_value_schema()-based path.
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_partition_input_raw_schema_roundtrips(
+    validation_context: ValidationContext,
+):
+    element_type = FloatValue
+    node = PartitionNode(type="Partition", id="p", element_type=element_type)
+    input_type = await node.dynamic_input_type(validation_context)
+
+    schema = validate_value_schema(input_type.model_json_schema())
+    rebuilt = schema.to_value_cls()
+
+    origin, args = get_origin_and_args(rebuilt)
+    assert issubclass(origin, DataValue)
+    assert args[0].model_fields.keys() == input_type.model_fields.keys()
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_unwrap_or_input_raw_schema_roundtrips(
+    validation_context: ValidationContext,
+):
+    element_type = FloatValue
+    node = UnwrapOrNode(type="UnwrapOr", id="u", element_type=element_type)
+    input_type = await node.dynamic_input_type(validation_context)
+
+    schema = validate_value_schema(input_type.model_json_schema())
+    rebuilt = schema.to_value_cls()
+
+    origin, args = get_origin_and_args(rebuilt)
+    assert issubclass(origin, DataValue)
+    assert args[0].model_fields.keys() == input_type.model_fields.keys()
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_all_ok_input_raw_schema_roundtrips(
+    validation_context: ValidationContext,
+):
+    element_type = FloatValue
+    node = AllOkNode(type="AllOk", id="a", element_type=element_type)
+    input_type = await node.dynamic_input_type(validation_context)
+
+    schema = validate_value_schema(input_type.model_json_schema())
+    rebuilt = schema.to_value_cls()
+
+    origin, args = get_origin_and_args(rebuilt)
+    assert issubclass(origin, DataValue)
+    assert args[0].model_fields.keys() == input_type.model_fields.keys()
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_first_error_input_raw_schema_roundtrips(
+    validation_context: ValidationContext,
+):
+    element_type = FloatValue
+    node = FirstErrorNode(type="FirstError", id="f", element_type=element_type)
+    input_type = await node.dynamic_input_type(validation_context)
+
+    schema = validate_value_schema(input_type.model_json_schema())
+    rebuilt = schema.to_value_cls()
+
+    origin, args = get_origin_and_args(rebuilt)
+    assert issubclass(origin, DataValue)
+    assert args[0].model_fields.keys() == input_type.model_fields.keys()

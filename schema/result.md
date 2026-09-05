@@ -86,7 +86,7 @@ that a receiving engine reconstructs a real `Result[T]`, with its ok/err
 identity intact, rather than a plain 3-field record. `x-value-type` follows
 this engine's usual convention (e.g. `"Result[FloatValue]"`).
 
-This is the exact, unabridged output of `Result[FloatValue].to_value_schema().model_dump(by_alias=True)`:
+This is the exact, unabridged output of `Result[FloatValue].to_value_schema().model_dump(mode="json", by_alias=True)`. It is also, key for key, the output of Pydantic's own `Result[FloatValue].model_json_schema()` (#220): the two are not two spellings of the same type, they are the same call.
 
 ```json
 {
@@ -97,22 +97,6 @@ This is the exact, unabridged output of `Result[FloatValue].to_value_schema().mo
     "x-value-type": "FloatValue"
   },
   "err": {
-    "$defs": {
-      "ErrorClass": {
-        "title": "ErrorClass",
-        "description": "The closed-vocabulary, machine-readable classification of a ``Result`` err arm. A single field lets callers key retry policy, circuit breakers, and a run ledger off of one vocabulary instead of three.",
-        "type": "string",
-        "enum": ["timeout", "unreachable", "rate_limit", "validation", "permission", "systemic"]
-      },
-      "ErrorClassValue": {
-        "title": "ErrorClassValue",
-        "$ref": "#/$defs/ErrorClass"
-      },
-      "StringValue": {
-        "title": "StringValue",
-        "type": "string"
-      }
-    },
     "title": "ResultError",
     "description": "The structured error carried by a ``Result[T]`` err arm.",
     "type": "object",
@@ -120,22 +104,23 @@ This is the exact, unabridged output of `Result[FloatValue].to_value_schema().mo
       "error_class": {
         "title": "Error Class",
         "description": "The machine-readable classification of the error, from a closed vocabulary: timeout, unreachable, rate_limit, validation, permission, or systemic.",
-        "$ref": "#/$defs/ErrorClassValue"
+        "type": "string",
+        "enum": ["timeout", "unreachable", "rate_limit", "validation", "permission", "systemic"]
       },
       "name": {
         "title": "Error Name",
         "description": "The short, machine-readable name of the error.",
-        "$ref": "#/$defs/StringValue"
+        "type": "string"
       },
       "message": {
         "title": "Message",
         "description": "The user-facing description of what went wrong.",
-        "$ref": "#/$defs/StringValue"
+        "type": "string"
       },
       "node_id": {
         "title": "Node ID",
         "description": "The identifier of the node that produced the error.",
-        "$ref": "#/$defs/StringValue"
+        "type": "string"
       }
     },
     "additionalProperties": false,
@@ -145,8 +130,14 @@ This is the exact, unabridged output of `Result[FloatValue].to_value_schema().mo
 }
 ```
 
-(The `ErrorClass` `description` above has embedded newlines collapsed to spaces for
-readability in this document; the real output preserves them literally.)
+`err` is fully self-contained: no `$ref`/`$defs` anywhere. Earlier revisions of this
+document showed `err` referencing shared definitions (`ErrorClass`, `ErrorClassValue`,
+`StringValue`) via `$ref`/`$defs`, matching what `ResultError.model_json_schema()`
+produces on its own. That form was semantically equivalent, since `$ref`/`$defs`
+is standard JSON Schema, but it meant this type's `to_value_schema()` output and its
+`model_json_schema()` output could disagree on which of two valid JSON Schema
+renderings of the same type to use. Every reference in `err` is now inlined so
+there is exactly one rendering.
 
 `ok` here is `T`'s own value schema (recursively, for nested `Result[Result[T]]`);
 `err` is always this same fixed `ResultError` shape.
