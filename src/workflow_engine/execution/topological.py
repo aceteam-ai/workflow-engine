@@ -16,7 +16,15 @@ from ..core import (
     WorkflowException,
     WorkflowExecutionResult,
 )
+from ..core.boundary import ErrorBoundaryNode
 from ..core.error import ShouldRetry, ShouldYield
+from .boundary import (
+    BoundaryTracker,
+    abandon_retry_if_blocked,
+    flush_cancellations,
+    handle_failure,
+    materialize,
+)
 from .rate_limit import RateLimitRegistry
 from .retry import RetryTracker
 
@@ -66,6 +74,7 @@ class TopologicalExecutionAlgorithm(ExecutionAlgorithm):
         node_outputs: dict[str, DataMapping] = {}
         errors = WorkflowErrorsBuilder()
         retry_tracker = RetryTracker(default_max_retries=self.max_retries)
+        tracker = BoundaryTracker()
 
         # Track nodes that are waiting for retry (node_id -> input)
         pending_retry: dict[str, DataMapping] = {}
@@ -104,6 +113,7 @@ class TopologicalExecutionAlgorithm(ExecutionAlgorithm):
                         await limiter.acquire()
 
                     expanded = False
+                    failure: WorkflowException | None = None
                     try:
                         node_result = await node(
                             context=context,
@@ -113,6 +123,15 @@ class TopologicalExecutionAlgorithm(ExecutionAlgorithm):
                         )
 
                         if isinstance(node_result, ValidatedWorkflow):
+                            if isinstance(node, ErrorBoundaryNode):
+                                tracker.register(
+                                    node_id=node_id,
+                                    node=node,
+                                    input=node_input,
+                                    input_type=input_type,
+                                    output_type=output_type,
+                                    subgraph=node_result,
+                                )
                             workflow = workflow.expand_node(node_id, node_result)
                             expanded = True
                         else:
@@ -132,6 +151,11 @@ class TopologicalExecutionAlgorithm(ExecutionAlgorithm):
                     except ShouldRetry as e:
                         node_max_retries = self._get_node_max_retries(node)
 
+                        if await abandon_retry_if_blocked(
+                            tracker, workflow, context, node_id, node_input
+                        ):
+                            continue
+
                         if retry_tracker.should_retry(node_id, node_max_retries):
                             retry_tracker.record_retry(node_id, e)
                             pending_retry[node_id] = node_input
@@ -150,14 +174,30 @@ class TopologicalExecutionAlgorithm(ExecutionAlgorithm):
                             # Continue to next node without re-raising
                             continue
 
-                        # Max retries exceeded: surface as a workflow error
-                        raise
+                        # Max retries exceeded: contain in a boundary if any,
+                        # otherwise surface as a workflow error.
+                        failure = e
+
+                    except WorkflowException as e:
+                        failure = e
 
                     finally:
                         if limiter is not None:
                             limiter.release()
 
-                    if expanded:
+                    if failure is not None:
+                        if not await handle_failure(
+                            tracker,
+                            workflow,
+                            context,
+                            node_id,
+                            failure,
+                            ready_nodes=ready_nodes,
+                            pending_retry=pending_retry,
+                            retry_tracker=retry_tracker,
+                        ):
+                            raise failure
+                    elif expanded:
                         ready_nodes = {
                             node_id: node_input
                             for node_id, node_input in workflow.get_ready_nodes(
@@ -165,17 +205,75 @@ class TopologicalExecutionAlgorithm(ExecutionAlgorithm):
                                 partial_results=ready_nodes,
                             ).items()
                             if node_id not in node_yields
+                            and not tracker.is_blocked(node_id)
                         }
                     else:
                         ready_nodes.update(
-                            workflow.get_ready_successors(
-                                [node_id],
-                                node_outputs,
-                                skip=set(node_outputs)
-                                | set(ready_nodes)
-                                | set(node_yields),
-                            )
+                            {
+                                nid: inp
+                                for nid, inp in workflow.get_ready_successors(
+                                    [node_id],
+                                    node_outputs,
+                                    skip=set(node_outputs)
+                                    | set(ready_nodes)
+                                    | set(node_yields),
+                                ).items()
+                                if not tracker.is_blocked(nid)
+                            }
                         )
+
+                    # A boundary can become materializable either because it
+                    # just failed above, or because a completion elsewhere
+                    # (a finish or a yield) was the last thing it was waiting
+                    # on to drain.
+                    for b in tracker.pending():
+                        if tracker.can_materialize(
+                            b, in_flight=frozenset(), node_yields=frozenset(node_yields)
+                        ):
+                            await flush_cancellations(
+                                tracker,
+                                workflow,
+                                context,
+                                b,
+                                node_outputs=node_outputs,
+                                in_flight=frozenset(),
+                                node_yields=frozenset(node_yields),
+                            )
+                            out_id = await materialize(
+                                tracker, workflow, context, b, node_outputs
+                            )
+                            ready_nodes.update(
+                                {
+                                    nid: inp
+                                    for nid, inp in workflow.get_ready_successors(
+                                        [out_id],
+                                        node_outputs,
+                                        skip=set(node_outputs)
+                                        | set(ready_nodes)
+                                        | set(node_yields),
+                                    ).items()
+                                    if not tracker.is_blocked(nid)
+                                }
+                            )
+
+                # Held boundaries (a member yielded) report the members that
+                # will not run this pass, even though they have not
+                # materialized. Nothing new can become ready after this
+                # point in the pass; node_yields is non-empty whenever a
+                # pending boundary remains (yield is the only thing that can
+                # keep can_materialize() false forever in this executor,
+                # since in_flight is always empty here).
+                for b in tracker.pending():
+                    assert len(node_yields) > 0
+                    await flush_cancellations(
+                        tracker,
+                        workflow,
+                        context,
+                        b,
+                        node_outputs=node_outputs,
+                        in_flight=frozenset(),
+                        node_yields=frozenset(node_yields),
+                    )
 
                 if len(node_yields) > 0:
                     partial_output = await workflow.get_output(

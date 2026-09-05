@@ -1,4 +1,5 @@
 # workflow_engine/core/__init__.py
+from .boundary import CancelReason, ErrorBoundaryNode
 from .config import (
     EntryPointRef,
     ExecutionAlgorithmConfig,
@@ -81,6 +82,7 @@ from .workflow import ValidatedWorkflow, Workflow, WorkflowValue
 __all__ = [
     "JSON",
     "BooleanValue",
+    "CancelReason",
     "Caster",
     "Data",
     "DataMapping",
@@ -89,6 +91,7 @@ __all__ = [
     "Edge",
     "Empty",
     "EntryPointRef",
+    "ErrorBoundaryNode",
     "ErrorClass",
     "ErrorClassValue",
     "ExecutionAlgorithm",

@@ -13,7 +13,7 @@ from pydantic import ConfigDict, Field, ValidationError, model_validator
 from ..utils.asynchronous import gather
 from ..utils.model import ImmutableBaseModel
 from .edge import Edge
-from .error import NodeException, NodeExpansionException, WorkflowException
+from .error import ErrorClass, NodeException, NodeExpansionException, WorkflowException
 from .io import InputNode, OutputNode
 from .node import Node, get_id_with_namespace
 from .values import (
@@ -351,6 +351,7 @@ class ValidatedWorkflow(Workflow):
                 raise NodeException.for_user(
                     f"Input {node_input} for node {node.id} is invalid: {e}",
                     node=node,
+                    error_class=ErrorClass.VALIDATION,
                 ) from e
         return ready_nodes
 
