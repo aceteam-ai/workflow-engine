@@ -9,6 +9,7 @@ This project uses [PEP 440](https://peps.python.org/pep-0440/) versioning with r
 ### Added
 
 - **`Result[T]`**: a registered public value type, ok or err, with the err arm carrying a structured, closed-vocabulary error (`error_class`, `name`, `message`, `node_id`). Tagged rather than a bare union, so `Result[Result[T]]` round-trips with both tags intact and a validated value is always the single `Result` class (#200). The wire shape is published in `schema/result.md`.
+- **Hints channel**: every `Node` now carries a `hints` field for host-facing annotations, starting with `max_concurrency` on fan-outs. A host may honor, clamp, or ignore any hint without changing a workflow's result; nothing in the engine reads `Node.hints`, and `Node.without_hints()` / `Workflow.without_hints()` erase them for that exact contract test. A node pin (routing a fan-out to a specific machine) is deliberately not part of this channel, since it is host-specific rather than host-independent; see `schema/hints.md` (#203).
 
 ### Fixed
 

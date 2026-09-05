@@ -133,6 +133,20 @@ class Workflow(ImmutableBaseModel):
             edges=[edge.with_namespace(namespace) for edge in self.edges],
         )
 
+    def without_hints(self) -> Self:
+        """
+        Create a copy of this workflow with every node's hints erased.
+
+        This is the executable form of the hints contract: running a
+        workflow and running ``workflow.without_hints()`` must produce the
+        same result, since a host is always allowed to ignore every hint.
+        """
+        return self.model_update(
+            input_node=self.input_node.without_hints(),
+            inner_nodes=[node.without_hints() for node in self.inner_nodes],
+            output_node=self.output_node.without_hints(),
+        )
+
     # NOTE: this clobbers a long-deprecated method of the same name by Pydantic but we don't care
     async def validate(  # pyright: ignore[reportIncompatibleMethodOverride]
         self,

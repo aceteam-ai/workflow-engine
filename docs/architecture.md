@@ -99,6 +99,10 @@ Nodes auto-register via `__init_subclass__` when a concrete `Node` subclass is d
 
 Node serialization uses a discriminator pattern. The base `Node` has a `type: str` field that is auto-populated with the node's derived type name; the registry maps that string to the concrete node class, enabling deserialization without trying every possible node type.
 
+### Hints
+
+Every `Node` carries a `hints` field, a `Hints` object of host-facing annotations (for example, a suggested `max_concurrency` for a fan-out). A host may honor, clamp, or ignore any hint, and doing so never changes a node's input/output types or a workflow's result; nothing under `execution/` or `nodes/` reads `Node.hints`. `Workflow.without_hints()` and `Node.without_hints()` erase every hint, which is how that contract is tested. See [`schema/hints.md`](../schema/hints.md) for the published wire shape and for why a host-specific reference (such as a pinned machine) does not belong in this channel.
+
 ## Workflow Structure
 
 A `Workflow` consists of:

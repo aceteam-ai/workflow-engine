@@ -24,6 +24,7 @@ from .execution import (
     WorkflowExecutionResult,
     WorkflowExecutionResultStatus,
 )
+from .hints import Hints
 from .io import InputNode, OutputNode
 from .migration import (
     Migration,
@@ -98,6 +99,7 @@ __all__ = [
     "File",
     "FileValue",
     "FloatValue",
+    "Hints",
     "InputNode",
     "IntegerValue",
     "JSONValue",
