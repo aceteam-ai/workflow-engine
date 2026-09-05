@@ -15,6 +15,10 @@ This project uses [PEP 440](https://peps.python.org/pep-0440/) versioning with r
 
 - Removed the stale `License :: OSI Approved :: MIT License` classifier from `pyproject.toml`, which contradicted the `license = "LicenseRef-Elastic-2.0"` field set during the relicense in #184. There is no OSI classifier for Elastic License 2.0, so the `license` field alone now stands (#207).
 
+### Changed
+
+- Relicensed from Apache-2.0 to the Elastic License 2.0 (#184).
+
 ## [2.0.0rc15] - 2026-07-06
 
 ### Fixed
