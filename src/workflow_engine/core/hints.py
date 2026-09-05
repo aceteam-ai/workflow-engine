@@ -1,7 +1,7 @@
 # workflow_engine/core/hints.py
 from typing import ClassVar
 
-from pydantic import ConfigDict, Field
+from pydantic import ConfigDict, Field, SerializerFunctionWrapHandler, model_serializer
 
 from ..utils.model import ImmutableBaseModel
 
@@ -47,6 +47,24 @@ class Hints(ImmutableBaseModel):
             "many branches were in flight at once."
         ),
     )
+
+    @model_serializer(mode="wrap")
+    def _serialize_omit_unset_max_concurrency(
+        self, handler: SerializerFunctionWrapHandler
+    ):
+        """
+        Omit ``max_concurrency`` when it is unset, so a node that hasn't
+        opted into this hint doesn't carry a ``{"max_concurrency": null}``
+        key it never asked for.
+
+        Any other key survives unconditionally, including ones this engine
+        doesn't recognize (``extra="allow"``): a hint set by a newer host
+        must still round-trip even though we can't interpret it.
+        """
+        data = handler(self)
+        if data.get("max_concurrency") is None:
+            data.pop("max_concurrency", None)
+        return data
 
 
 __all__ = [
