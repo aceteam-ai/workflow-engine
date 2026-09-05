@@ -545,8 +545,9 @@ def test_sequence_schema_roundtrip():
         T = SequenceValue[ItemType]
         schema = T.to_value_schema()
         assert isinstance(schema, SequenceValueSchema)
-        assert isinstance(schema.items, ReferenceValueSchema)
-        assert isinstance(schema.defs[schema.items.id], ItemSchema)
+        # SequenceValue delegates to the item type's own to_value_schema(),
+        # so items is the item's schema inlined directly, not a $ref.
+        assert isinstance(schema.items, ItemSchema)
         U = schema.to_value_cls()
         assert U == T
         assert U.to_value_schema() == schema
@@ -571,6 +572,26 @@ def test_sequence_schema_manual():
         assert isinstance(schema.items, ItemSchema)
         U = schema.to_value_cls()
         assert U == T
+
+
+@pytest.mark.unit
+def test_sequence_schema_ref_defs_backward_compat():
+    """
+    A schema in the old $ref/$defs shape (what SequenceValue.to_value_schema()
+    emitted before it delegated to the item type's own to_value_schema(), via
+    Pydantic's model_json_schema()) still resolves. #215 changed how new
+    schemas are generated, not how existing ones are read.
+    """
+    json_schema = {
+        "$defs": {"IntegerValue": {"title": "IntegerValue", "type": "integer"}},
+        "items": {"$ref": "#/$defs/IntegerValue"},
+        "title": "SequenceValue[IntegerValue]",
+        "type": "array",
+    }
+    schema = validate_value_schema(json_schema)
+    assert isinstance(schema, SequenceValueSchema)
+    U = schema.to_value_cls()
+    assert U == SequenceValue[IntegerValue]
 
 
 @pytest.mark.unit
@@ -674,8 +695,10 @@ def test_string_map_schema_roundtrip():
         T = StringMapValue[ItemType]
         schema = T.to_value_schema()
         assert isinstance(schema, StringMapValueSchema)
-        assert isinstance(schema.additionalProperties, ReferenceValueSchema)
-        assert isinstance(schema.defs[schema.additionalProperties.id], ItemSchema)
+        # StringMapValue delegates to the item type's own to_value_schema(),
+        # so additionalProperties is the item's schema inlined directly, not
+        # a $ref.
+        assert isinstance(schema.additionalProperties, ItemSchema)
         U = schema.to_value_cls()
         assert U == T
         assert U.to_value_schema() == schema
@@ -700,6 +723,26 @@ def test_string_map_schema_manual():
         assert isinstance(schema.additionalProperties, ItemSchema)
         U = schema.to_value_cls()
         assert U == T
+
+
+@pytest.mark.unit
+def test_string_map_schema_ref_defs_backward_compat():
+    """
+    A schema in the old $ref/$defs shape (what StringMapValue.to_value_schema()
+    emitted before it delegated to the item type's own to_value_schema(), via
+    Pydantic's model_json_schema()) still resolves. #215 changed how new
+    schemas are generated, not how existing ones are read.
+    """
+    json_schema = {
+        "$defs": {"IntegerValue": {"title": "IntegerValue", "type": "integer"}},
+        "additionalProperties": {"$ref": "#/$defs/IntegerValue"},
+        "title": "StringMapValue[IntegerValue]",
+        "type": "object",
+    }
+    schema = validate_value_schema(json_schema)
+    assert isinstance(schema, StringMapValueSchema)
+    U = schema.to_value_cls()
+    assert U == StringMapValue[IntegerValue]
 
 
 @pytest.mark.unit
