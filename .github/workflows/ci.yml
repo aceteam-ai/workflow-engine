@@ -43,3 +43,36 @@ jobs:
 
       - name: Tests
         run: uv run pytest -q
+
+  attribution-guard:
+    name: AI attribution guard
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check commit messages
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          shas=$(git log --format=%H "$BASE_SHA".."$HEAD_SHA")
+          echo "Checking $(echo "$shas" | grep -c .) commit(s)"
+          status=0
+          for sha in $shas; do
+            if ! git log -1 --format=%B "$sha" \
+              | python3 scripts/ci/check_no_ai_attribution.py --kind commit --label "commit $sha"; then
+              status=1
+            fi
+          done
+          exit "$status"
+
+      - name: Check pull request description
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: |
+          printf '%s' "$PR_BODY" \
+            | python3 scripts/ci/check_no_ai_attribution.py --kind description --label "pull request description"

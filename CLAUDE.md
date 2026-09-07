@@ -164,6 +164,10 @@ if registry.has_name("foo"):  # Ctrl+Click jumps to has_name()
 - Protocol implementations (context managers, iterators)
 - Pydantic model internals (`__init_subclass__`, `model_validator`)
 
+## No AI Attribution
+
+This repository is public and carries no AI attribution. Neither a commit message nor a pull request description may contain a Claude Code session link, a `Claude-Session:` trailer, a `Co-Authored-By:` trailer naming Claude or Anthropic, or a "Generated with Claude Code" footer or link. CI enforces this on every pull request via `scripts/ci/check_no_ai_attribution.py`, scoped to the commits introduced by the PR and the PR description only. Write commit messages and PR descriptions without any of the above; if CI rejects one, reword the commit with `git rebase` or edit the PR description.
+
 ## Release Process
 
 To cut a new release:
