@@ -1,3 +1,8 @@
+# `pre-commit install` with no --hook-type flags only wires the hook types
+# listed here; without this, it would install the pre-commit stage only and
+# silently skip the commit-msg hook below.
+default_install_hook_types: [pre-commit, commit-msg]
+
 repos:
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.11.8
@@ -5,3 +10,14 @@ repos:
       - id: ruff
         args: [--fix]
       - id: ruff-format
+
+  - repo: local
+    hooks:
+      - id: no-ai-attribution
+        name: AI attribution guard (commit message)
+        description: >-
+          Rejects a commit message that carries AI attribution before the
+          commit object exists, so it never needs a history rewrite.
+        entry: python3 scripts/ci/check_no_ai_attribution.py --kind commit --label "commit message"
+        language: system
+        stages: [commit-msg]
