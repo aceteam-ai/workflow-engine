@@ -32,6 +32,7 @@ from .conditional import (
     ConditionalInput,
     IfElseNode,
     IfNode,
+    MatchErrorClassNode,
 )
 from .constant import (
     ConstantBooleanNode,
@@ -98,6 +99,7 @@ __all__ = [
     "IsOkNode",
     "LessThanEqualNode",
     "LessThanNode",
+    "MatchErrorClassNode",
     "MaximumNode",
     "MinimumNode",
     "MultiplyNode",

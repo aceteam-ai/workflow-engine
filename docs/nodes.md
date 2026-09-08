@@ -148,6 +148,21 @@ Executes one of two sub-workflows based on a condition. Output type is the inter
 | **Parameter** `if_false` | `WorkflowValue`                       |
 | **Output**               | Intersection of both workflow outputs |
 
+### MatchErrorClass
+
+Runs one of several sub-workflows depending on `error_class`, the closed, engine-owned vocabulary carried by a `Result[T]` err arm (`timeout`, `unreachable`, `rate_limit`, `validation`, `permission`, `systemic`; see `core/error.py` and `docs/values.md`). `branches` must have exactly one entry per value `ErrorClass` currently defines: a missing or unrecognized key fails graph validation, naming the node and the offending value(s), rather than silently falling through to some default branch.
+
+| Field                     | Type                                                          |
+| ------------------------- | -------------------------------------------------------------- |
+| **Input** `error_class`   | `ErrorClassValue`                                              |
+| **Input** _(additional)_  | Fields common to every branch's input type                     |
+| **Parameter** `branches`  | `StringMapValue[WorkflowValue]`, keyed by `ErrorClass` value    |
+| **Output**                | Intersection of every branch's output                          |
+
+**Why this node is exhaustive and other conditionals in this engine are not.** `error_class` is a closed vocabulary versioned with the engine itself, not a per-node error type versioned independently by whoever wrote that node. That is the one property that makes "does this conditional cover every case" a question graph validation can answer honestly. A conditional keyed on anything else in this engine cannot make the same promise, because nothing here can guarantee the branch author enumerated every value some other, independently-versioned vocabulary might ever take.
+
+**The consequence, stated up front so it is not a surprise later.** `ErrorClass` is expected to grow: today's six values are not forever. When a seventh value is added to `ErrorClass`, every stored graph containing a `MatchErrorClass` node that branches on the current six will fail graph validation the next time it is loaded, until a human adds a branch for the new value (or removes the node). This is deliberate, not a bug to work around, and it is the reason this node exists at all: the alternative is a stored graph that silently routes the new class down whichever branch happens to look like a fallback, forever, with nobody told. A loud failure that names the node and the missing value is strictly better than a quiet misroute that surfaces as a support ticket months later. Before adding a new `ErrorClass` value, expect to update every graph that matches on it; that cost is the entire point of this check, not an accident of how it was implemented.
+
 ## Iteration
 
 ### ForEach
