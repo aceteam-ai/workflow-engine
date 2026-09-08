@@ -1,0 +1,67 @@
+name: Attribution Guard
+
+# Deliberately its own workflow file, triggered only by pull_request:
+# - it must never run on push to main (108 of 291 existing commits on main
+#   carry a Co-Authored-By trailer; scanning or running on push there would
+#   turn main permanently red)
+# - `edited` re-runs this check alone when a title/description changes,
+#   without re-running the full test matrix in ci.yml
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, edited]
+
+concurrency:
+  group: attribution-guard-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  attribution-guard:
+    # Required-status-check name, matched exactly by the branch ruleset.
+    # Keep this string unchanged if this job or file ever moves again.
+    name: AI attribution guard
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check commit messages and identity
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          shas=$(git log --format=%H "$BASE_SHA".."$HEAD_SHA")
+          if [ -z "$shas" ]; then
+            echo "AI attribution guard: commit range $BASE_SHA..$HEAD_SHA contains no commits." >&2
+            echo "A pull request always has at least one commit; an empty range means this check did not run, and that must fail rather than report success." >&2
+            exit 1
+          fi
+          count=$(printf '%s\n' "$shas" | grep -c .)
+          echo "Checking $count commit(s)"
+          status=0
+          for sha in $shas; do
+            if ! git log -1 --format=%B "$sha" \
+              | python3 scripts/ci/check_no_ai_attribution.py --kind commit --label "commit $sha message"; then
+              status=1
+            fi
+            if ! git log -1 --format='author name: %an%nauthor email: %ae%ncommitter name: %cn%ncommitter email: %ce' "$sha" \
+              | python3 scripts/ci/check_no_ai_attribution.py --kind identity --label "commit $sha identity"; then
+              status=1
+            fi
+          done
+          exit "$status"
+
+      - name: Check pull request title
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          printf '%s' "$PR_TITLE" \
+            | python3 scripts/ci/check_no_ai_attribution.py --kind description --label "pull request title"
+
+      - name: Check pull request description
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: |
+          printf '%s' "$PR_BODY" \
+            | python3 scripts/ci/check_no_ai_attribution.py --kind description --label "pull request description"

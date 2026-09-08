@@ -11,7 +11,10 @@ AceTeam Workflow Engine is a Python library for building and executing graph-bas
 ```bash
 # Install dependencies
 uv sync
-uv run pre-commit install
+# Explicit --hook-type flags matter: plain `pre-commit install` only wires
+# the pre-commit stage, and would silently skip the commit-msg attribution
+# guard below.
+uv run pre-commit install --hook-type pre-commit --hook-type commit-msg
 
 # Run all tests
 uv run pytest
@@ -163,6 +166,18 @@ if registry.has_name("foo"):  # Ctrl+Click jumps to has_name()
 - Core data structures (custom collections, numerical types)
 - Protocol implementations (context managers, iterators)
 - Pydantic model internals (`__init_subclass__`, `model_validator`)
+
+## No AI Attribution
+
+This repository is public and carries no AI attribution. Neither a commit message, a commit's author/committer identity, nor a pull request title or description may contain a Claude or assistant session link, a `Claude-Session:` trailer, a `Co-Authored-By:`/`Signed-off-by:`/`Authored-by:` trailer naming an AI assistant, or a "Generated with/by Claude" footer or link. The full pattern list lives in `scripts/ci/check_no_ai_attribution.py`.
+
+Enforcement, plainly stated:
+
+- A local `commit-msg` git hook, installed by `uv run pre-commit install --hook-type pre-commit --hook-type commit-msg`, rejects a bad commit message before the commit object exists. This is the earliest and cheapest point to fix it.
+- CI re-checks every commit introduced by a pull request (message and author/committer identity), plus the PR title and description, on `opened`, `synchronize`, `reopened`, and `edited`. This check is required to merge.
+- An org admin can still bypass a required check or a git hook. That is a deliberate, visible act, not a gap in the guard, and it is on the person who does it.
+
+If CI rejects a commit, reword it with `git rebase`; if it rejects the title or description, edit the pull request.
 
 ## Release Process
 
