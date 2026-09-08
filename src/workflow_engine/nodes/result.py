@@ -1,11 +1,13 @@
 # workflow_engine/nodes/result.py
 """
-Eliminators for ``Seq[Result[T]]``.
+Eliminators for ``Result[T]``, at both sequence and element granularity.
 
-A small, closed vocabulary for consuming a sequence of ``Result[T]`` values,
-decided once so that no combinator built on top of it has to grow its own
-error-handling policy. See discussion #198 for the motivation and #200 /
+A small, closed vocabulary for consuming ``Result[T]`` values, decided once
+so that no combinator built on top of it has to grow its own error-handling
+policy. See discussion #198 for the motivation and #200 / #234 (#235) /
 ``core/values/result.py`` for ``Result[T]`` itself.
+
+``Seq[Result[T]]`` eliminators:
 
 - ``PartitionNode``: splits into oks and errs, as two separate outputs.
 - ``UnwrapOrNode``: collapses ``Seq[Result[T]]`` to ``Seq[T]`` using a
@@ -13,9 +15,26 @@ error-handling policy. See discussion #198 for the motivation and #200 /
 - ``AllOkNode``: the all-or-nothing collapse, ``Seq[Result[T]] -> Result[Seq[T]]``.
 - ``FirstErrorNode``: the first err in the sequence, if any.
 
+Element-level ``Result[T]`` eliminators (#235), added once #232 made
+``Result[T]`` assignable only to ``Result``, which left a lone ``attempt``
+outside a sequence with no legal downstream node:
+
+- ``UnwrapNode``: ``Result[T] -> T``, failing the node on err. Inside a
+  boundary this is exactly ``?``; outside any boundary it is exactly
+  ``.unwrap()`` panicking, both falling out of the same node. See
+  ``PropagatedResultError`` (``core/values/result.py``) for how it keeps the
+  err arm's original provenance through the re-raise.
+- ``UnwrapOrValueNode``: the element-level analogue of ``UnwrapOrNode``,
+  ``Result[T]`` plus a default of type ``T`` -> ``T``.
+- ``IsOkNode``: ``Result[T] -> bool``, for branching a graph on the tag by
+  feeding ``If``/``IfElse``'s ``condition`` (see #235's PR description for
+  why this shape was chosen over a two-armed match node).
+
 None of these run or retry a workflow; that is ``attempt`` (#201), a separate
-piece. These only ever consume a sequence that already contains ``Result[T]``
-elements, typically produced by ``for_each(attempt(w))``.
+piece. The ``Seq``-level eliminators consume a sequence that already contains
+``Result[T]`` elements, typically produced by ``for_each(attempt(w))``; the
+element-level ones consume a lone ``Result[T]``, typically produced directly
+by ``attempt(w)``.
 """
 
 from typing import ClassVar, Generic, Type, TypeVar, cast
@@ -25,6 +44,7 @@ from pydantic import Field
 from pydantic.fields import FieldInfo
 
 from ..core import (
+    BooleanValue,
     Data,
     DataValue,
     Empty,
@@ -34,6 +54,7 @@ from ..core import (
     NodeTypeInfo,
     NullValue,
     OptionalValue,
+    PropagatedResultError,
     Result,
     ResultError,
     SequenceValue,
@@ -395,12 +416,261 @@ class FirstErrorNode(Node[SequenceData, FirstErrorData, Empty]):
         return output_type(error=NullValue(None))
 
 
+################################################################################
+# unwrap
+
+
+class UnwrapNode(Node[Data, Data, Empty]):
+    """
+    ``Result[T] -> T``: the ok value, or fail the node on err.
+
+    This is the value-granularity ``?``: ``attempt`` is already ``?`` at
+    function granularity (fail-fast inside the boundary is early return, and
+    the boundary is the function body), but nothing could re-raise a
+    ``Result[T]`` that arrived on an edge from an earlier boundary back
+    inside the current one, at the value it actually failed on, until this
+    node existed. ``unwrap`` inside a boundary is exactly that re-raise;
+    ``unwrap`` outside any boundary is exactly ``.unwrap()`` panicking, which
+    fails the run. Both behaviors fall out of one node: this one never checks
+    whether it is inside a boundary, it just raises, and the boundary
+    machinery (or its absence) decides what that raise means.
+
+    The dynamic input/output types build the field directly from
+    ``self.element_type`` rather than declaring a ``Generic[V]`` ``Data``
+    subclass, the same idiom ``UnwrapOrNode``'s ``default`` field uses: a
+    generic ``Data`` subclass can't declare a bare-typevar field, since
+    ``Data`` validates every field is a concrete ``Value`` type at
+    class-definition time, before any parametrization.
+    """
+
+    TYPE_INFO: ClassVar[NodeTypeInfo] = NodeTypeInfo.from_parameter_type(
+        display_name="Unwrap",
+        description="Returns the ok value of a Result, failing the node on err.",
+        version="1.0.0",
+        parameter_type=Empty,
+    )
+
+    # The type of the ok element. For now, only available when the node is
+    # constructed programmatically (see nodes/data.py for the same TODO).
+    element_type: ValueType = Field(default=Value, exclude=True)
+
+    @override
+    async def dynamic_input_type(self, context: ValidationContext) -> Type[Data]:
+        return build_data_type(
+            name="UnwrapInput",
+            fields={
+                "result": (
+                    Result[self.element_type],
+                    FieldInfo(
+                        title="Result",
+                        description="The Result to unwrap.",
+                    ),
+                ),
+            },
+        )
+
+    @override
+    async def dynamic_output_type(self, context: ValidationContext) -> Type[Data]:
+        return build_data_type(
+            name="UnwrapOutput",
+            fields={
+                "value": (
+                    self.element_type,
+                    FieldInfo(
+                        title="Value",
+                        description="The unwrapped ok value.",
+                    ),
+                ),
+            },
+        )
+
+    @override
+    async def run(
+        self,
+        *,
+        context: ExecutionContext,
+        input_type: Type[Data],
+        output_type: Type[Data],
+        input: Data,
+    ) -> Data:
+        input_dict = get_data_dict(input)
+        # get_data_dict()'s static return type is Mapping[str, Value]; the
+        # actual runtime type of "result" is Result[Value] (it was just built
+        # that way above), so cast rather than lie to pyright with an ignore
+        # comment.
+        result = cast(Result[Value], input_dict["result"])
+        if result.is_ok():
+            return output_type(**{"value": result.unwrap_ok()})
+        # Re-raise carrying the original error_class/name/message/node_id
+        # unchanged; see PropagatedResultError for why a fresh
+        # WorkflowException can't do that through its own node_id field.
+        raise PropagatedResultError(original=result.unwrap_err())
+
+
+################################################################################
+# unwrap_or (scalar)
+
+
+class UnwrapOrValueNode(Node[Data, Data, Empty]):
+    """
+    ``Result[T]`` plus a default of type ``T`` -> ``T``: the element-level
+    analogue of ``UnwrapOrNode``. Returns the ok value, or the caller-supplied
+    default if err.
+
+    Unlike ``unwrap``, this never fails: it is the total, no-boundary-needed
+    way to consume a lone ``Result[T]`` when any placeholder value is an
+    acceptable substitute for "this failed here." See ``UnwrapOrNode`` for
+    the rationale behind requiring an explicit default rather than the engine
+    inventing one.
+    """
+
+    TYPE_INFO: ClassVar[NodeTypeInfo] = NodeTypeInfo.from_parameter_type(
+        display_name="Unwrap Or",
+        description=(
+            "Returns the ok value of a Result, or a default value in place of err."
+        ),
+        version="1.0.0",
+        parameter_type=Empty,
+    )
+
+    # The type of the element. For now, only available when the node is
+    # constructed programmatically (see nodes/data.py for the same TODO).
+    element_type: ValueType = Field(default=Value, exclude=True)
+
+    @override
+    async def dynamic_input_type(self, context: ValidationContext) -> Type[Data]:
+        return build_data_type(
+            name="UnwrapOrValueInput",
+            fields={
+                "result": (
+                    Result[self.element_type],
+                    FieldInfo(
+                        title="Result",
+                        description="The Result to unwrap.",
+                    ),
+                ),
+                "default": (
+                    self.element_type,
+                    FieldInfo(
+                        title="Default",
+                        description=_DEFAULT_FIELD_DESCRIPTION,
+                    ),
+                ),
+            },
+        )
+
+    @override
+    async def dynamic_output_type(self, context: ValidationContext) -> Type[Data]:
+        return build_data_type(
+            name="UnwrapOrValueOutput",
+            fields={
+                "value": (
+                    self.element_type,
+                    FieldInfo(
+                        title="Value",
+                        description="The ok value, or the default if err.",
+                    ),
+                ),
+            },
+        )
+
+    @override
+    async def run(
+        self,
+        *,
+        context: ExecutionContext,
+        input_type: Type[Data],
+        output_type: Type[Data],
+        input: Data,
+    ) -> Data:
+        input_dict = get_data_dict(input)
+        result = cast(Result[Value], input_dict["result"])
+        default = input_dict["default"]
+        value = result.unwrap_ok() if result.is_ok() else default
+        return output_type(**{"value": value})
+
+
+################################################################################
+# is_ok (tag branch)
+
+
+class IsOkData(Data, Generic[V]):
+    """The single ``Result[T]`` input to ``is_ok``."""
+
+    result: Result[V] = Field(
+        title="Result",
+        description="The Result to check.",
+    )
+
+
+class IsOkOutput(Data):
+    """Whether a ``Result[T]`` was ok."""
+
+    is_ok: BooleanValue = Field(
+        title="Is Ok",
+        description="True if the Result was ok, false if it was err.",
+    )
+
+
+class IsOkNode(Node[IsOkData, IsOkOutput, Empty]):
+    """
+    ``Result[T] -> bool``: true if ok, false if err.
+
+    The tag branch for a lone ``Result[T]``: wire this node's ``is_ok``
+    output into ``If``/``IfElse``'s ``condition`` to run a different inner
+    workflow depending on the tag, the same conditional every other boolean
+    branch in a graph already uses. Composes with ``And``/``Or``/``Not`` for
+    a compound condition, for free, since the output is a plain
+    ``BooleanValue`` rather than a bespoke branch shape.
+
+    See the PR description for #235 for why this shape (a boolean feeding
+    the existing conditional) was chosen over a two-armed ``match_result``
+    node with typed ok/err ports.
+    """
+
+    TYPE_INFO: ClassVar[NodeTypeInfo] = NodeTypeInfo.from_parameter_type(
+        display_name="Is Ok",
+        description="Reports whether a Result is ok, to branch a graph on the tag.",
+        version="1.0.0",
+        parameter_type=Empty,
+    )
+
+    # The type of the element. For now, only available when the node is
+    # constructed programmatically (see nodes/data.py for the same TODO).
+    element_type: ValueType = Field(default=Value, exclude=True)
+
+    @override
+    async def dynamic_input_type(self, context: ValidationContext) -> Type[IsOkData]:
+        return IsOkData[self.element_type]
+
+    @classmethod
+    @override
+    def static_output_type(cls) -> Type[IsOkOutput]:
+        return IsOkOutput
+
+    @override
+    async def run(
+        self,
+        *,
+        context: ExecutionContext,
+        input_type: Type[IsOkData],
+        output_type: Type[IsOkOutput],
+        input: IsOkData,
+    ) -> IsOkOutput:
+        return output_type(is_ok=BooleanValue(input.result.is_ok()))
+
+
 __all__ = [
     "AllOkData",
     "AllOkNode",
     "FirstErrorData",
     "FirstErrorNode",
+    "IsOkData",
+    "IsOkNode",
+    "IsOkOutput",
     "PartitionData",
     "PartitionNode",
+    "UnwrapNode",
     "UnwrapOrNode",
+    "UnwrapOrValueNode",
 ]

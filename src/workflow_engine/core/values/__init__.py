@@ -24,7 +24,13 @@ from .json import JSON, JSONValue
 from .mapping import StringMapValue
 from .model import ModelValue
 from .primitives import BooleanValue, FloatValue, IntegerValue, NullValue, StringValue
-from .result import ErrorClass, ErrorClassValue, Result, ResultError
+from .result import (
+    ErrorClass,
+    ErrorClassValue,
+    PropagatedResultError,
+    Result,
+    ResultError,
+)
 from .rounding import (
     RoundingMode,
     RoundingModeValue,
@@ -67,6 +73,7 @@ __all__ = [
     "ModelValue",
     "NullValue",
     "OptionalValue",
+    "PropagatedResultError",
     "Relation",
     "Result",
     "ResultError",

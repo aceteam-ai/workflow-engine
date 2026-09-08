@@ -34,7 +34,8 @@ from pydantic.json_schema import JsonSchemaValue
 from pydantic_core import core_schema
 
 from ...utils.model import ImmutableBaseModel
-from ..error import ErrorClass
+from ..error import ErrorClass, WorkflowException
+from ..stakeholder import StakeholderLevel
 from .data import Data, get_data_schema
 from .json import JSONValue
 from .primitives import StringValue
@@ -142,6 +143,42 @@ class ResultError(Data):
         title="Node ID",
         description="The identifier of the node that produced the error.",
     )
+
+
+class PropagatedResultError(WorkflowException):
+    """
+    Re-raises a ``Result[T]`` err arm's ``ResultError`` from inside a
+    boundary, carrying its ``error_class``, ``name``, ``message`` and
+    ``node_id`` through unchanged.
+
+    Raised by ``unwrap`` (``nodes/result.py``) rather than one of
+    ``ResultError``'s own fields being turned back into a fresh exception's
+    ``message``/``error_class``/``node_id``: ``Node.__call__`` unconditionally
+    stamps a re-raised ``WorkflowException``'s ``node_id`` to the raising
+    node's own id (and turns a mismatched pre-set id into an unrelated
+    operator error), so there is no channel through the normal exception
+    fields for ``unwrap``'s re-raise to carry someone else's ``node_id``.
+    ``original`` is the side channel instead: ``result_error_from_exception``
+    (``execution/boundary.py``) special-cases this type and hands ``original``
+    back unchanged, rather than reconstructing a ``ResultError`` from this
+    exception's own (necessarily unwrap-node-scoped) fields. ``unwrap``'s own
+    ``on_node_error`` still fires with this exception's own ``node_id``, so
+    the ledger still records the hop through ``unwrap``; only the
+    materialized value keeps the root cause.
+
+    Constructed at ``level=USER``: ``ResultError.message`` is already
+    redaction-gated at the point the original error was materialized, so
+    surfacing it again here leaks nothing new.
+    """
+
+    def __init__(self, *, original: ResultError):
+        super().__init__(
+            f"Unwrapped error from node '{original.node_id.root}': "
+            f"{original.message.root}",
+            level=StakeholderLevel.USER,
+            error_class=ErrorClass(original.error_class.root),
+        )
+        self.original = original
 
 
 class _OkRoot(ImmutableBaseModel, Generic[T]):
@@ -332,6 +369,7 @@ def _no_cast_result_to_json(
 __all__ = [
     "ErrorClass",
     "ErrorClassValue",
+    "PropagatedResultError",
     "Result",
     "ResultError",
     "result_value_type",
