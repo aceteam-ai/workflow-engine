@@ -146,7 +146,7 @@ result = await value.cast_to(FloatValue)  # FloatValue(42.0)
 | -------------- | -------------- | ---------------------- |
 | `IntegerValue` | `FloatValue`   | Always                 |
 | `FloatValue`   | `IntegerValue` | Only if `is_integer()` |
-| Any `Value`    | `StringValue`  | Always (via `str()`)   |
+| Any `Value`    | `StringValue`  | Always (via `str()`); not `Result[T]`, see below |
 | `StringValue`  | `BooleanValue` | Via JSON parsing       |
 | `StringValue`  | `IntegerValue` | Via JSON parsing       |
 | `StringValue`  | `FloatValue`   | Via JSON parsing       |
@@ -155,7 +155,7 @@ result = await value.cast_to(FloatValue)  # FloatValue(42.0)
 
 | From        | To               | Condition                    |
 | ----------- | ---------------- | ---------------------------- |
-| Any `Value` | `JSONValue`      | Always (via `model_dump()`)  |
+| Any `Value` | `JSONValue`      | Always (via `model_dump()`); not `Result[T]`, see below |
 | `JSONValue` | `NullValue`      | If value is `null`           |
 | `JSONValue` | `BooleanValue`   | If value is `bool`           |
 | `JSONValue` | `IntegerValue`   | If value is `int`            |
@@ -278,7 +278,17 @@ ok/err distinction.
 ### Casting
 
 `Result[S]` casts to `Result[T]` when `S` can cast to `T`: the `ok` arm casts
-its payload, the `err` arm passes the `ResultError` through unchanged.
+its payload, the `err` arm passes the `ResultError` through unchanged. That
+`Result`-to-`Result` cast is the only cast into or out of `Result[T]`:
+`Result[T]` is not assignable to `StringValue` or to `JSONValue`, even though
+every other `Value` is (see "Available Casts" above), because both of those
+are blanket "cast anything" casters that would otherwise stringify or
+JSON-ify the ok payload and turn the err arm's structured `ResultError` into
+an indistinguishable string or object, silently reintroducing the forged
+failures `Result[T]` exists to rule out (#232). `Result` registers its own
+casters to `StringValue` and `JSONValue` that always return `None`
+specifically to shadow those two blanket casters; do not remove them as
+"redundant" or "dead code".
 
 ### Gather-side typing
 
