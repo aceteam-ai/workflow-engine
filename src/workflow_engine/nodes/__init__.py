@@ -58,8 +58,11 @@ from .iteration import (
 from .result import (
     AllOkNode,
     FirstErrorNode,
+    IsOkNode,
     PartitionNode,
+    UnwrapNode,
     UnwrapOrNode,
+    UnwrapOrValueNode,
 )
 from .text import (
     AppendToFileNode,
@@ -92,6 +95,7 @@ __all__ = [
     "GreaterThanNode",
     "IfElseNode",
     "IfNode",
+    "IsOkNode",
     "LessThanEqualNode",
     "LessThanNode",
     "MaximumNode",
@@ -108,5 +112,7 @@ __all__ = [
     "RoundNode",
     "SubtractNode",
     "SumNode",
+    "UnwrapNode",
     "UnwrapOrNode",
+    "UnwrapOrValueNode",
 ]

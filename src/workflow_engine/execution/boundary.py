@@ -24,7 +24,14 @@ from ..core.context import ExecutionContext
 from ..core.error import ErrorClass, WorkflowException
 from ..core.node import Node
 from ..core.stakeholder import StakeholderLevel
-from ..core.values import Data, DataMapping, ErrorClassValue, ResultError, StringValue
+from ..core.values import (
+    Data,
+    DataMapping,
+    ErrorClassValue,
+    PropagatedResultError,
+    ResultError,
+    StringValue,
+)
 from ..core.workflow import ValidatedWorkflow
 from .retry import RetryTracker
 
@@ -346,7 +353,16 @@ def result_error_from_exception(exc: WorkflowException) -> ResultError:
     unlike ``WorkflowErrors``, which every viewer filters through
     ``WorkflowError.filter`` before it is rendered, a materialized ``err``
     value flows straight into user-visible workflow output.
+
+    A ``PropagatedResultError`` (raised by ``unwrap``, ``nodes/result.py``,
+    when re-raising an err arm from inside a boundary) is handed back
+    unchanged instead of being rebuilt from its own ``node_id`` / ``message``
+    / ``error_class``: those describe ``unwrap`` itself, the bookkeeping hop,
+    not the value's root cause. See ``PropagatedResultError`` for why the
+    normal exception fields cannot carry that root cause through.
     """
+    if isinstance(exc, PropagatedResultError):
+        return exc.original
     assert exc.node_id is not None
     cause: BaseException = exc
     while cause.__cause__ is not None:
