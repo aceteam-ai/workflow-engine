@@ -36,6 +36,7 @@ from pydantic_core import core_schema
 from ...utils.model import ImmutableBaseModel
 from ..error import ErrorClass
 from .data import Data, get_data_schema
+from .json import JSONValue
 from .primitives import StringValue
 from .value import Caster, Value, ValueType, get_origin_and_args
 
@@ -293,6 +294,39 @@ def cast_result_to_result(
         return target_type.ok(casted)  # type: ignore[arg-type]
 
     return _cast
+
+
+@Result.register_generic_cast_to(StringValue)
+def _no_cast_result_to_string(
+    source_type: type[Result[SourceType]],
+    target_type: type[StringValue],
+) -> Caster[Result[SourceType], StringValue] | None:
+    """
+    Shadow ``Value``'s blanket "stringify anything" cast (``primitives.py``)
+    so it never reaches a ``Result``. ``_get_casters`` resolves a child
+    class's own registrations before a parent's, so registering this here,
+    directly on ``Result``, is what makes the blanket cast unreachable for
+    every ``Result[T]`` regardless of ``T``; nothing about the registry or
+    the blanket casters themselves changes. Without this, a ``Result``-typed
+    edge into a ``StringValue`` input passes graph validation and both the ok
+    and the err arm arrive downstream as a Pydantic repr instead of the
+    caller ever learning the cast was unsound (#232).
+    """
+    return None
+
+
+@Result.register_generic_cast_to(JSONValue)
+def _no_cast_result_to_json(
+    source_type: type[Result[SourceType]],
+    target_type: type[JSONValue],
+) -> Caster[Result[SourceType], JSONValue] | None:
+    """
+    Shadow ``Value``'s blanket "JSON-ify anything" cast (``json.py``) for the
+    same reason as ``_no_cast_result_to_string`` above. This is unrelated to
+    JSON serialization at the HTTP boundary, which goes through
+    ``model_dump`` and never touches the cast table (#232).
+    """
+    return None
 
 
 __all__ = [

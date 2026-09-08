@@ -8,6 +8,7 @@ from workflow_engine import (
     Edge,
     FloatValue,
     IntegerValue,
+    JSONValue,
     SequenceValue,
     StringValue,
     Workflow,
@@ -425,6 +426,124 @@ async def test_cast_result_err_arm_preserves_error(context: InMemoryExecutionCon
     casted = await source.cast_to(Result[FloatValue], context=context)
     assert casted.is_err()
     assert casted.unwrap_err() == error
+
+
+# --- Regression (#232): before this fix, Result[T] was assignable to
+# StringValue and to JSONValue through the two blanket "cast anything"
+# casters in primitives.py and json.py (nothing in result.py shadowed them).
+# A Result-typed edge into either target therefore passed Edge.validate_types,
+# and both the ok and the err arm arrived downstream as a Pydantic repr
+# instead of the caller ever learning the cast was unsound. Result now
+# registers its own casters to StringValue and JSONValue that always return
+# None, which shadows the blanket casters without touching the registry or
+# the blanket casters themselves.
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    "item_type",
+    [
+        pytest.param(FloatValue, id="Result[FloatValue]"),
+        pytest.param(IntegerValue, id="Result[IntegerValue]"),
+    ],
+)
+def test_result_cannot_cast_to_string_or_json(item_type: type[Value]):
+    """
+    The two blanket "cast anything" casters (any Value -> StringValue in
+    primitives.py, any Value -> JSONValue in json.py) must not reach
+    Result[T], for more than one choice of T.
+    """
+    result_type = Result[item_type]
+    assert not result_type.can_cast_to(StringValue)
+    assert not result_type.can_cast_to(JSONValue)
+
+
+@pytest.mark.unit
+def test_result_sequence_cannot_cast_to_string_sequence():
+    """
+    SequenceValue[S] -> SequenceValue[T] delegates to S.can_cast_to(T)
+    (sequence.py), so this must also refuse once Result[T] itself refuses.
+    """
+    assert not SequenceValue[Result[StringValue]].can_cast_to(
+        SequenceValue[StringValue]
+    )
+
+
+@pytest.mark.unit
+def test_result_widens_to_result_of_supertype():
+    """
+    cast_result_to_result must keep working: Result[T] still widens to
+    Result[Super] when T is assignable to Super. StringValue is not a
+    supertype of anything else here, so use Result[Value] (the fully open
+    item type every Value is assignable to) as the "Super" side.
+    """
+    assert Result[StringValue].can_cast_to(Result[Value])
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+@pytest.mark.parametrize("target_type", [StringValue, JSONValue])
+async def test_result_ok_arm_cannot_cast_at_runtime(
+    context: InMemoryExecutionContext, target_type: type[Value]
+):
+    """
+    Pin the ok arm, not just the err arm. The issue's repro shows the ok
+    payload destroyed exactly as badly as the err arm (both turn into a
+    Pydantic repr), so a fix that only special-cases the err arm at cast
+    time while still letting the ok arm through unguarded would pass every
+    err-only test here and still be wrong.
+    """
+    source = Result[StringValue].ok(StringValue("real page text"))
+    assert not source.can_cast_to(target_type)
+    with pytest.raises(ValueError):
+        await source.cast_to(target_type, context=context)
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+@pytest.mark.parametrize("target_type", [StringValue, JSONValue])
+async def test_result_err_arm_cannot_cast_at_runtime(
+    context: InMemoryExecutionContext, target_type: type[Value]
+):
+    source = Result[StringValue].err(_error(name="ocr_failed"))
+    assert not source.can_cast_to(target_type)
+    with pytest.raises(ValueError):
+        await source.cast_to(target_type, context=context)
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_result_edge_to_string_input_fails_workflow_validation(
+    engine: WorkflowEngine,
+):
+    """
+    A real graph wiring a Result-typed input field into a StringValue-typed
+    output field must be refused at workflow validation, naming the edge
+    (source/target node ids and the mismatched types), rather than
+    validating and silently corrupting both arms downstream.
+    """
+    input_node = engine.create_input_node(x=Result[StringValue])
+    output_node = engine.create_output_node(y=StringValue)
+    workflow = Workflow(
+        input_node=input_node,
+        output_node=output_node,
+        inner_nodes=[],
+        edges=[
+            Edge.from_nodes(
+                source=input_node,
+                source_key="x",
+                target=output_node,
+                target_key="y",
+            ),
+        ],
+    )
+
+    with pytest.raises(TypeError) as exc_info:
+        await engine.validate(workflow)
+
+    message = str(exc_info.value)
+    assert input_node.id in message
+    assert output_node.id in message
 
 
 # --- Gather-side typing: index stability with Result[T] elements ---
