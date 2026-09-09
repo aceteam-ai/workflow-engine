@@ -10,6 +10,7 @@ import pytest
 from workflow_engine import (
     Data,
     Edge,
+    ErrorClass,
     ExecutionContext,
     IntegerValue,
     Node,
@@ -305,6 +306,45 @@ class TestNodeRetryState:
         time_remaining = state.time_until_ready()
         assert time_remaining > timedelta(0)
         assert time_remaining <= timedelta(seconds=10)
+
+
+class TestShouldRetryErrorClass:
+    """
+    Pins ShouldRetry's error_class default and the three classes a retry
+    policy actually keys on (#205): timeout, unreachable, rate_limit.
+    """
+
+    @pytest.fixture
+    def node(self, engine: WorkflowEngine) -> Node:
+        return engine.create_node(RetryableNode, id="node1", params=dict(fail_count=0))
+
+    @pytest.mark.unit
+    def test_default_error_class_is_systemic(self, node: Node):
+        """
+        A raise site that omits error_class is being honest that it does not
+        know the cause, not silently dropping the field: ShouldRetry stamps
+        SYSTEMIC itself rather than leaving error_class as None.
+        """
+        error = ShouldRetry.for_user("error", node=node, backoff=timedelta(seconds=1))
+        assert error.error_class == ErrorClass.SYSTEMIC
+        assert error.dump().error_class == ErrorClass.SYSTEMIC
+
+    @pytest.mark.unit
+    @pytest.mark.parametrize(
+        "error_class",
+        [ErrorClass.TIMEOUT, ErrorClass.UNREACHABLE, ErrorClass.RATE_LIMIT],
+    )
+    def test_explicit_transient_error_class_survives_dump(
+        self, node: Node, error_class: ErrorClass
+    ):
+        error = ShouldRetry.for_user(
+            "transient failure",
+            node=node,
+            backoff=timedelta(seconds=1),
+            error_class=error_class,
+        )
+        assert error.error_class == error_class
+        assert error.dump().error_class == error_class
 
 
 class TestRetryIntegration:

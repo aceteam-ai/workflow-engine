@@ -663,6 +663,41 @@ class TestErrArm:
         assert error.error_class.root == ErrorClass.TIMEOUT
 
     @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "error_class",
+        [ErrorClass.TIMEOUT, ErrorClass.UNREACHABLE, ErrorClass.RATE_LIMIT],
+    )
+    async def test_explicit_error_class_transient_causes(
+        self, algorithm: ExecutionAlgorithm, error_class: ErrorClass
+    ):
+        """
+        Pins the three classes a retry policy actually keys on (#205):
+        timeout, unreachable, rate_limit. Each must survive a boundary
+        materialization (`result_error_from_exception`) unchanged, the same
+        way `test_explicit_error_class` above already pins timeout on its
+        own.
+        """
+        engine = WorkflowEngine(execution_algorithm=algorithm)
+        failing = engine.create_node(
+            FailingNode,
+            id="boom",
+            params=dict(
+                message=StringValue("transient failure"),
+                error_class=StringValue(error_class.value),
+            ),
+        )
+        workflow = await _build_attempt_workflow(
+            engine,
+            inner_nodes=[failing],
+            edges=[edge("boom", "value", "output", "final")],
+            output_fields={"final": StringValue},
+        )
+        context = RecordingContext()
+        result = await _run(engine, workflow, context)
+        error = as_result(result.output["result"]).unwrap_err()
+        assert error.error_class.root == error_class
+
+    @pytest.mark.asyncio
     async def test_continue_mode_parallel_no_run_level_error(self):
         """A boundary-contained error never reaches run-level errors, even in CONTINUE mode."""
         algorithm = ParallelExecutionAlgorithm(
@@ -1455,3 +1490,6 @@ class TestReservedIdCollision:
         assert result.errors.count == 1
         message = result.errors.messages()[0]
         assert "reserved id 'ok'" in message
+        (error,) = result.errors.node_errors["attempt"]
+        assert error is not None
+        assert error.error_class == ErrorClass.VALIDATION

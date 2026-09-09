@@ -25,6 +25,7 @@ from ..core import (
     Edge,
     Empty,
     ErrorBoundaryNode,
+    ErrorClass,
     ExecutionContext,
     Node,
     NodeException,
@@ -135,6 +136,7 @@ class AttemptNode(ErrorBoundaryNode, Node[Data, Data, AttemptParams]):
                 f"The inner workflow of attempt node '{self.id}' has a node "
                 f"with the reserved id '{_RESERVED_OK_ID}'; rename it.",
                 node=self,
+                error_class=ErrorClass.VALIDATION,
             )
 
         b_type = single_field_or_wrapped(w.output_type)
