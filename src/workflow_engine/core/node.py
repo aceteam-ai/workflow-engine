@@ -4,7 +4,7 @@ from __future__ import annotations
 import logging
 import warnings
 from abc import ABC, abstractmethod
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from functools import cached_property
 from typing import (
     TYPE_CHECKING,
@@ -86,6 +86,27 @@ class Empty(Params):
     pass
 
 
+class DeclaredError(ImmutableBaseModel):
+    """
+    Documents one error ``name`` a node type may raise into a ``Result``
+    err arm. See ``NodeTypeInfo.declared_errors`` for what this is and, just
+    as importantly, is not.
+    """
+
+    name: str = Field(
+        description="The short, machine-readable name this node type may "
+        "raise, matching ResultError.name (core/values/result.py) on the wire."
+    )
+    error_class: ErrorClass = Field(
+        description="The error_class this name is expected to carry by "
+        "default. Not wire-enforced: the value actually carried on the "
+        "wire is whatever the raise site set, or systemic if it set none."
+    )
+    description: str = Field(
+        description="A human-readable description of when this error occurs."
+    )
+
+
 class NodeTypeInfo(ImmutableBaseModel):
     """
     Information about a node type, in serializable form.
@@ -110,6 +131,18 @@ class NodeTypeInfo(ImmutableBaseModel):
         description="Maximum number of retry attempts for this node type. "
         "None means use the execution algorithm's default.",
     )
+    declared_errors: Sequence[DeclaredError] = Field(
+        default=(),
+        description="The error names this node type may raise into a "
+        "Result err arm, each with a default error_class and a "
+        "description. Documentation only: a name absent here is still "
+        "valid on the wire (ResultError.name is an open StringValue, "
+        "unchanged by this field), and adding a name here is not a "
+        "schema change. Optional and non-exhaustive by construction, "
+        "on purpose: see #234 for why enforcing declared-only names "
+        "would recreate the versioning problem that field is designed "
+        "to avoid.",
+    )
 
     @cached_property
     def version_tuple(self) -> tuple[int, int, int]:
@@ -124,6 +157,7 @@ class NodeTypeInfo(ImmutableBaseModel):
         version: str,
         parameter_type: type[Params],
         max_retries: int | None = None,
+        declared_errors: Sequence[DeclaredError] = (),
     ) -> Self:
         return cls(
             display_name=display_name,
@@ -131,6 +165,7 @@ class NodeTypeInfo(ImmutableBaseModel):
             version=version,
             parameter_schema=get_data_schema(parameter_type),
             max_retries=max_retries,
+            declared_errors=declared_errors,
         )
 
 
@@ -1053,6 +1088,7 @@ NodeRegistry.DEFAULT = NodeRegistry.builder(lazy=True)
 
 
 __all__ = [
+    "DeclaredError",
     "Empty",
     "Node",
     "NodeTypeInfo",

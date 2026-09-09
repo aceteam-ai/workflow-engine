@@ -38,6 +38,7 @@ from .migration import (
     migration_runner,
 )
 from .node import (
+    DeclaredError,
     Empty,
     Node,
     NodeRegistry,
@@ -89,6 +90,7 @@ __all__ = [
     "DataMapping",
     "DataValue",
     "DateValue",
+    "DeclaredError",
     "Edge",
     "Empty",
     "EntryPointRef",
