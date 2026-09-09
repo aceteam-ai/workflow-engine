@@ -101,8 +101,12 @@ Notes:
   `output_type` are the resolved types for this invocation (relevant for nodes
   with dynamic types).
 - `NodeTypeInfo.from_parameter_type` takes `display_name`, `version`, and
-  `parameter_type` (required), plus optional `description` and `max_retries`.
-  There is no `name=` argument.
+  `parameter_type` (required), plus optional `description`, `max_retries`,
+  and `declared_errors`. There is no `name=` argument.
+- `declared_errors` documents the error `name`s this node type may raise into
+  a `Result` err arm, each with a default `error_class` and a description.
+  It is documentation only, not wire-enforced: a name absent from the list is
+  still a valid `ResultError.name`, and adding a name is not a schema change.
 - Access parameters inside `run` via `self.params`.
 - `version` is a semantic version — see [Node versioning](#node-versioning).
 
