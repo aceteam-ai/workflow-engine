@@ -4,6 +4,7 @@ import pytest
 
 from workflow_engine import (
     Edge,
+    ErrorClass,
     FloatValue,
     IntegerValue,
     SequenceValue,
@@ -21,6 +22,7 @@ from workflow_engine.nodes import (
     AddNode,
     ConstantIntegerNode,
     DivideNode,
+    FactorizationNode,
     MaximumNode,
     MinimumNode,
     MultiplyNode,
@@ -131,6 +133,7 @@ async def test_divide_by_zero(
     assert error is not None
     assert error.level is StakeholderLevel.USER
     assert "divide by zero" in error.message.lower()
+    assert error.error_class is ErrorClass.VALIDATION
 
 
 @pytest.mark.unit
@@ -256,6 +259,43 @@ async def test_min_empty_sequence(
     )
     assert result.status is WorkflowExecutionResultStatus.ERROR
     assert "node" in result.errors.node_errors
+    error = result.errors.node_errors["node"][0]
+    assert error is not None
+    assert error.error_class is ErrorClass.VALIDATION
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_max_empty_sequence(
+    engine: WorkflowEngine, context: InMemoryExecutionContext
+):
+    result = await engine.execute_node(
+        context=context,
+        node=MaximumNode,
+        input={"values": []},
+    )
+    assert result.status is WorkflowExecutionResultStatus.ERROR
+    assert "node" in result.errors.node_errors
+    error = result.errors.node_errors["node"][0]
+    assert error is not None
+    assert error.error_class is ErrorClass.VALIDATION
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_factorize_non_positive(
+    engine: WorkflowEngine, context: InMemoryExecutionContext
+):
+    result = await engine.execute_node(
+        context=context,
+        node=FactorizationNode,
+        input={"value": -3},
+    )
+    assert result.status is WorkflowExecutionResultStatus.ERROR
+    assert "node" in result.errors.node_errors
+    error = result.errors.node_errors["node"][0]
+    assert error is not None
+    assert error.error_class is ErrorClass.VALIDATION
 
 
 @pytest.mark.unit

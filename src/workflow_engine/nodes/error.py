@@ -60,6 +60,11 @@ class ErrorNode(Node[ErrorInput, Empty, ErrorParams]):
         output_type: Type[Empty],
         input: ErrorInput,
     ) -> Empty:
+        # error_name is an arbitrary, author-supplied string (this node exists
+        # to let a workflow author trigger a failure on demand for testing).
+        # The engine has no way to infer a cause from it, so error_class is
+        # left unset here rather than guessed at; it materializes as
+        # systemic, which is the honest answer for a genuinely unknown cause.
         raise WorkflowException.for_user(
             f"{self.params.error_name}: {input.info}",
         )

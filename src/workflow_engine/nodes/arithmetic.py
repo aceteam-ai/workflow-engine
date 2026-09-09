@@ -16,6 +16,7 @@ from pydantic import Field
 from ..core import (
     Data,
     Empty,
+    ErrorClass,
     ExecutionContext,
     FloatValue,
     IntegerValue,
@@ -91,7 +92,11 @@ def _require_nonzero(
     label: str = "divisor",
 ) -> None:
     if divisor == 0:
-        raise NodeException.for_user(f"Cannot divide by zero: {label} is 0.", node=node)
+        raise NodeException.for_user(
+            f"Cannot divide by zero: {label} is 0.",
+            node=node,
+            error_class=ErrorClass.VALIDATION,
+        )
 
 
 class SubtractInput(Data):
@@ -286,7 +291,11 @@ class FactorizationNode(Node[IntegerData, FactorizationData, Empty]):
                     [IntegerValue(i) for i in range(1, value + 1) if value % i == 0]
                 )
             )
-        raise ValueError("Can only factorize positive integers")
+        raise NodeException.for_user(
+            "Can only factorize positive integers",
+            node=self,
+            error_class=ErrorClass.VALIDATION,
+        )
 
 
 class SubtractOutput(Data):
@@ -524,6 +533,7 @@ class MinimumNode(Node[UnionFloatInput, MinimumOutput, Empty]):
             raise NodeException.for_user(
                 "Cannot compute the minimum of an empty sequence.",
                 node=self,
+                error_class=ErrorClass.VALIDATION,
             )
         return output_type(minimum=FloatValue(min(values)))
 
@@ -567,6 +577,7 @@ class MaximumNode(Node[UnionFloatInput, MaximumOutput, Empty]):
             raise NodeException.for_user(
                 "Cannot compute the maximum of an empty sequence.",
                 node=self,
+                error_class=ErrorClass.VALIDATION,
             )
         return output_type(maximum=FloatValue(max(values)))
 

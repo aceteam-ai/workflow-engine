@@ -271,6 +271,14 @@ class ShouldRetry(NodeException):
     Retrying a node that raised ShouldRetry is always a courtesy of the
     execution algorithm.
     If refused, the error passes up uncaught as a regular NodeException.
+
+    ``error_class`` defaults to ``SYSTEMIC`` rather than ``None``. A retry
+    policy (see #205) reads ``error_class`` straight off this exception via
+    the ``on_node_retry`` hook, before any boundary ever gets a chance to
+    null-coalesce a missing value to ``SYSTEMIC`` the way
+    ``result_error_from_exception`` does. A raise site that genuinely does
+    not know why the attempt failed, only that it is worth retrying, should
+    say so plainly rather than carry ``None`` into that policy check.
     """
 
     def __init__(
@@ -280,7 +288,7 @@ class ShouldRetry(NodeException):
         node: "Node",
         level: StakeholderLevel,
         backoff: timedelta = timedelta(seconds=1),
-        error_class: ErrorClass | None = None,
+        error_class: ErrorClass = ErrorClass.SYSTEMIC,
     ):
         super().__init__(message, node=node, level=level, error_class=error_class)
         self.backoff = backoff
