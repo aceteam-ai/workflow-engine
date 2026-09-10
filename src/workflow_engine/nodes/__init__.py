@@ -74,6 +74,7 @@ from .sequence import (
     SelectSequenceNode,
     ZipNode,
 )
+from .sequence_workflow import FilterNode, FoldNode, FoldStepNode, GroupByNode
 from .statistics import (
     MedianNode,
     ModeNode,
@@ -107,14 +108,18 @@ __all__ = [
     "ExpandMappingNode",
     "ExpandSequenceNode",
     "FactorizationNode",
+    "FilterNode",
     "FirstErrorNode",
     "FlattenSequenceNode",
+    "FoldNode",
+    "FoldStepNode",
     "ForEachNode",
     "GatherDataNode",
     "GatherMappingNode",
     "GatherSequenceNode",
     "GreaterThanEqualNode",
     "GreaterThanNode",
+    "GroupByNode",
     "GroupSequenceNode",
     "IfElseNode",
     "IfNode",
