@@ -1,96 +1,4 @@
 {
-  "input_node": {
-    "type": "Input",
-    "version": "1.0.0",
-    "id": "input",
-    "params": {
-      "fields": {
-        "sequence": {
-          "title": "SequenceValue[IntegerValue]",
-          "type": "array",
-          "items": {
-            "title": "IntegerValue",
-            "type": "integer",
-            "x-value-type": "IntegerValue"
-          },
-          "x-value-type": "SequenceValue[IntegerValue]"
-        }
-      }
-    }
-  },
-  "inner_nodes": [
-    {
-      "type": "ForEach",
-      "version": "1.0.0",
-      "id": "each",
-      "params": {
-        "workflow": {
-          "input_node": {
-            "type": "Input",
-            "version": "1.0.0",
-            "id": "input",
-            "params": {
-              "fields": {
-                "value": {
-                  "title": "IntegerValue",
-                  "type": "integer",
-                  "x-value-type": "IntegerValue"
-                }
-              }
-            }
-          },
-          "inner_nodes": [],
-          "output_node": {
-            "type": "Output",
-            "version": "1.0.0",
-            "id": "output",
-            "params": {
-              "fields": {
-                "value": {
-                  "title": "IntegerValue",
-                  "type": "integer",
-                  "x-value-type": "IntegerValue"
-                }
-              }
-            }
-          },
-          "edges": [
-            {
-              "source_id": "input",
-              "source_key": "value",
-              "target_id": "output",
-              "target_key": "value"
-            }
-          ]
-        }
-      },
-      "hints": {
-        "max_concurrency": 2,
-        "example.future_hint": {
-          "preference": "small-batches"
-        }
-      }
-    }
-  ],
-  "output_node": {
-    "type": "Output",
-    "version": "1.0.0",
-    "id": "output",
-    "params": {
-      "fields": {
-        "sequence": {
-          "title": "SequenceValue[IntegerValue]",
-          "type": "array",
-          "items": {
-            "title": "IntegerValue",
-            "type": "integer",
-            "x-value-type": "IntegerValue"
-          },
-          "x-value-type": "SequenceValue[IntegerValue]"
-        }
-      }
-    }
-  },
   "edges": [
     {
       "source_id": "input",
@@ -104,5 +12,97 @@
       "target_id": "output",
       "target_key": "sequence"
     }
-  ]
+  ],
+  "inner_nodes": [
+    {
+      "hints": {
+        "example.future_hint": {
+          "preference": "small-batches"
+        },
+        "max_concurrency": 2
+      },
+      "id": "each",
+      "params": {
+        "workflow": {
+          "edges": [
+            {
+              "source_id": "input",
+              "source_key": "value",
+              "target_id": "output",
+              "target_key": "value"
+            }
+          ],
+          "inner_nodes": [],
+          "input_node": {
+            "id": "input",
+            "params": {
+              "fields": {
+                "value": {
+                  "title": "IntegerValue",
+                  "type": "integer",
+                  "x-value-type": "IntegerValue"
+                }
+              }
+            },
+            "type": "Input",
+            "version": "1.0.0"
+          },
+          "output_node": {
+            "id": "output",
+            "params": {
+              "fields": {
+                "value": {
+                  "title": "IntegerValue",
+                  "type": "integer",
+                  "x-value-type": "IntegerValue"
+                }
+              }
+            },
+            "type": "Output",
+            "version": "1.0.0"
+          }
+        }
+      },
+      "type": "ForEach",
+      "version": "1.0.0"
+    }
+  ],
+  "input_node": {
+    "id": "input",
+    "params": {
+      "fields": {
+        "sequence": {
+          "items": {
+            "title": "IntegerValue",
+            "type": "integer",
+            "x-value-type": "IntegerValue"
+          },
+          "title": "SequenceValue[IntegerValue]",
+          "type": "array",
+          "x-value-type": "SequenceValue[IntegerValue]"
+        }
+      }
+    },
+    "type": "Input",
+    "version": "1.0.0"
+  },
+  "output_node": {
+    "id": "output",
+    "params": {
+      "fields": {
+        "sequence": {
+          "items": {
+            "title": "IntegerValue",
+            "type": "integer",
+            "x-value-type": "IntegerValue"
+          },
+          "title": "SequenceValue[IntegerValue]",
+          "type": "array",
+          "x-value-type": "SequenceValue[IntegerValue]"
+        }
+      }
+    },
+    "type": "Output",
+    "version": "1.0.0"
+  }
 }

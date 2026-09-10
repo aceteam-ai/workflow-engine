@@ -11,7 +11,17 @@ from typing import Any
 from pydantic.json_schema import JsonSchemaValue, models_json_schema
 
 import workflow_engine.nodes as builtin_nodes
-from workflow_engine import InputNode, Node, OutputNode, Result, Value, Workflow
+from workflow_engine import (
+    InputNode,
+    IntegerValue,
+    Node,
+    OutputNode,
+    Result,
+    SequenceValue,
+    Value,
+    Workflow,
+    WorkflowEngine,
+)
 from workflow_engine.core.edge import Edge
 from workflow_engine.core.hints import Hints
 from workflow_engine.core.values.schema import (
@@ -254,6 +264,61 @@ def generate_documents() -> dict[str, JsonSchemaValue]:
     return documents
 
 
+def generate_examples() -> dict[str, Any]:
+    """Build examples from current node versions and serialized defaults."""
+    engine = WorkflowEngine()
+
+    def identity(value_type: type[Value]) -> Workflow:
+        return Workflow(
+            input_node=engine.create_input_node(value=value_type),
+            inner_nodes=[],
+            output_node=engine.create_output_node(value=value_type),
+            edges=[
+                Edge(
+                    source_id="input",
+                    source_key="value",
+                    target_id="output",
+                    target_key="value",
+                )
+            ],
+        )
+
+    each = engine.create_node(
+        builtin_nodes.ForEachNode,
+        id="each",
+        params={"workflow": identity(IntegerValue)},
+        hints=Hints(
+            max_concurrency=2,
+            **{"example.future_hint": {"preference": "small-batches"}},
+        ),
+    )
+    foreach = Workflow(
+        input_node=engine.create_input_node(sequence=SequenceValue[IntegerValue]),
+        inner_nodes=[each],
+        output_node=engine.create_output_node(sequence=SequenceValue[IntegerValue]),
+        edges=[
+            Edge(
+                source_id="input",
+                source_key="sequence",
+                target_id="each",
+                target_key="sequence",
+            ),
+            Edge(
+                source_id="each",
+                source_key="sequence",
+                target_id="output",
+                target_key="sequence",
+            ),
+        ],
+    )
+    return {
+        "examples/foreach-workflow.json": foreach.model_dump(mode="json"),
+        "examples/result-workflow.json": identity(Result[IntegerValue]).model_dump(
+            mode="json"
+        ),
+    }
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -266,7 +331,7 @@ def main() -> int:
     if not args.check:
         args.output_dir.mkdir(parents=True, exist_ok=True)
     stale = []
-    for name, schema in generate_documents().items():
+    for name, schema in {**generate_documents(), **generate_examples()}.items():
         path = args.output_dir / name
         rendered = (
             json.dumps(schema, indent=2, sort_keys=True, ensure_ascii=False) + "\n"
@@ -275,6 +340,7 @@ def main() -> int:
             if not path.exists() or path.read_text() != rendered:
                 stale.append(name)
         else:
+            path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text(rendered)
             print(f"Generated {path}")
     if stale:

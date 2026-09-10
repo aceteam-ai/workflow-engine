@@ -173,6 +173,6 @@ catalogue. Shared definitions are generated together and reduced to those each
 document actually references. [Pydantic's schema generation
 API](https://docs.pydantic.dev/latest/concepts/json_schema/) supplies
 the model contracts; the script records the export projections explicitly.
-CI compares the generated JSON byte for byte. Tests validate the schemas with
+The runnable examples are generated from current node versions and parameter defaults alongside the schemas. CI compares the generated JSON byte for byte. Tests validate the schemas with
 a standard Draft 2020-12 validator, check local references, reject malformed
 examples, and load and execute the committed workflows under both executors.
