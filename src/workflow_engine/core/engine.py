@@ -11,7 +11,7 @@ from .execution import ExecutionAlgorithm, WorkflowExecutionResult
 from .io import InputNode, OutputNode
 from .node import Node, NodeRegistry, Params
 from .values import Data, ValueRegistry, ValueType, get_data_dict, get_data_fields
-from .workflow import ValidatedWorkflow, Workflow
+from .workflow import ResolvedWorkflow, ValidatedWorkflow, Workflow
 
 N = TypeVar("N", bound=Node)
 
@@ -128,6 +128,11 @@ class WorkflowEngine:
         the "Output" node type.
         """
         return self.node_registry.create_output_node(**fields)
+
+    async def resolve(self, workflow: Workflow) -> ResolvedWorkflow:
+        """Resolve an editable draft without requiring every input to be wired."""
+        validation_context = await self._get_validation_context()
+        return await workflow.resolve(context=validation_context)
 
     async def validate(
         self,

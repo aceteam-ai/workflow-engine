@@ -478,13 +478,13 @@ async def _prune_incompatible_edges(
     type mismatches. The follow-up full validation will surface any structural
     errors that survive pruning.
     """
-    # Validate a copy without edges to recover per-node resolved I/O types.
+    # Resolve a draft without edges to recover per-node I/O types.
     # (Going through the engine ensures discriminator dispatch produces the
     # concrete node subclass — calling node.input_type directly on a freshly
     # deserialized Node fails with NotImplementedError.)
     wf_no_edges = wf.model_copy(update={"edges": ()})
     try:
-        validated = await engine.validate(wf_no_edges)
+        validated = await engine.resolve(wf_no_edges)
     except Exception:
         return wf, []
 
@@ -510,9 +510,17 @@ async def _prune_incompatible_edges(
 
 
 async def _validate_or_die(engine: WorkflowEngine, wf: Workflow):
-    """Validate `wf` via `engine`; convert engine errors to ClickException."""
+    """Require a complete executable graph; report validation errors to the CLI."""
     try:
         return await engine.validate(wf)
+    except Exception as e:
+        raise click.ClickException(f"Workflow failed validation: {e}") from e
+
+
+async def _resolve_or_die(engine: WorkflowEngine, wf: Workflow):
+    """Resolve a draft's schemas and existing edges; allow incomplete wiring."""
+    try:
+        return await engine.resolve(wf)
     except Exception as e:
         raise click.ClickException(f"Workflow failed validation: {e}") from e
 
@@ -589,7 +597,7 @@ async def workflow_describe(path: Path, as_json: bool):
 
     engine = await _build_engine()
     wf = _load_workflow(path)
-    validated = await _validate_or_die(engine, wf)
+    validated = await _resolve_or_die(engine, wf)
 
     nodes_summary = [
         {
@@ -665,7 +673,7 @@ def workflow_init(path: Path, force: bool):
 
 @workflow.group("edit")
 def workflow_edit():
-    """Edit a workflow file in-place. Each edit re-validates and only saves on success."""
+    """Edit a draft in-place, checking schemas and existing edges before saving."""
 
 
 @workflow_edit.command("add-node")
@@ -697,7 +705,7 @@ async def edit_add_node(
     except Exception as e:
         raise click.ClickException(f"Failed to create node {node_id!r}: {e}") from e
     new_wf = wf.model_copy(update={"inner_nodes": (*wf.inner_nodes, new_node)})
-    await _validate_or_die(engine, new_wf)
+    await _resolve_or_die(engine, new_wf)
     _save_workflow(path, new_wf)
     click.echo(f"Added node {node_id!r} ({name}).")
 
@@ -735,7 +743,7 @@ async def edit_update_node(
         new_inner = tuple(new_node if n.id == node_id else n for n in wf.inner_nodes)
         new_wf = wf.model_copy(update={"inner_nodes": new_inner})
     new_wf, dropped = await _prune_incompatible_edges(engine, new_wf)
-    await _validate_or_die(engine, new_wf)
+    await _resolve_or_die(engine, new_wf)
     _save_workflow(path, new_wf)
     for d in dropped:
         click.echo(f"warning: dropped now-incompatible edge {d}", err=True)
@@ -788,7 +796,7 @@ async def edit_add_field(path: Path, handle: str, schema_arg: str):
         )
     current[field_name] = schema_obj
     new_wf = await _apply_fields_change(engine, wf, node_id, current)
-    await _validate_or_die(engine, new_wf)
+    await _resolve_or_die(engine, new_wf)
     _save_workflow(path, new_wf)
     click.echo(f"Added field {handle}.")
 
@@ -816,7 +824,7 @@ async def edit_update_field(path: Path, handle: str, schema_arg: str):
     current[field_name] = schema_obj
     new_wf = await _apply_fields_change(engine, wf, node_id, current)
     new_wf, dropped = await _prune_incompatible_edges(engine, new_wf)
-    await _validate_or_die(engine, new_wf)
+    await _resolve_or_die(engine, new_wf)
     _save_workflow(path, new_wf)
     for d in dropped:
         click.echo(f"warning: dropped now-incompatible edge {d}", err=True)
@@ -857,7 +865,7 @@ async def edit_remove_field(path: Path, handle: str):
     new_edges = tuple(e for e in new_wf.edges if not edge_touches_removed_field(e))
     dropped = len(new_wf.edges) - len(new_edges)
     new_wf = new_wf.model_copy(update={"edges": new_edges})
-    await _validate_or_die(engine, new_wf)
+    await _resolve_or_die(engine, new_wf)
     _save_workflow(path, new_wf)
     click.echo(f"Removed field {handle} and {dropped} associated edge(s).")
 
@@ -882,7 +890,7 @@ async def edit_remove_node(path: Path, node_id: str):
     )
     dropped_edges = len(wf.edges) - len(new_edges)
     new_wf = wf.model_copy(update={"inner_nodes": new_inner, "edges": new_edges})
-    await _validate_or_die(engine, new_wf)
+    await _resolve_or_die(engine, new_wf)
     _save_workflow(path, new_wf)
     click.echo(f"Removed node {node_id!r} and {dropped_edges} associated edge(s).")
 
@@ -919,7 +927,7 @@ async def edit_add_edge(path: Path, source: str, target: str):
         target_key=tgt_key,
     )
     new_wf = wf.model_copy(update={"edges": (*wf.edges, new_edge)})
-    await _validate_or_die(engine, new_wf)
+    await _resolve_or_die(engine, new_wf)
     _save_workflow(path, new_wf)
     click.echo(f"Added edge {source} -> {target}.")
 
@@ -952,7 +960,7 @@ async def edit_remove_edge(path: Path, source: str, target: str):
     if len(new_edges) == len(wf.edges):
         raise click.ClickException(f"Edge {source} -> {target} not found.")
     new_wf = wf.model_copy(update={"edges": new_edges})
-    await _validate_or_die(engine, new_wf)
+    await _resolve_or_die(engine, new_wf)
     _save_workflow(path, new_wf)
     click.echo(f"Removed edge {source} -> {target}.")
 
@@ -970,7 +978,7 @@ async def edit_possible_edges(path: Path, handle: str):
     """
     engine = await _build_engine()
     wf = _load_workflow(path)
-    validated = await _validate_or_die(engine, wf)
+    validated = await _resolve_or_die(engine, wf)
 
     node_id, key = _parse_handle(handle)
     if node_id not in validated.nodes_by_id:
