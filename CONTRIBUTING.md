@@ -100,6 +100,7 @@ schema, bump its version and add a migration — see
    uv run ruff check .
    uv run ruff format --check .
    uv run pyright
+   uv run python scripts/generate_interchange_schema.py --check
    uv run pytest
    ```
 4. Open a PR against `main`

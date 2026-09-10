@@ -1,0 +1,137 @@
+{
+  "edges": [
+    {
+      "source_id": "input",
+      "source_key": "value",
+      "target_id": "output",
+      "target_key": "value"
+    }
+  ],
+  "inner_nodes": [],
+  "input_node": {
+    "id": "input",
+    "params": {
+      "fields": {
+        "value": {
+          "err": {
+            "additionalProperties": false,
+            "properties": {
+              "error_class": {
+                "description": "The machine-readable classification of the error, from a closed vocabulary: timeout, unreachable, rate_limit, validation, permission, or systemic.",
+                "enum": [
+                  "timeout",
+                  "unreachable",
+                  "rate_limit",
+                  "validation",
+                  "permission",
+                  "systemic"
+                ],
+                "title": "Error Class",
+                "type": "string",
+                "x-value-type": "ErrorClassValue"
+              },
+              "message": {
+                "description": "The user-facing description of what went wrong.",
+                "title": "Message",
+                "type": "string",
+                "x-value-type": "StringValue"
+              },
+              "name": {
+                "description": "The short, machine-readable name of the error.",
+                "title": "Error Name",
+                "type": "string",
+                "x-value-type": "StringValue"
+              },
+              "node_id": {
+                "description": "The identifier of the node that produced the error.",
+                "title": "Node ID",
+                "type": "string",
+                "x-value-type": "StringValue"
+              }
+            },
+            "required": [
+              "error_class",
+              "name",
+              "message",
+              "node_id"
+            ],
+            "title": "ResultError",
+            "type": "object"
+          },
+          "ok": {
+            "title": "IntegerValue",
+            "type": "integer",
+            "x-value-type": "IntegerValue"
+          },
+          "type": "object",
+          "x-value-type": "Result[IntegerValue]"
+        }
+      }
+    },
+    "type": "Input",
+    "version": "1.0.0"
+  },
+  "output_node": {
+    "id": "output",
+    "params": {
+      "fields": {
+        "value": {
+          "err": {
+            "additionalProperties": false,
+            "properties": {
+              "error_class": {
+                "description": "The machine-readable classification of the error, from a closed vocabulary: timeout, unreachable, rate_limit, validation, permission, or systemic.",
+                "enum": [
+                  "timeout",
+                  "unreachable",
+                  "rate_limit",
+                  "validation",
+                  "permission",
+                  "systemic"
+                ],
+                "title": "Error Class",
+                "type": "string",
+                "x-value-type": "ErrorClassValue"
+              },
+              "message": {
+                "description": "The user-facing description of what went wrong.",
+                "title": "Message",
+                "type": "string",
+                "x-value-type": "StringValue"
+              },
+              "name": {
+                "description": "The short, machine-readable name of the error.",
+                "title": "Error Name",
+                "type": "string",
+                "x-value-type": "StringValue"
+              },
+              "node_id": {
+                "description": "The identifier of the node that produced the error.",
+                "title": "Node ID",
+                "type": "string",
+                "x-value-type": "StringValue"
+              }
+            },
+            "required": [
+              "error_class",
+              "name",
+              "message",
+              "node_id"
+            ],
+            "title": "ResultError",
+            "type": "object"
+          },
+          "ok": {
+            "title": "IntegerValue",
+            "type": "integer",
+            "x-value-type": "IntegerValue"
+          },
+          "type": "object",
+          "x-value-type": "Result[IntegerValue]"
+        }
+      }
+    },
+    "type": "Output",
+    "version": "1.0.0"
+  }
+}

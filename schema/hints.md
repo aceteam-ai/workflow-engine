@@ -98,3 +98,7 @@ with the interchange schema (#206).
 This document covers the hints channel only. `attempt`, the eliminator
 vocabulary, and the full interchange schema are separate, later contracts.
 See #199 for the overall sequencing.
+
+The generated [`hints.schema.json`](hints.schema.json) validates this annotation
+channel. See the [interchange contract](README.md) for graph export and
+environment-reference obligations.
