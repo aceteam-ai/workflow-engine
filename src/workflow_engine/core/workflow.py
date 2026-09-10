@@ -445,6 +445,7 @@ class ValidatedWorkflow(ResolvedWorkflow):
                 raise WorkflowException.for_builder(
                     f"Output '{edge.target_key}' from {edge.source_id}.{edge.source_key_path_string} "
                     f"cannot be cast: {output_field} is not assignable to {expected_type}",
+                    error_class=ErrorClass.VALIDATION,
                 )
 
             cast_keys.append(edge.target_key)

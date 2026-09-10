@@ -10,6 +10,7 @@ from overrides import override
 from ..core import (
     Data,
     DataMapping,
+    ErrorClass,
     ExecutionContext,
     FileValue,
     Node,
@@ -102,6 +103,11 @@ class LocalContext(ExecutionContext):
         try:
             with open(path, "rb") as f:
                 return f.read()
+        except PermissionError as e:
+            raise WorkflowException.for_user(
+                f"Failed to read file {file.path}: permission denied",
+                error_class=ErrorClass.PERMISSION,
+            ) from e
         except Exception as e:
             raise WorkflowException.for_user(
                 f"Failed to read file {file.path}",
@@ -118,6 +124,11 @@ class LocalContext(ExecutionContext):
         try:
             with open(path, "wb") as f:
                 f.write(content)
+        except PermissionError as e:
+            raise WorkflowException.for_user(
+                f"Failed to write file {file.path}: permission denied",
+                error_class=ErrorClass.PERMISSION,
+            ) from e
         except Exception as e:
             raise WorkflowException.for_user(
                 f"Failed to write file {file.path}",

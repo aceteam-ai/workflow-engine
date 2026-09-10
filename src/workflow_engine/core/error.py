@@ -279,6 +279,31 @@ class ShouldRetry(NodeException):
     ``result_error_from_exception`` does. A raise site that genuinely does
     not know why the attempt failed, only that it is worth retrying, should
     say so plainly rather than carry ``None`` into that policy check.
+
+    This default is deliberately kept out of the retryable set
+    ``{timeout, unreachable, rate_limit}`` that #205's boundary-level
+    ``attempt(retries=n, retry_on=...)`` policy defaults to. It would be
+    tempting to close that gap by adding ``systemic`` to that default
+    instead, so a bare ``raise ShouldRetry(...)`` is retryable "out of the
+    box." Don't: ``systemic`` is also what every catch-all exception
+    handler in the engine stamps on an arbitrary, unclassified failure
+    (``Node.__call__``, the two execution algorithms' top-level handlers).
+    Once a ``ShouldRetry`` exhausts its own node-level courtesy retries (see
+    ``RetryTracker``, which retries it unconditionally regardless of
+    ``error_class``) or a plain failure reaches a boundary directly, only
+    ``error_class`` survives into the materialized ``Result`` that
+    ``attempt``'s policy reads — the fact that it started life as a
+    ``ShouldRetry`` does not. Defaulting ``retry_on`` to include
+    ``systemic`` would therefore also make that boundary retry deterministic
+    bugs (a ``TypeError`` from a broken node body, say) by default, which is
+    exactly what a transient-only default exists to rule out. A node author
+    who wants a specific ``ShouldRetry`` site to participate in that policy
+    with the default ``retry_on`` should raise it with an explicit, accurate
+    ``error_class`` (``timeout``, ``unreachable``, or ``rate_limit``) when
+    the cause is actually known. An author who wants unclassified failures
+    to retry at a particular boundary can opt that one boundary in by
+    passing ``retry_on=["systemic", ...]`` explicitly; that is a visible,
+    per-boundary choice rather than a silent global default.
     """
 
     def __init__(
