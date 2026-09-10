@@ -249,6 +249,29 @@
     "AttemptParams": {
       "additionalProperties": false,
       "properties": {
+        "allow_metered": {
+          "$ref": "#/$defs/BooleanValue",
+          "default": false,
+          "description": "The permission to repeat work that may incur an additional charge.",
+          "title": "Allow Metered Retries"
+        },
+        "retries": {
+          "$ref": "#/$defs/IntegerValue",
+          "default": 0,
+          "description": "The maximum number of additional runs after a matching failure.",
+          "minimum": 0,
+          "title": "Retries"
+        },
+        "retry_on": {
+          "$ref": "#/$defs/SequenceValue_ErrorClassValue_",
+          "default": [
+            "timeout",
+            "unreachable",
+            "rate_limit"
+          ],
+          "description": "The error classes that permit another run of the workflow.",
+          "title": "Retry On"
+        },
         "workflow": {
           "$ref": "#/$defs/WorkflowValue",
           "description": "The workflow to run inside the error boundary.",
@@ -259,6 +282,92 @@
         "workflow"
       ],
       "title": "AttemptParams",
+      "type": "object"
+    },
+    "AttemptRetryNode": {
+      "additionalProperties": true,
+      "properties": {
+        "hints": {
+          "$ref": "#/$defs/Hints",
+          "description": "Host-facing annotations for this node. A host may honor, clamp, or ignore any hint; unlike params, hints never affect the node's input/output types or the workflow's result."
+        },
+        "id": {
+          "description": "The ID of the node, which must be unique within the workflow.",
+          "title": "Id",
+          "type": "string"
+        },
+        "params": {
+          "$ref": "#/$defs/AttemptRetryParams",
+          "description": "Any parameters for the node which are independent of the workflow inputs. May affect what inputs are accepted by the node."
+        },
+        "type": {
+          "description": "The type of the node, which should be a literal string for discriminating concrete subclasses. Used to determine which node class to load.",
+          "title": "Type",
+          "type": "string"
+        },
+        "version": {
+          "description": "The resolved node version. Export must pin latest before sharing.",
+          "pattern": "^\\d+\\.\\d+\\.\\d+$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "params",
+        "type",
+        "version"
+      ],
+      "title": "AttemptRetryNode",
+      "type": "object"
+    },
+    "AttemptRetryParams": {
+      "additionalProperties": false,
+      "properties": {
+        "allow_metered": {
+          "$ref": "#/$defs/BooleanValue",
+          "default": false,
+          "description": "The permission to repeat work that may incur an additional charge.",
+          "title": "Allow Metered Retries"
+        },
+        "boundary_id": {
+          "$ref": "#/$defs/StringValue",
+          "description": "The original attempt node's identifier.",
+          "title": "Boundary ID"
+        },
+        "completed_attempt": {
+          "$ref": "#/$defs/IntegerValue",
+          "description": "The zero-based number of the attempt whose result is being checked.",
+          "title": "Completed Attempt"
+        },
+        "retries": {
+          "$ref": "#/$defs/IntegerValue",
+          "default": 0,
+          "description": "The maximum number of additional runs after a matching failure.",
+          "minimum": 0,
+          "title": "Retries"
+        },
+        "retry_on": {
+          "$ref": "#/$defs/SequenceValue_ErrorClassValue_",
+          "default": [
+            "timeout",
+            "unreachable",
+            "rate_limit"
+          ],
+          "description": "The error classes that permit another run of the workflow.",
+          "title": "Retry On"
+        },
+        "workflow": {
+          "$ref": "#/$defs/WorkflowValue",
+          "description": "The workflow to run inside the error boundary.",
+          "title": "Workflow"
+        }
+      },
+      "required": [
+        "workflow",
+        "boundary_id",
+        "completed_attempt"
+      ],
+      "title": "AttemptRetryParams",
       "type": "object"
     },
     "BaseValueSchema": {
@@ -405,6 +514,63 @@
         "type"
       ],
       "title": "BooleanValueSchema",
+      "type": "object"
+    },
+    "ChunkSequenceNode": {
+      "additionalProperties": true,
+      "properties": {
+        "hints": {
+          "$ref": "#/$defs/Hints",
+          "description": "Host-facing annotations for this node. A host may honor, clamp, or ignore any hint; unlike params, hints never affect the node's input/output types or the workflow's result."
+        },
+        "id": {
+          "description": "The ID of the node, which must be unique within the workflow.",
+          "title": "Id",
+          "type": "string"
+        },
+        "params": {
+          "$ref": "#/$defs/ChunkSequenceParams",
+          "description": "Any parameters for the node which are independent of the workflow inputs. May affect what inputs are accepted by the node."
+        },
+        "type": {
+          "description": "The type of the node, which should be a literal string for discriminating concrete subclasses. Used to determine which node class to load.",
+          "title": "Type",
+          "type": "string"
+        },
+        "version": {
+          "description": "The resolved node version. Export must pin latest before sharing.",
+          "pattern": "^\\d+\\.\\d+\\.\\d+$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "params",
+        "type",
+        "version"
+      ],
+      "title": "ChunkSequenceNode",
+      "type": "object"
+    },
+    "ChunkSequenceParams": {
+      "additionalProperties": false,
+      "properties": {
+        "element_schema": {
+          "$ref": "#/$defs/ValueSchemaValue",
+          "description": "The value schema of each sequence item.",
+          "title": "Element Schema"
+        },
+        "size": {
+          "$ref": "#/$defs/IntegerValue",
+          "description": "The maximum number of items in each chunk.",
+          "title": "Size"
+        }
+      },
+      "required": [
+        "element_schema",
+        "size"
+      ],
+      "title": "ChunkSequenceParams",
       "type": "object"
     },
     "ComparisonParams": {
@@ -844,10 +1010,61 @@
       "title": "Edge",
       "type": "object"
     },
+    "ElementParams": {
+      "additionalProperties": false,
+      "properties": {
+        "element_schema": {
+          "$ref": "#/$defs/ValueSchemaValue",
+          "description": "The value schema of each sequence item.",
+          "title": "Element Schema"
+        }
+      },
+      "required": [
+        "element_schema"
+      ],
+      "title": "ElementParams",
+      "type": "object"
+    },
     "Empty": {
       "additionalProperties": false,
       "properties": {},
       "title": "Empty",
+      "type": "object"
+    },
+    "EntriesNode": {
+      "additionalProperties": true,
+      "properties": {
+        "hints": {
+          "$ref": "#/$defs/Hints",
+          "description": "Host-facing annotations for this node. A host may honor, clamp, or ignore any hint; unlike params, hints never affect the node's input/output types or the workflow's result."
+        },
+        "id": {
+          "description": "The ID of the node, which must be unique within the workflow.",
+          "title": "Id",
+          "type": "string"
+        },
+        "params": {
+          "$ref": "#/$defs/ElementParams",
+          "description": "Any parameters for the node which are independent of the workflow inputs. May affect what inputs are accepted by the node."
+        },
+        "type": {
+          "description": "The type of the node, which should be a literal string for discriminating concrete subclasses. Used to determine which node class to load.",
+          "title": "Type",
+          "type": "string"
+        },
+        "version": {
+          "description": "The resolved node version. Export must pin latest before sharing.",
+          "pattern": "^\\d+\\.\\d+\\.\\d+$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "params",
+        "type",
+        "version"
+      ],
+      "title": "EntriesNode",
       "type": "object"
     },
     "EqualNode": {
@@ -908,6 +1125,24 @@
       },
       "title": "EqualityParams",
       "type": "object"
+    },
+    "ErrorClass": {
+      "description": "The closed-vocabulary, machine-readable classification of an error.\n\nA single field lets callers key retry policy, circuit breakers, and a run\nledger off of one vocabulary instead of three. Defined here (rather than\nin ``core/values/result.py``, where it originated) because\n``WorkflowException`` needs it and ``core/error.py`` must not import\n``core/values``; ``values/result.py`` re-exports it so the wire shape and\npublic import path are unchanged.",
+      "enum": [
+        "timeout",
+        "unreachable",
+        "rate_limit",
+        "validation",
+        "permission",
+        "systemic"
+      ],
+      "title": "ErrorClass",
+      "type": "string"
+    },
+    "ErrorClassValue": {
+      "$ref": "#/$defs/ErrorClass",
+      "title": "ErrorClassValue",
+      "x-value-type": "ErrorClassValue"
     },
     "ErrorNode": {
       "additionalProperties": true,
@@ -1116,6 +1351,42 @@
       "type": "object",
       "x-value-type": "FieldSchemaMappingValue"
     },
+    "FilterNode": {
+      "additionalProperties": true,
+      "properties": {
+        "hints": {
+          "$ref": "#/$defs/Hints",
+          "description": "Host-facing annotations for this node. A host may honor, clamp, or ignore any hint; unlike params, hints never affect the node's input/output types or the workflow's result."
+        },
+        "id": {
+          "description": "The ID of the node, which must be unique within the workflow.",
+          "title": "Id",
+          "type": "string"
+        },
+        "params": {
+          "$ref": "#/$defs/WorkflowSequenceParams",
+          "description": "Any parameters for the node which are independent of the workflow inputs. May affect what inputs are accepted by the node."
+        },
+        "type": {
+          "description": "The type of the node, which should be a literal string for discriminating concrete subclasses. Used to determine which node class to load.",
+          "title": "Type",
+          "type": "string"
+        },
+        "version": {
+          "description": "The resolved node version. Export must pin latest before sharing.",
+          "pattern": "^\\d+\\.\\d+\\.\\d+$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "params",
+        "type",
+        "version"
+      ],
+      "title": "FilterNode",
+      "type": "object"
+    },
     "FirstErrorNode": {
       "additionalProperties": true,
       "properties": {
@@ -1149,6 +1420,42 @@
         "version"
       ],
       "title": "FirstErrorNode",
+      "type": "object"
+    },
+    "FlattenSequenceNode": {
+      "additionalProperties": true,
+      "properties": {
+        "hints": {
+          "$ref": "#/$defs/Hints",
+          "description": "Host-facing annotations for this node. A host may honor, clamp, or ignore any hint; unlike params, hints never affect the node's input/output types or the workflow's result."
+        },
+        "id": {
+          "description": "The ID of the node, which must be unique within the workflow.",
+          "title": "Id",
+          "type": "string"
+        },
+        "params": {
+          "$ref": "#/$defs/ElementParams",
+          "description": "Any parameters for the node which are independent of the workflow inputs. May affect what inputs are accepted by the node."
+        },
+        "type": {
+          "description": "The type of the node, which should be a literal string for discriminating concrete subclasses. Used to determine which node class to load.",
+          "title": "Type",
+          "type": "string"
+        },
+        "version": {
+          "description": "The resolved node version. Export must pin latest before sharing.",
+          "pattern": "^\\d+\\.\\d+\\.\\d+$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "params",
+        "type",
+        "version"
+      ],
+      "title": "FlattenSequenceNode",
       "type": "object"
     },
     "FloatValue": {
@@ -1233,6 +1540,78 @@
       "title": "FloatValueSchema",
       "type": "object"
     },
+    "FoldNode": {
+      "additionalProperties": true,
+      "properties": {
+        "hints": {
+          "$ref": "#/$defs/Hints",
+          "description": "Host-facing annotations for this node. A host may honor, clamp, or ignore any hint; unlike params, hints never affect the node's input/output types or the workflow's result."
+        },
+        "id": {
+          "description": "The ID of the node, which must be unique within the workflow.",
+          "title": "Id",
+          "type": "string"
+        },
+        "params": {
+          "$ref": "#/$defs/WorkflowSequenceParams",
+          "description": "Any parameters for the node which are independent of the workflow inputs. May affect what inputs are accepted by the node."
+        },
+        "type": {
+          "description": "The type of the node, which should be a literal string for discriminating concrete subclasses. Used to determine which node class to load.",
+          "title": "Type",
+          "type": "string"
+        },
+        "version": {
+          "description": "The resolved node version. Export must pin latest before sharing.",
+          "pattern": "^\\d+\\.\\d+\\.\\d+$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "params",
+        "type",
+        "version"
+      ],
+      "title": "FoldNode",
+      "type": "object"
+    },
+    "FoldStepNode": {
+      "additionalProperties": true,
+      "properties": {
+        "hints": {
+          "$ref": "#/$defs/Hints",
+          "description": "Host-facing annotations for this node. A host may honor, clamp, or ignore any hint; unlike params, hints never affect the node's input/output types or the workflow's result."
+        },
+        "id": {
+          "description": "The ID of the node, which must be unique within the workflow.",
+          "title": "Id",
+          "type": "string"
+        },
+        "params": {
+          "$ref": "#/$defs/WorkflowSequenceParams",
+          "description": "Any parameters for the node which are independent of the workflow inputs. May affect what inputs are accepted by the node."
+        },
+        "type": {
+          "description": "The type of the node, which should be a literal string for discriminating concrete subclasses. Used to determine which node class to load.",
+          "title": "Type",
+          "type": "string"
+        },
+        "version": {
+          "description": "The resolved node version. Export must pin latest before sharing.",
+          "pattern": "^\\d+\\.\\d+\\.\\d+$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "params",
+        "type",
+        "version"
+      ],
+      "title": "FoldStepNode",
+      "type": "object"
+    },
     "ForEachNode": {
       "additionalProperties": true,
       "properties": {
@@ -1272,6 +1651,12 @@
     "ForEachParams": {
       "additionalProperties": false,
       "properties": {
+        "constant_inputs": {
+          "$ref": "#/$defs/SequenceValue_StringValue_",
+          "default": [],
+          "description": "The workflow inputs held constant for every item.",
+          "title": "Constant Inputs"
+        },
         "workflow": {
           "$ref": "#/$defs/WorkflowValue",
           "description": "The workflow to run for each item.",
@@ -1462,6 +1847,78 @@
         "version"
       ],
       "title": "GreaterThanNode",
+      "type": "object"
+    },
+    "GroupByNode": {
+      "additionalProperties": true,
+      "properties": {
+        "hints": {
+          "$ref": "#/$defs/Hints",
+          "description": "Host-facing annotations for this node. A host may honor, clamp, or ignore any hint; unlike params, hints never affect the node's input/output types or the workflow's result."
+        },
+        "id": {
+          "description": "The ID of the node, which must be unique within the workflow.",
+          "title": "Id",
+          "type": "string"
+        },
+        "params": {
+          "$ref": "#/$defs/WorkflowSequenceParams",
+          "description": "Any parameters for the node which are independent of the workflow inputs. May affect what inputs are accepted by the node."
+        },
+        "type": {
+          "description": "The type of the node, which should be a literal string for discriminating concrete subclasses. Used to determine which node class to load.",
+          "title": "Type",
+          "type": "string"
+        },
+        "version": {
+          "description": "The resolved node version. Export must pin latest before sharing.",
+          "pattern": "^\\d+\\.\\d+\\.\\d+$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "params",
+        "type",
+        "version"
+      ],
+      "title": "GroupByNode",
+      "type": "object"
+    },
+    "GroupSequenceNode": {
+      "additionalProperties": true,
+      "properties": {
+        "hints": {
+          "$ref": "#/$defs/Hints",
+          "description": "Host-facing annotations for this node. A host may honor, clamp, or ignore any hint; unlike params, hints never affect the node's input/output types or the workflow's result."
+        },
+        "id": {
+          "description": "The ID of the node, which must be unique within the workflow.",
+          "title": "Id",
+          "type": "string"
+        },
+        "params": {
+          "$ref": "#/$defs/ElementParams",
+          "description": "Any parameters for the node which are independent of the workflow inputs. May affect what inputs are accepted by the node."
+        },
+        "type": {
+          "description": "The type of the node, which should be a literal string for discriminating concrete subclasses. Used to determine which node class to load.",
+          "title": "Type",
+          "type": "string"
+        },
+        "version": {
+          "description": "The resolved node version. Export must pin latest before sharing.",
+          "pattern": "^\\d+\\.\\d+\\.\\d+$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "params",
+        "type",
+        "version"
+      ],
+      "title": "GroupSequenceNode",
       "type": "object"
     },
     "Hints": {
@@ -2140,7 +2597,7 @@
                 "const": "Attempt"
               },
               "version": {
-                "const": "1.0.0"
+                "const": "1.1.0"
               }
             },
             "required": [
@@ -2150,6 +2607,44 @@
           },
           "then": {
             "$ref": "#/$defs/AttemptNode"
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "AttemptRetry"
+              },
+              "version": {
+                "const": "1.0.0"
+              }
+            },
+            "required": [
+              "type",
+              "version"
+            ]
+          },
+          "then": {
+            "$ref": "#/$defs/AttemptRetryNode"
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "ChunkSequence"
+              },
+              "version": {
+                "const": "1.0.0"
+              }
+            },
+            "required": [
+              "type",
+              "version"
+            ]
+          },
+          "then": {
+            "$ref": "#/$defs/ChunkSequenceNode"
           }
         },
         {
@@ -2226,6 +2721,25 @@
           },
           "then": {
             "$ref": "#/$defs/DivideNode"
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "Entries"
+              },
+              "version": {
+                "const": "1.0.0"
+              }
+            },
+            "required": [
+              "type",
+              "version"
+            ]
+          },
+          "then": {
+            "$ref": "#/$defs/EntriesNode"
           }
         },
         {
@@ -2346,6 +2860,25 @@
           "if": {
             "properties": {
               "type": {
+                "const": "Filter"
+              },
+              "version": {
+                "const": "1.0.0"
+              }
+            },
+            "required": [
+              "type",
+              "version"
+            ]
+          },
+          "then": {
+            "$ref": "#/$defs/FilterNode"
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
                 "const": "FirstError"
               },
               "version": {
@@ -2365,10 +2898,67 @@
           "if": {
             "properties": {
               "type": {
-                "const": "ForEach"
+                "const": "FlattenSequence"
               },
               "version": {
                 "const": "1.0.0"
+              }
+            },
+            "required": [
+              "type",
+              "version"
+            ]
+          },
+          "then": {
+            "$ref": "#/$defs/FlattenSequenceNode"
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "Fold"
+              },
+              "version": {
+                "const": "1.0.0"
+              }
+            },
+            "required": [
+              "type",
+              "version"
+            ]
+          },
+          "then": {
+            "$ref": "#/$defs/FoldNode"
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "FoldStep"
+              },
+              "version": {
+                "const": "1.0.0"
+              }
+            },
+            "required": [
+              "type",
+              "version"
+            ]
+          },
+          "then": {
+            "$ref": "#/$defs/FoldStepNode"
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "ForEach"
+              },
+              "version": {
+                "const": "1.1.0"
               }
             },
             "required": [
@@ -2473,6 +3063,44 @@
           },
           "then": {
             "$ref": "#/$defs/GreaterThanEqualNode"
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "GroupBy"
+              },
+              "version": {
+                "const": "1.0.0"
+              }
+            },
+            "required": [
+              "type",
+              "version"
+            ]
+          },
+          "then": {
+            "$ref": "#/$defs/GroupByNode"
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "GroupSequence"
+              },
+              "version": {
+                "const": "1.0.0"
+              }
+            },
+            "required": [
+              "type",
+              "version"
+            ]
+          },
+          "then": {
+            "$ref": "#/$defs/GroupSequenceNode"
           }
         },
         {
@@ -2859,6 +3487,25 @@
           "if": {
             "properties": {
               "type": {
+                "const": "SelectSequence"
+              },
+              "version": {
+                "const": "1.0.0"
+              }
+            },
+            "required": [
+              "type",
+              "version"
+            ]
+          },
+          "then": {
+            "$ref": "#/$defs/SelectSequenceNode"
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
                 "const": "Subtract"
               },
               "version": {
@@ -2948,6 +3595,25 @@
           },
           "then": {
             "$ref": "#/$defs/UnwrapOrValueNode"
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "Zip"
+              },
+              "version": {
+                "const": "1.0.0"
+              }
+            },
+            "required": [
+              "type",
+              "version"
+            ]
+          },
+          "then": {
+            "$ref": "#/$defs/ZipNode"
           }
         }
       ],
@@ -3598,6 +4264,42 @@
       "title": "SchemaParams",
       "type": "object"
     },
+    "SelectSequenceNode": {
+      "additionalProperties": true,
+      "properties": {
+        "hints": {
+          "$ref": "#/$defs/Hints",
+          "description": "Host-facing annotations for this node. A host may honor, clamp, or ignore any hint; unlike params, hints never affect the node's input/output types or the workflow's result."
+        },
+        "id": {
+          "description": "The ID of the node, which must be unique within the workflow.",
+          "title": "Id",
+          "type": "string"
+        },
+        "params": {
+          "$ref": "#/$defs/ElementParams",
+          "description": "Any parameters for the node which are independent of the workflow inputs. May affect what inputs are accepted by the node."
+        },
+        "type": {
+          "description": "The type of the node, which should be a literal string for discriminating concrete subclasses. Used to determine which node class to load.",
+          "title": "Type",
+          "type": "string"
+        },
+        "version": {
+          "description": "The resolved node version. Export must pin latest before sharing.",
+          "pattern": "^\\d+\\.\\d+\\.\\d+$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "params",
+        "type",
+        "version"
+      ],
+      "title": "SelectSequenceNode",
+      "type": "object"
+    },
     "SequenceParams": {
       "additionalProperties": false,
       "properties": {
@@ -3702,6 +4404,14 @@
       ],
       "title": "SequenceValueSchema",
       "type": "object"
+    },
+    "SequenceValue_ErrorClassValue_": {
+      "items": {
+        "$ref": "#/$defs/ErrorClassValue"
+      },
+      "title": "SequenceValue[ErrorClassValue]",
+      "type": "array",
+      "x-value-type": "SequenceValue[ErrorClassValue]"
     },
     "SequenceValue_StringValue_": {
       "items": {
@@ -4273,10 +4983,82 @@
       "title": "Workflow",
       "type": "object"
     },
+    "WorkflowSequenceParams": {
+      "additionalProperties": false,
+      "properties": {
+        "workflow": {
+          "$ref": "#/$defs/WorkflowValue",
+          "description": "The workflow to run for each item.",
+          "title": "Workflow"
+        }
+      },
+      "required": [
+        "workflow"
+      ],
+      "title": "WorkflowSequenceParams",
+      "type": "object"
+    },
     "WorkflowValue": {
       "$ref": "#/$defs/Workflow",
       "title": "WorkflowValue",
       "x-value-type": "WorkflowValue"
+    },
+    "ZipNode": {
+      "additionalProperties": true,
+      "properties": {
+        "hints": {
+          "$ref": "#/$defs/Hints",
+          "description": "Host-facing annotations for this node. A host may honor, clamp, or ignore any hint; unlike params, hints never affect the node's input/output types or the workflow's result."
+        },
+        "id": {
+          "description": "The ID of the node, which must be unique within the workflow.",
+          "title": "Id",
+          "type": "string"
+        },
+        "params": {
+          "$ref": "#/$defs/ZipParams",
+          "description": "Any parameters for the node which are independent of the workflow inputs. May affect what inputs are accepted by the node."
+        },
+        "type": {
+          "description": "The type of the node, which should be a literal string for discriminating concrete subclasses. Used to determine which node class to load.",
+          "title": "Type",
+          "type": "string"
+        },
+        "version": {
+          "description": "The resolved node version. Export must pin latest before sharing.",
+          "pattern": "^\\d+\\.\\d+\\.\\d+$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "params",
+        "type",
+        "version"
+      ],
+      "title": "ZipNode",
+      "type": "object"
+    },
+    "ZipParams": {
+      "additionalProperties": false,
+      "properties": {
+        "first_schema": {
+          "$ref": "#/$defs/ValueSchemaValue",
+          "description": "The value schema of each item in the first sequence.",
+          "title": "First Schema"
+        },
+        "second_schema": {
+          "$ref": "#/$defs/ValueSchemaValue",
+          "description": "The value schema of each item in the second sequence.",
+          "title": "Second Schema"
+        }
+      },
+      "required": [
+        "first_schema",
+        "second_schema"
+      ],
+      "title": "ZipParams",
+      "type": "object"
     }
   },
   "$id": "https://raw.githubusercontent.com/aceteam-ai/workflow-engine/main/schema/workflow.schema.json",
