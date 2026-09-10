@@ -83,7 +83,9 @@ class ParallelExecutionAlgorithm(ExecutionAlgorithm):
         self.rate_limits = rate_limits or RateLimitRegistry()
 
     def _get_node_max_retries(self, node: Node) -> int | None:
-        """Get the max retries for a node, checking NodeTypeInfo first."""
+        """Prefer an instance budget, then the type budget; None uses the run default."""
+        if node.max_retries is not None:
+            return node.max_retries
         if node.TYPE_INFO.max_retries is not None:
             return node.TYPE_INFO.max_retries
         return None
