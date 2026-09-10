@@ -34,3 +34,22 @@ can be caught by an enclosing `Attempt`. No operation interprets a `Result` tag.
 `Entries` sorts keys lexicographically. Grouping preserves input order within
 each group, including repeated keys and empty-string keys. Empty grouping
 produces an empty mapping; empty `Entries` produces an empty sequence.
+
+## Traverse and closure capture
+
+`ForEach` is the traversal operator. It maps an inline workflow over `sequence`,
+returning `sequence` in input order. A single per-item input is scalar; multiple
+per-item fields form a `DataValue` record. The same collapse rule applies to
+outputs; a workflow with no output fields runs for its side effects.
+
+`constant_inputs` is an optional list of workflow input names supplied once on
+separate top-level ports. With a step accepting `{item, config}`, setting
+`constant_inputs: ["config"]` gives the traversal `{sequence: Seq[Item], config}`.
+Each item receives the same `config` through ordinary expansion edges. Input
+names must exist and be unique; `sequence` is reserved, and at least one field
+must remain per-item. Omitting the list preserves existing graph behavior.
+
+The inline workflow and names survive JSON round trips. Generated element ids
+remain `element_0`, `element_1`, etc.; broadcast values do not affect those ids.
+`ForEach(w)` uses ordinary failure propagation. `ForEach(Attempt(w))` collects
+`Result` elements without dropping their positions.
