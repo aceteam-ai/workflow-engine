@@ -194,7 +194,35 @@ result = await value.cast_to(FloatValue)  # FloatValue(42.0)
 | `DataValue[D]`      | `StringMapValue[V]` | If all fields can cast to `V` |
 | `StringMapValue[V]` | `DataValue[D]`      | Runtime field matching        |
 
-The full casting graph is visualized in the repository: [typecast_graph.svg](typecast_graph.svg).
+The [casting graph](typecast_graph.svg) shows registered concrete types only.
+An edge means a cast is available; validation of a particular value can still
+fail. Generic families are omitted from the picture because their edges depend
+on their parameters; their rules follow below.
+
+### Generic cast rules
+
+| Family | Assignment rule |
+| ------ | --------------- |
+| `Result[S]` → `Result[T]` | Only when `S` can cast to `T`. The err payload passes through unchanged. No direct assignment to strings, JSON, or another non-Result type. |
+| `SequenceValue[S]` → `SequenceValue[T]` | Only when `S` can cast to `T`; cast each element, preserving order. |
+| `StringMapValue[S]` → `StringMapValue[T]` | Only when `S` can cast to `T`; cast each value, preserving keys. |
+| `DataValue[S]` → `DataValue[T]` | Every required target field must exist in the source and every shared field must cast to its target type. Optional target fields can use defaults; runtime record validation still applies. |
+| `DataValue[D]` → `StringMapValue[V]` | Every source field must cast to `V`. |
+| `StringMapValue[V]` → `DataValue[D]` | Available statically; field conversion and required-field validation occur at runtime and may fail. |
+| `ModelValue[S]` → `ModelValue[T]` | Both parameters must be Pydantic model classes; cross-model casts serialize and validate against `T` at runtime. |
+
+For example, `SequenceValue[IntegerValue]` can feed
+`SequenceValue[FloatValue]`, but `SequenceValue[Result[IntegerValue]]` cannot:
+it can feed `SequenceValue[Result[FloatValue]]` instead. The same item-type rule
+applies to maps. It never silently unwraps a Result element.
+
+Containers, records and ModelValue retain the base casts to StringValue and
+JSONValue. Those whole-container casts are distinct from element assignment
+and serialize the container as a whole, including any Result tags. JSONValue
+also casts to sequences, maps and ModelValue through runtime validation.
+The graph therefore cannot be read as a complete catalogue of generic edges.
+Use `Source.can_cast_to(Target)` with both types fully parameterized for the
+actual static decision, and expect data-dependent validation during casting.
 
 ## Result Values
 

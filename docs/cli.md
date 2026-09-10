@@ -187,6 +187,13 @@ Future work (not yet emitted):
 
 Supports `--json` for machine-readable output (stable shape, suitable for agent consumption) and a default human-readable rendering.
 
+Workflow editing and `describe` operate on typed drafts: they resolve node
+schemas and check existing edges while allowing required ports to remain
+unconnected. `workflow check`, `verify`, and `workflow run` require every
+required input on inner nodes and the output node to have an incoming edge.
+Fields with defaults (including default factories) may remain unconnected;
+allowing null does not by itself make a field optional.
+
 ### `wengine workflow run <path> <input>`
 
 Run a workflow by loading it from `path`.
