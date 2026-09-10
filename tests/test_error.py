@@ -81,7 +81,11 @@ async def test_workflow_error_handling(engine: WorkflowEngine, workflow: Workflo
     assert len(result.errors.node_errors[error_node.id]) == 1
     error = result.errors.node_errors[error_node.id][0]
     assert isinstance(error, WorkflowError)
-    assert error.message == "RuntimeError: test"
+    # error_name ("RuntimeError") now reaches the wire through name= rather
+    # than being prefixed onto message (#248); message is the node's own
+    # info text, unprefixed.
+    assert error.message == "test"
+    assert error.name == "RuntimeError"
     assert error.level == StakeholderLevel.USER
     assert error.node_id == error_node.id
     assert error.cause is None
@@ -95,4 +99,5 @@ async def test_workflow_error_handling(engine: WorkflowEngine, workflow: Workflo
     assert call_args.kwargs["node"] is error_node
     exception = call_args.kwargs["exception"]
     assert isinstance(exception, WorkflowException)
-    assert exception.message == "RuntimeError: test"
+    assert exception.message == "test"
+    assert exception.name == "RuntimeError"

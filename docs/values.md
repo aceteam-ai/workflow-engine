@@ -220,7 +220,7 @@ err.unwrap_err()     # ResultError(...)
 | Field         | Type              | Notes                                                     |
 | ------------- | ----------------- | ---------------------------------------------------------- |
 | `error_class` | `ErrorClassValue` | Closed vocabulary: `timeout`, `unreachable`, `rate_limit`, `validation`, `permission`, `systemic`. |
-| `name`        | `StringValue`     | Short, machine-readable name of the error.                 |
+| `name`        | `StringValue`     | The author-chosen `name` when a raise site sets one (see `docs/authoring-nodes.md`); otherwise the type name of the root cause. |
 | `message`     | `StringValue`     | User-facing description of what went wrong.                |
 | `node_id`     | `StringValue`     | The id of the node that produced the error (provenance).   |
 

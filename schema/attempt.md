@@ -138,7 +138,7 @@ failing exception:
 | `ResultError` field | source |
 | --- | --- |
 | `node_id` | the failing member's own flat id |
-| `name` | the first concrete `WorkflowException` subclass name in the cause chain, skipping generic `WorkflowException` and `NodeException` wrappers; otherwise the root cause's class name |
+| `name` | the author-chosen `name` set at a raise site (the first one found walking the `__cause__` chain outward-in, starting at the failing exception itself), if any; otherwise the root cause's class name |
 | `message` | the exception's own message if it is already `USER` level; otherwise `"An internal error occurred"` |
 | `error_class` | the exception's own `error_class` if set, otherwise `"systemic"` |
 

@@ -21,7 +21,7 @@ from dataclasses import dataclass, field
 
 from ..core.boundary import CancelReason, ErrorBoundaryNode
 from ..core.context import ExecutionContext
-from ..core.error import ErrorClass, NodeException, WorkflowException
+from ..core.error import ErrorClass, WorkflowException
 from ..core.node import Node
 from ..core.stakeholder import StakeholderLevel
 from ..core.values import (
@@ -349,6 +349,18 @@ def result_error_from_exception(exc: WorkflowException) -> ResultError:
     """
     Build the structured err-arm value for a boundary's failing exception.
 
+    ``name`` is the first explicit ``name=`` found walking the ``__cause__``
+    chain outward-in, starting at ``exc`` itself. Outward-in means a name
+    set on the raised exception wins over one set deeper in the chain, so a
+    named exception that a generic wrapper (``Node.__call__``'s own
+    unhandled-exception path, ``NodeExpansionException``) re-raises ``from``
+    still reaches the wire under the author's name. If nothing in the chain
+    set a name, this falls back to today's behavior: the type name of the
+    deepest cause reached (the root, or wherever a self-referential
+    ``__cause__`` cycle was detected and stopped). Only ``__cause__`` is
+    walked (explicit ``raise ... from ...`` chaining); ``__context__``
+    (implicit chaining) is not.
+
     ``message`` is redacted unless the exception is already USER level:
     unlike ``WorkflowErrors``, which every viewer filters through
     ``WorkflowError.filter`` before it is rendered, a materialized ``err``
@@ -366,17 +378,16 @@ def result_error_from_exception(exc: WorkflowException) -> ResultError:
     assert exc.node_id is not None
     cause: BaseException = exc
     seen: set[int] = set()
+    explicit_name: str | None = None
     while id(cause) not in seen:
         seen.add(id(cause))
-        if isinstance(cause, WorkflowException) and type(cause) not in (
-            WorkflowException,
-            NodeException,
-        ):
+        if isinstance(cause, WorkflowException) and cause.name is not None:
+            explicit_name = cause.name
             break
         if cause.__cause__ is None or id(cause.__cause__) in seen:
             break
         cause = cause.__cause__
-    name = type(cause).__name__
+    name = explicit_name if explicit_name is not None else type(cause).__name__
     message = (
         exc.message
         if exc.level >= StakeholderLevel.USER

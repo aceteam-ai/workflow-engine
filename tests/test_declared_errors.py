@@ -171,6 +171,46 @@ class UndeclaredErrorProbeNode(Node[Empty, Empty, Empty]):
         )
 
 
+class AlwaysRetriesNode(Node[Empty, Empty, Empty]):
+    """Always raises an exhausted-immediately ShouldRetry with an explicit name."""
+
+    TYPE_INFO: ClassVar[NodeTypeInfo] = NodeTypeInfo.from_parameter_type(
+        display_name="AlwaysRetries",
+        description="Always raises ShouldRetry with an explicit name.",
+        version="1.0.0",
+        parameter_type=Empty,
+        max_retries=0,
+    )
+
+    @classmethod
+    @override
+    def static_input_type(cls) -> Type[Empty]:
+        return Empty
+
+    @classmethod
+    @override
+    def static_output_type(cls) -> Type[Empty]:
+        return Empty
+
+    @override
+    async def run(
+        self,
+        *,
+        context: ExecutionContext,
+        input_type: Type[Empty],
+        output_type: Type[Empty],
+        input: Empty,
+    ) -> Empty:
+        from workflow_engine import ShouldRetry
+
+        raise ShouldRetry.for_user(
+            "still throttled",
+            node=self,
+            error_class=ErrorClass.RATE_LIMIT,
+            name="Throttled",
+        )
+
+
 # ---------------------------------------------------------------------------
 # 1. Publication.
 # ---------------------------------------------------------------------------
@@ -310,10 +350,17 @@ async def test_undeclared_error_name_still_produces_valid_result_on_wire():
 
 
 class UpstreamRateLimited(NodeException):
-    """An author-selected public failure name."""
+    """
+    A subclass with an author-selected class name. Subclassing alone is not
+    the name= channel (#248): raising this with no explicit name= carries no
+    special weight in result_error_from_exception, it is just another
+    NodeException. See test_subclassing_alone_is_not_the_name_channel.
+    """
 
 
 class ChainedDeclaredErrorProbeNode(UndeclaredErrorProbeNode):
+    """Raises `from` a TimeoutError, with an explicit name= on the outer exception."""
+
     @override
     async def run(
         self,
@@ -326,15 +373,23 @@ class ChainedDeclaredErrorProbeNode(UndeclaredErrorProbeNode):
         try:
             raise TimeoutError("provider transport details")
         except TimeoutError as cause:
-            raise UpstreamRateLimited.for_user(
+            raise NodeException.for_user(
                 "Provider throttled the request",
                 node=self,
                 error_class=ErrorClass.RATE_LIMIT,
+                name="UpstreamRateLimited",
             ) from cause
 
 
 @pytest.mark.asyncio
-async def test_raised_from_preserves_author_name_end_to_end(algorithm):
+async def test_explicit_name_survives_raise_from_end_to_end(algorithm):
+    """
+    Design acceptance criterion #3 on #248: this is the case that silently
+    regressed on the Option 2 implementation this branch replaces, an
+    explicit name= surviving `raise ... from ...` through an attempt
+    boundary. error_class, message, and node_id all still come from the
+    raised exception itself.
+    """
     engine = WorkflowEngine(execution_algorithm=algorithm)
     inner = Workflow(
         input_node=engine.create_input_node(),
@@ -354,10 +409,37 @@ async def test_raised_from_preserves_author_name_end_to_end(algorithm):
     assert error.name.root == "UpstreamRateLimited"
     assert error.error_class.root == ErrorClass.RATE_LIMIT
     assert error.message.root == "Provider throttled the request"
+    assert error.node_id.root == "node/provider"
+
+
+@pytest.mark.unit
+def test_subclassing_alone_is_not_the_name_channel():
+    """
+    Design acceptance criterion #4 on #248: a concrete WorkflowException
+    subclass, raised with no name=, is not itself a name. With a cause it
+    still yields the root cause's type name (the non-regression case);
+    without a cause it falls back to its own class name, same as any other
+    unnamed exception.
+    """
+    from workflow_engine.execution.boundary import result_error_from_exception
+
+    probe = WorkflowEngine().create_node(UndeclaredErrorProbeNode, id="probe")
+
+    with_cause = UpstreamRateLimited.for_user("rate limit", node=probe)
+    with_cause.__cause__ = TimeoutError("transport")
+    assert result_error_from_exception(with_cause).name.root == "TimeoutError"
+
+    without_cause = UpstreamRateLimited.for_user("rate limit", node=probe)
+    assert result_error_from_exception(without_cause).name.root == "UpstreamRateLimited"
 
 
 @pytest.mark.unit
 def test_generic_wrappers_retain_root_diagnostic_name():
+    """
+    Diagnostic quality does not regress (design acceptance criterion #5): an
+    unclassified failure with no name= anywhere in the chain still surfaces
+    the deepest cause's type name, exactly as before this feature.
+    """
     from workflow_engine import WorkflowException
     from workflow_engine.execution.boundary import result_error_from_exception
 
@@ -379,21 +461,186 @@ def test_generic_wrappers_retain_root_diagnostic_name():
 
 
 @pytest.mark.unit
-def test_generic_wrapper_preserves_concrete_cause_name_and_handles_cycles():
+def test_chain_precedence_outward_in():
+    """
+    Design acceptance criterion #6 on #248, a direct unit test on
+    result_error_from_exception with hand-built chains. The resolver takes
+    the first explicit name= walking the __cause__ chain outward-in (from
+    the raised exception toward the root): an inner name wins over no outer
+    name, and an outer name wins over an inner one. With nothing named
+    anywhere, it falls back to the root cause's type name.
+
+    Reverting the resolver to inward-out (innermost name wins) makes the
+    second assertion below fail: it would return "InnerFailure" instead of
+    "OuterFailure".
+    """
+    from workflow_engine.execution.boundary import result_error_from_exception
+
+    probe = WorkflowEngine().create_node(UndeclaredErrorProbeNode, id="probe")
+
+    def build_chain(*, outer_name: str | None, inner_name: str | None) -> NodeException:
+        inner = NodeException.for_user(
+            "inner failure",
+            node=probe,
+            error_class=ErrorClass.RATE_LIMIT,
+            name=inner_name,
+        )
+        inner.__cause__ = TimeoutError("transport")
+        outer = NodeException.for_user(
+            "outer failure",
+            node=probe,
+            error_class=ErrorClass.SYSTEMIC,
+            name=outer_name,
+        )
+        outer.__cause__ = inner
+        return outer
+
+    # Inner named, outer unnamed: the inner name wins, there is nothing else.
+    chain = build_chain(outer_name=None, inner_name="InnerFailure")
+    assert result_error_from_exception(chain).name.root == "InnerFailure"
+
+    # Both named: the outer name wins (outward-in precedence).
+    chain = build_chain(outer_name="OuterFailure", inner_name="InnerFailure")
+    assert result_error_from_exception(chain).name.root == "OuterFailure"
+
+    # Nothing named: falls back to the root cause's type name, unchanged
+    # from before this feature.
+    chain = build_chain(outer_name=None, inner_name=None)
+    assert result_error_from_exception(chain).name.root == "TimeoutError"
+
+
+@pytest.mark.unit
+def test_cause_cycle_is_visited_once():
+    """
+    A self-referential __cause__ (which a raise site should never construct
+    deliberately, but which the resolver must not loop on) terminates at the
+    cyclic exception's own class name rather than hanging.
+    """
     from workflow_engine import WorkflowException
     from workflow_engine.execution.boundary import result_error_from_exception
 
-    inner = UpstreamRateLimited.for_user(
-        "rate limit",
-        node=WorkflowEngine().create_node(UndeclaredErrorProbeNode, id="probe"),
-    )
-    inner.__cause__ = TimeoutError("transport")
-    outer = WorkflowException.for_user("wrapper", node_id="probe")
-    outer.__cause__ = inner
-    assert result_error_from_exception(outer).name.root == "UpstreamRateLimited"
     cyclic = WorkflowException.for_user("cycle", node_id="probe")
     cyclic.__cause__ = cyclic
     assert result_error_from_exception(cyclic).name.root == "WorkflowException"
+
+
+@pytest.mark.unit
+def test_empty_name_raises_value_error():
+    """
+    name="" is rejected at construction (design acceptance criterion #1):
+    an author who wants no explicit name omits the keyword (None) rather
+    than passing an empty string, which could otherwise silently coerce
+    into a name= that is never actually meaningful.
+    """
+    from workflow_engine import WorkflowException
+
+    probe = WorkflowEngine().create_node(UndeclaredErrorProbeNode, id="probe")
+    with pytest.raises(ValueError):
+        WorkflowException.for_user("boom", node_id="probe", name="")
+    with pytest.raises(ValueError):
+        NodeException.for_user("boom", node=probe, name="")
+
+
+@pytest.mark.unit
+def test_should_retry_threads_explicit_name():
+    """
+    ShouldRetry accepts name= directly and through for_user, the same
+    channel as WorkflowException and NodeException (design acceptance
+    criterion #7).
+    """
+    from workflow_engine import ShouldRetry
+
+    probe = WorkflowEngine().create_node(UndeclaredErrorProbeNode, id="probe")
+    exc = ShouldRetry.for_user("throttled", node=probe, name="Throttled")
+    assert exc.name == "Throttled"
+    with pytest.raises(ValueError):
+        ShouldRetry.for_user("throttled", node=probe, name="")
+
+
+@pytest.mark.asyncio
+async def test_should_retry_exhaustion_preserves_explicit_name(algorithm):
+    """
+    Design acceptance criterion #7 end to end: retry exhaustion surfaces the
+    ShouldRetry itself (`failure = e` in both executors), so it needs the
+    name= channel too, not just WorkflowException/NodeException. This is one
+    of the two regressions the rejected Option 2 implementation reproduced:
+    on that branch this materialized name == "ShouldRetry".
+    """
+    engine = WorkflowEngine(execution_algorithm=algorithm)
+    inner = Workflow(
+        input_node=engine.create_input_node(),
+        inner_nodes=[engine.create_node(AlwaysRetriesNode, id="retrier")],
+        output_node=engine.create_output_node(),
+        edges=[],
+    )
+    result = await engine.execute_node(
+        context=InMemoryExecutionContext(),
+        node=AttemptNode,
+        input={},
+        params={"workflow": inner},
+    )
+    value = result.output["result"]
+    assert isinstance(value, Result)
+    error = value.unwrap_err()
+    assert error.name.root == "Throttled"
+    assert error.error_class.root == ErrorClass.RATE_LIMIT
+
+
+@pytest.mark.asyncio
+async def test_error_node_uses_declared_name_not_message_smuggling(algorithm):
+    """
+    ErrorNode (nodes/error.py) is the one node with an author-chosen error
+    name that is a runtime parameter, not a class (design acceptance
+    criterion #10). Its error_name now reaches the wire through name=
+    rather than being prefixed onto message.
+    """
+    from workflow_engine.nodes import ErrorNode
+
+    engine = WorkflowEngine(execution_algorithm=algorithm)
+    inner = await engine.build_single_node_workflow(
+        ErrorNode, params={"error_name": "CustomFailure"}
+    )
+    result = await engine.execute_node(
+        context=InMemoryExecutionContext(),
+        node=AttemptNode,
+        input={"info": "something went wrong"},
+        params={"workflow": inner},
+    )
+    value = result.output["result"]
+    assert isinstance(value, Result)
+    error = value.unwrap_err()
+    assert error.name.root == "CustomFailure"
+    assert error.message.root == "something went wrong"
+    assert "CustomFailure" not in error.message.root
+
+
+@pytest.mark.asyncio
+async def test_error_node_empty_name_falls_back_without_operator_error(algorithm):
+    """
+    An empty error_name is a valid StringValue in a stored graph. It must
+    still materialize a normal err arm via the resolver's own fallback, not
+    turn into an "Unhandled exception" operator error from the name=""
+    ValueError guard (design acceptance criterion #10).
+    """
+    from workflow_engine.nodes import ErrorNode
+
+    engine = WorkflowEngine(execution_algorithm=algorithm)
+    inner = await engine.build_single_node_workflow(
+        ErrorNode, params={"error_name": ""}
+    )
+    result = await engine.execute_node(
+        context=InMemoryExecutionContext(),
+        node=AttemptNode,
+        input={"info": "something went wrong"},
+        params={"workflow": inner},
+    )
+    assert result.status is WorkflowExecutionResultStatus.SUCCESS
+    assert result.errors.count == 0
+    value = result.output["result"]
+    assert isinstance(value, Result)
+    error = value.unwrap_err()
+    assert error.name.root == "WorkflowException"
+    assert error.message.root == "something went wrong"
 
 
 @pytest.mark.asyncio
