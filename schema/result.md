@@ -6,9 +6,10 @@ tagged ok/err value type described in [discussion
 published ahead of `attempt` (#201) and the eliminators (#202) so that hosts
 consuming this engine can align field names before those land.
 
-A `schema/` directory is the eventual home for the full interchange schema
-(#206). This file covers only the `Result[T]` shape; it is not that full
-schema.
+The [interchange contract](README.md) includes the graph and annotation
+channel. [`result.schema.json`](result.schema.json) validates serialized Result
+instances, while [`value-type.schema.json`](value-type.schema.json) validates
+the engine type metadata described below.
 
 ## Value shape
 
