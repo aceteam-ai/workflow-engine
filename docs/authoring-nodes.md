@@ -107,6 +107,18 @@ Notes:
   a `Result` err arm, each with a default `error_class` and a description.
   It is documentation only, not wire-enforced: a name absent from the list is
   still a valid `ResultError.name`, and adding a name is not a schema change.
+- To publish a stable error name, raise a concrete `WorkflowException` or
+  `NodeException` subclass whose class name matches its declaration. The first
+  concrete subclass in the explicit cause chain wins, even with `raise ... from
+  ...`. Plain `WorkflowException` and `NodeException` are generic wrappers;
+  when no concrete subclass exists, the deepest cause's class name remains the
+  diagnostic name. Cause cycles are visited only once.
+- This deliberately uses the existing subclass channel rather than adding a
+  `name=` exception argument (#248). Subclassing keeps one source of truth for
+  the name and works with normal Python exception handling. An explicit name
+  would support dynamically selected strings without defining classes, but
+  would introduce a second naming mechanism and precedence rules. Declarations
+  remain optional and non-exhaustive; arbitrary runtime failures stay valid.
 - Access parameters inside `run` via `self.params`.
 - `version` is a semantic version — see [Node versioning](#node-versioning).
 

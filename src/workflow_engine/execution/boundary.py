@@ -21,7 +21,7 @@ from dataclasses import dataclass, field
 
 from ..core.boundary import CancelReason, ErrorBoundaryNode
 from ..core.context import ExecutionContext
-from ..core.error import ErrorClass, WorkflowException
+from ..core.error import ErrorClass, NodeException, WorkflowException
 from ..core.node import Node
 from ..core.stakeholder import StakeholderLevel
 from ..core.values import (
@@ -365,7 +365,16 @@ def result_error_from_exception(exc: WorkflowException) -> ResultError:
         return exc.original
     assert exc.node_id is not None
     cause: BaseException = exc
-    while cause.__cause__ is not None:
+    seen: set[int] = set()
+    while id(cause) not in seen:
+        seen.add(id(cause))
+        if isinstance(cause, WorkflowException) and type(cause) not in (
+            WorkflowException,
+            NodeException,
+        ):
+            break
+        if cause.__cause__ is None or id(cause.__cause__) in seen:
+            break
         cause = cause.__cause__
     name = type(cause).__name__
     message = (
