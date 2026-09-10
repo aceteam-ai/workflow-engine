@@ -1,7 +1,7 @@
 """Decimal-preserving summary statistics with explicit sampling and interpolation."""
 
 from abc import abstractmethod
-from decimal import ROUND_HALF_EVEN, Decimal
+from decimal import MAX_EMAX, MIN_EMIN, ROUND_HALF_EVEN, Decimal, localcontext
 from enum import StrEnum
 from statistics import StatisticsError, median, mode, pstdev, pvariance, stdev, variance
 from typing import ClassVar, Generic, Self, TypeVar
@@ -202,13 +202,25 @@ class QuantileParams(_QuantileParams):
 
 
 def _quantile(
-    values: list[Decimal], q: Decimal, interpolation: QuantileInterpolation
+    values: list[Decimal],
+    q: Decimal,
+    interpolation: QuantileInterpolation,
+    *,
+    divisor: int = 1,
 ) -> Decimal:
     """Inclusive position (n - 1) * q, computed without a float conversion."""
     ordered = sorted(values)
-    position = (len(ordered) - 1) * q
-    lower = int(position)
-    fraction = position - lower
+    # Rank determines discrete indices, so rounding it can choose the wrong item
+    # or put a valid endpoint past the list. This precision holds every digit of
+    # the product; dividing by the percentile scale (100) is exact as well.
+    # Keep value interpolation below outside this context, honoring user rounding.
+    with localcontext() as rank_context:
+        rank_context.prec = len(q.as_tuple().digits) + len(str(len(ordered) - 1))
+        rank_context.Emin = MIN_EMIN
+        rank_context.Emax = MAX_EMAX
+        position = (len(ordered) - 1) * q / divisor
+        lower = int(position)
+        fraction = position - lower
     if fraction == 0:
         return ordered[lower]
     upper = lower + 1
@@ -236,7 +248,10 @@ class PercentileNode(_StatisticsNode[PercentileParams]):
     @override
     def compute(self, values: list[Decimal]) -> Decimal:
         return _quantile(
-            values, self.params.q.root / 100, self.params.interpolation.root
+            values,
+            self.params.q.root,
+            self.params.interpolation.root,
+            divisor=100,
         )
 
 
