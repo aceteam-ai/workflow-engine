@@ -51,7 +51,7 @@ class ForEachParams(Params):
     )
 
     constant_inputs: SequenceValue[StringValue] = Field(
-        default_factory=lambda: SequenceValue[StringValue](()),
+        default=SequenceValue[StringValue](()),
         title="Constant Inputs",
         description="The workflow inputs held constant for every item.",
     )

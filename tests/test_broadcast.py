@@ -66,3 +66,23 @@ async def test_traverse_rejects_invalid_constants(engine, names, message):
         await engine.build_single_node_workflow(
             ForEachNode, params={"workflow": sum_step(engine), "constant_inputs": names}
         )
+
+
+@pytest.mark.unit
+def test_broadcast_default_survives_parameter_schema_reconstruction():
+    from workflow_engine.core.values import get_data_dict
+    from workflow_engine.core.values.schema import DataValueSchema
+
+    schema = ForEachNode.TYPE_INFO.parameter_schema
+    assert isinstance(schema, DataValueSchema)
+    constant_schema = schema.properties["constant_inputs"]
+    assert "constant_inputs" not in schema.required
+    assert constant_schema.model_dump(mode="json")["default"] == []
+
+    # Reconstruct the optional field through the public parameter schema.
+    # Missing defaults cannot be reconstructed by portable graph consumers.
+    defaults = schema.model_update(
+        properties={"constant_inputs": constant_schema}, required=[]
+    )
+    rebuilt = defaults.build_data_cls()
+    assert get_data_dict(rebuilt())["constant_inputs"].model_dump(mode="json") == []
