@@ -47,14 +47,16 @@ class TopologicalExecutionAlgorithm(ExecutionAlgorithm):
         Initialize the execution algorithm.
 
         max_retries: default maximum retry attempts for nodes (can be overridden
-                     per node type via NodeTypeInfo.max_retries)
+                     per node instance or via NodeTypeInfo.max_retries)
         rate_limits: registry of rate limit configurations per node type
         """
         self.max_retries = max_retries
         self.rate_limits = rate_limits or RateLimitRegistry()
 
     def _get_node_max_retries(self, node) -> int | None:
-        """Get the max retries for a node, checking NodeTypeInfo first."""
+        """Prefer an instance budget, then the type budget; None uses the run default."""
+        if node.max_retries is not None:
+            return node.max_retries
         if hasattr(node, "TYPE_INFO") and node.TYPE_INFO.max_retries is not None:
             return node.TYPE_INFO.max_retries
         return None
