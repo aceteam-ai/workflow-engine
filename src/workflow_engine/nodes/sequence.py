@@ -60,7 +60,7 @@ class ElementParams(Params):
 class _ElementNode(Node[Data, Data, ElementParams]):
     @cached_property
     def element_type(self) -> type[Value]:
-        return self.params.element_schema.root.build_value_cls()
+        return self.params.element_schema.root.to_value_cls()
 
 
 class FlattenSequenceNode(_ElementNode):
@@ -112,7 +112,7 @@ class ChunkSequenceNode(Node[Data, Data, ChunkSequenceParams]):
     def element_type(self) -> type[Value]:
         if self.params.size.root < 1:
             raise ValueError("Chunk size must be positive.")
-        return self.params.element_schema.root.build_value_cls()
+        return self.params.element_schema.root.to_value_cls()
 
     @override
     async def dynamic_input_type(self, context: ValidationContext) -> type[Data]:
@@ -161,8 +161,8 @@ class ZipNode(Node[Data, Data, ZipParams]):
     def pair_type(self) -> type[Data]:
         return _data(
             "ZipPair",
-            first=self.params.first_schema.root.build_value_cls(),
-            second=self.params.second_schema.root.build_value_cls(),
+            first=self.params.first_schema.root.to_value_cls(),
+            second=self.params.second_schema.root.to_value_cls(),
         )
 
     @override
