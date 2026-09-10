@@ -29,6 +29,7 @@ def test_constant_string_node_type_info():
                 "StringValue": {
                     "type": "string",
                     "title": "StringValue",
+                    "x-value-type": "StringValue",
                 },
             },
             "additionalProperties": False,
@@ -84,6 +85,7 @@ async def test_constant_string_node_output_schema(node: ConstantStringNode):
             "StringValue": {
                 "type": "string",
                 "title": "StringValue",
+                "x-value-type": "StringValue",
             },
         },
         "additionalProperties": False,
