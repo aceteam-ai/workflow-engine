@@ -38,6 +38,9 @@ jobs:
       - name: Check typecast diagram
         run: uv run python scripts/generate_typecast_graph.py --check
 
+      - name: Check interchange schemas
+        run: uv run python scripts/generate_interchange_schema.py --check
+
       - name: Lint
         run: uv run ruff check .
 
