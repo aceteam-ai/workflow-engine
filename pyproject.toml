@@ -92,6 +92,12 @@ Round = "workflow_engine.nodes.arithmetic:RoundNode"
 Subtract = "workflow_engine.nodes.arithmetic:SubtractNode"
 Sum = "workflow_engine.nodes.arithmetic:SumNode"
 UnwrapOr = "workflow_engine.nodes.result:UnwrapOrNode"
+ChunkSequence = "workflow_engine.nodes.sequence:ChunkSequenceNode"
+Entries = "workflow_engine.nodes.sequence:EntriesNode"
+FlattenSequence = "workflow_engine.nodes.sequence:FlattenSequenceNode"
+GroupSequence = "workflow_engine.nodes.sequence:GroupSequenceNode"
+SelectSequence = "workflow_engine.nodes.sequence:SelectSequenceNode"
+Zip = "workflow_engine.nodes.sequence:ZipNode"
 
 [project.urls]
 Homepage = "https://aceteam.ai/workflow-engine"

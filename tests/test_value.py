@@ -795,3 +795,11 @@ def test_union_value_edge_validation_to_concrete_target():
 
 if __name__ == "__main__":
     pytest.main([__file__])
+
+
+@pytest.mark.unit
+async def test_empty_string_mapping_cast(context: ExecutionContext):
+    value = StringMapValue[IntegerValue]({})
+    converted = await value.cast_to(StringMapValue[StringValue], context=context)
+    assert type(converted) is StringMapValue[StringValue]
+    assert converted.root == {}
