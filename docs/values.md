@@ -16,6 +16,16 @@ Value types serialize to JSON Schema via `to_value_schema()`. Most Value types (
 
 4. **Composite def IDs**: For types nested beyond one level under `model_json_schema()` (e.g. `StringMapValue[SequenceValue[StringMapValue[IntegerValue]]]`), Pydantic generates composite def IDs such as `SequenceValue_StringMapValue_IntegerValue__`. These IDs are internal to that schema and do **not** correspond to any registry entry.
 
+### Registered identity and additional constraints
+
+Resolution always checks `x-value-type` before structural reconstruction, even when the schema includes extra keywords. The registered class's own published constraints and metadata are intrinsic: a ticket ID with `x-resource-type: ticket`, or a percentage type with `minimum: 0` and `maximum: 100`, resolves to that exact class. A changed title, description, or structural `type` does not override explicit identity. The Python spelling `value_type` is also accepted; supplying both identity spellings with different values is an error.
+
+Additional constraints produce an unregistered subclass of the identified type, preserving its custom casts, serializers, and validators. For example, adding `maximum: 50` to the percentage schema keeps its minimum of zero and rejects values above fifty. Changing the maximum to 200 does not relax the registered class's maximum of 100. Numeric bounds and `multipleOf`, string lengths, `pattern` and `enum`, and collection sizes are enforced after the inherited root validators. Unknown extra keywords remain schema metadata; they do not acquire validation semantics.
+
+When two inherited and added constraints cannot fit in a single keyword (such as two patterns), the emitted schema retains their intersection in `allOf`. The resolver enforces these constraint-only conjunctions when rebuilding the class. Unsupported conjunction clauses raise an error rather than silently discarding a restriction. This does not implement arbitrary JSON Schema composition.
+
+Keep recursive `$defs` when storing schemas. An unstamped legacy recursive definition raises a `ValueError` naming the repeated definition and asking for regeneration. Newly generated explicit identities resolve without unfolding the recursion.
+
 ### Limitation: deeply nested generics require $defs when using model_json_schema() directly
 
 This limitation is about calling Pydantic's `model_json_schema()` directly (as `_roundtrip_without_defs` in `tests/test_schema_roundtrip.py` does) and stripping `$defs`; it does not apply to `to_value_schema()`, which never relies on Pydantic's def IDs for delegated containers (see above).
