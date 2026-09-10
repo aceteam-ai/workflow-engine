@@ -50,6 +50,14 @@ class WorkflowError(ImmutableBaseModel):
     cause: WorkflowError | str | None = Field(default=None)
     traceback: Sequence[str] | None = Field(default=None)
     error_class: ErrorClass | None = Field(default=None)
+    name: str | None = Field(
+        default=None,
+        description="The author-chosen name set at the raise site via "
+        "name=, if any. None when no raise site in the chain set one; a "
+        "host that needs to tell an explicit name from a fallback checks "
+        "this field, not ResultError.name (core/values/result.py), which "
+        "carries the same string with no such marker.",
+    )
 
     def filter(self, level: StakeholderLevel) -> Self | None:
         # remove errors that require a lower level of visibility to be seen
@@ -78,13 +86,17 @@ class WorkflowException(RuntimeError):
         level: StakeholderLevel,
         node_id: str | None = None,
         error_class: ErrorClass | None = None,
+        name: str | None = None,
     ):
+        if name == "":
+            raise ValueError("name must not be an empty string; pass None to omit it")
         super().__init__(message)
         self.timestamp = datetime.now(timezone.utc).timestamp()
         self.level = level
         self.message = message
         self.node_id = node_id
         self.error_class = error_class
+        self.name = name
 
     def dump(self) -> WorkflowError:
         return WorkflowError(
@@ -101,6 +113,7 @@ class WorkflowException(RuntimeError):
             ),
             traceback=format_exception(self),
             error_class=self.error_class,
+            name=self.name,
         )
 
     @classmethod
@@ -176,8 +189,11 @@ class NodeException(WorkflowException):
         node: "Node",
         level: StakeholderLevel,
         error_class: ErrorClass | None = None,
+        name: str | None = None,
     ):
-        super().__init__(message, level=level, node_id=node.id, error_class=error_class)
+        super().__init__(
+            message, level=level, node_id=node.id, error_class=error_class, name=name
+        )
         self.node = node
 
     @classmethod
@@ -314,8 +330,11 @@ class ShouldRetry(NodeException):
         level: StakeholderLevel,
         backoff: timedelta = timedelta(seconds=1),
         error_class: ErrorClass = ErrorClass.SYSTEMIC,
+        name: str | None = None,
     ):
-        super().__init__(message, node=node, level=level, error_class=error_class)
+        super().__init__(
+            message, node=node, level=level, error_class=error_class, name=name
+        )
         self.backoff = backoff
 
 

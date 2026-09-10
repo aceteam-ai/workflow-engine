@@ -62,11 +62,19 @@ class ErrorNode(Node[ErrorInput, Empty, ErrorParams]):
     ) -> Empty:
         # error_name is an arbitrary, author-supplied string (this node exists
         # to let a workflow author trigger a failure on demand for testing).
+        # It is passed through the name= channel (#248) rather than folded
+        # into the message: name is the machine-readable wire identifier,
+        # and a StringValue parameter chosen at graph-authoring time can
+        # only ever reach the wire through that channel. An empty
+        # error_name is a valid StringValue in a stored graph; `or None`
+        # falls back to the resolver's own root-cause name instead of
+        # raising (name="" is rejected at construction).
         # The engine has no way to infer a cause from it, so error_class is
         # left unset here rather than guessed at; it materializes as
         # systemic, which is the honest answer for a genuinely unknown cause.
         raise WorkflowException.for_user(
-            f"{self.params.error_name}: {input.info}",
+            input.info.root,
+            name=self.params.error_name.root or None,
         )
 
 
