@@ -18,6 +18,7 @@ from workflow_engine import (
     Hints,
     Node,
     SequenceValue,
+    ValidationContext,
     Workflow,
     WorkflowEngine,
     WorkflowExecutionResultStatus,
@@ -292,24 +293,9 @@ async def test_ignoring_hints_does_not_change_result(
     assert hinted_result.output == {"results": [2.0, 4.0, 6.0, 8.0, 10.0]}
 
 
-def test_without_hints_does_not_reach_into_a_nested_workflow(
-    engine: WorkflowEngine,
-):
-    """
-    ``Node.without_hints()`` clears a node's own hints and nothing else. A
-    ForEach carries an entire workflow in ``params.workflow``, and hints on
-    the nodes inside that nested workflow survive stripping.
-
-    This does not break the hints contract: no execution code reads
-    ``Node.hints`` at any depth, so a surviving nested hint still cannot
-    change a result. It does mean ``without_hints()`` is shallower than
-    "erase every node's hints" suggests, and that the contract test's
-    "stripped twin" is only stripped at the top level.
-
-    Pinned here so the limitation is a known, deliberate boundary rather
-    than an assumption someone later relies on. See the follow-up issue for
-    making it recurse.
-    """
+@pytest.mark.unit
+async def test_without_hints_recurses_into_a_nested_workflow(engine: WorkflowEngine):
+    """Strip nested nodes even after the ForEach has cached its validation."""
     inner = _double_workflow(engine)
     hinted_inner = inner.model_update(
         inner_nodes=[
@@ -352,15 +338,46 @@ def test_without_hints_does_not_reach_into_a_nested_workflow(
         ],
     )
 
+    await for_each.workflow(ValidationContext())
     stripped = outer.without_hints()
 
     # The top level is stripped, as documented.
     for node in stripped.nodes:
         assert node.hints == Hints()
 
-    # The nested workflow is not.
     nested = stripped.nodes_by_id["for_each"].params.workflow.root
-    assert any(node.hints.max_concurrency == 7 for node in nested.inner_nodes), (
-        "expected nested hints to survive; if this now fails, without_hints() "
-        "recurses and this test should be replaced with the positive assertion"
+    assert all(node.hints == Hints() for node in nested.nodes)
+    stripped_each = stripped.nodes_by_id["for_each"]
+    assert isinstance(stripped_each, ForEachNode)
+    cached = await stripped_each.workflow(ValidationContext())
+    assert all(node.hints == Hints() for node in cached.nodes)
+    assert any(node.hints.max_concurrency == 7 for node in hinted_inner.inner_nodes)
+    assert stripped.without_hints().model_dump() == stripped.model_dump()
+
+
+@pytest.mark.unit
+def test_without_hints_walks_workflow_value_containers(engine: WorkflowEngine):
+    from workflow_engine.core import JSONValue, Params, StringMapValue, WorkflowValue
+
+    inner = _fan_out_workflow(engine, hints=Hints(max_concurrency=3))
+    from pydantic import Field
+
+    from workflow_engine.core.node import _without_nested_workflow_hints
+
+    class ContainerParams(Params):
+        workflows: StringMapValue[SequenceValue[WorkflowValue]] = Field(
+            title="Workflows", description="The nested workflows."
+        )
+        document: JSONValue = Field(title="Document", description="The ordinary data.")
+
+    params = ContainerParams(
+        workflows=StringMapValue[SequenceValue[WorkflowValue]](
+            {"nested": SequenceValue[WorkflowValue]([WorkflowValue(inner)])}
+        ),
+        document=JSONValue({"hints": {"max_concurrency": 9}}),
     )
+    stripped = _without_nested_workflow_hints(params)
+    nested = stripped.workflows.root["nested"].root[0].root
+    assert all(node.hints == Hints() for node in nested.nodes)
+    assert stripped.document == params.document
+    assert inner.nodes_by_id["for_each"].hints.max_concurrency == 3

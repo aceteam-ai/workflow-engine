@@ -46,6 +46,7 @@ from .data import (
     GatherDataNode,
     GatherMappingNode,
     GatherSequenceNode,
+    LengthNode,
 )
 from .datetime import (
     NowNode,
@@ -74,6 +75,15 @@ from .sequence import (
     ZipNode,
 )
 from .sequence_workflow import FilterNode, FoldNode, FoldStepNode, GroupByNode
+from .statistics import (
+    MedianNode,
+    ModeNode,
+    PercentileNode,
+    QuantileNode,
+    RangeNode,
+    StandardDeviationNode,
+    VarianceNode,
+)
 from .text import (
     AppendToFileNode,
 )
@@ -115,11 +125,14 @@ __all__ = [
     "IfElseNode",
     "IfNode",
     "IsOkNode",
+    "LengthNode",
     "LessThanEqualNode",
     "LessThanNode",
     "MatchErrorClassNode",
     "MaximumNode",
+    "MedianNode",
     "MinimumNode",
+    "ModeNode",
     "MultiplyNode",
     "NegateNode",
     "NotEqualNode",
@@ -128,9 +141,13 @@ __all__ = [
     "OkNode",
     "OrNode",
     "PartitionNode",
+    "PercentileNode",
     "PowerNode",
+    "QuantileNode",
+    "RangeNode",
     "RoundNode",
     "SelectSequenceNode",
+    "StandardDeviationNode",
     "SubtractNode",
     "SumNode",
     "UnfoldJoinNode",
@@ -139,5 +156,6 @@ __all__ = [
     "UnwrapNode",
     "UnwrapOrNode",
     "UnwrapOrValueNode",
+    "VarianceNode",
     "ZipNode",
 ]

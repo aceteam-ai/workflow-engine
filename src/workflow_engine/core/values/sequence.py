@@ -83,7 +83,6 @@ class SequenceValue(Value[Sequence[T]], Generic[T]):
         return SequenceValueSchema(
             **raw,
             items=items,
-            value_type=cls.__name__,
         )
 
 

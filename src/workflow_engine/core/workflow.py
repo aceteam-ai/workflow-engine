@@ -147,29 +147,12 @@ class Workflow(ImmutableBaseModel):
             output_node=self.output_node.without_hints(),
         )
 
-    # NOTE: this clobbers a long-deprecated method of the same name by Pydantic but we don't care
-    async def validate(  # pyright: ignore[reportIncompatibleMethodOverride]
-        self,
-        context: "ValidationContext",
-    ) -> ValidatedWorkflow:
-        """
-        Convert an untyped workflow to a typed workflow.
+    async def resolve(self, context: "ValidationContext") -> ResolvedWorkflow:
+        """Resolve node schemas and check existing edges for an editable draft.
 
-        Walks the workflow graph and:
-        1. Looks up concrete node types in node_registry
-        2. Applies migrations via the registry's ``load`` method
-        3. Validates node inputs and edge types
-        4. Returns a new Workflow with typed nodes
-
-        Args:
-            workflow: Untyped workflow (nodes may be base Node instances)
-
-        Returns:
-            Typed workflow (nodes are concrete subclass instances)
-
-        Raises:
-            ValueError: If edges reference non-existent fields or nodes are missing required inputs
-            TypeError: If edge types are incompatible
+        Required inputs may still be unwired. The returned draft has resolved
+        type information but no execution scheduling methods; call ``validate``
+        before execution to require all mandatory input edges.
         """
         typed_input_node = context.node_registry.load(self.input_node)
         if not isinstance(typed_input_node, InputNode):
@@ -219,7 +202,7 @@ class Workflow(ImmutableBaseModel):
                 target_type=node_input_types[edge.target_id],
             )
 
-        return ValidatedWorkflow(
+        return ResolvedWorkflow(
             input_node=typed_input_node,
             inner_nodes=typed_inner_nodes,
             output_node=typed_output_node,
@@ -228,8 +211,45 @@ class Workflow(ImmutableBaseModel):
             node_output_types=node_output_types,
         )
 
+    # Pydantic's deprecated method has the same name.
+    async def validate(  # pyright: ignore[reportIncompatibleMethodOverride]
+        self, context: "ValidationContext"
+    ) -> ValidatedWorkflow:
+        """Resolve the graph and require incoming edges for every required input.
 
-class ValidatedWorkflow(Workflow):
+        The workflow input node receives its data from the caller. All other
+        nodes, including the output node, must have their required fields wired.
+        Fields with defaults or default factories may remain unwired.
+        """
+        resolved = await self.resolve(context)
+        incoming = resolved.edges_by_target
+        for node in (*resolved.inner_nodes, resolved.output_node):
+            missing = sorted(
+                name
+                for name, field in resolved.node_input_types[
+                    node.id
+                ].model_fields.items()
+                if field.is_required() and name not in incoming[node.id]
+            )
+            if missing:
+                fields = ", ".join(repr(name) for name in missing)
+                raise ValueError(
+                    f"Node '{node.id}' is missing incoming edges for required "
+                    f"input fields: {fields}"
+                )
+        return ValidatedWorkflow(
+            input_node=resolved.input_node,
+            inner_nodes=resolved.inner_nodes,
+            output_node=resolved.output_node,
+            edges=resolved.edges,
+            node_input_types=resolved.node_input_types,
+            node_output_types=resolved.node_output_types,
+        )
+
+
+class ResolvedWorkflow(Workflow):
+    """Typed draft with valid existing edges, potentially missing required edges."""
+
     node_input_types: Mapping[str, type[Data]] = Field(exclude=True)
     node_output_types: Mapping[str, type[Data]] = Field(exclude=True)
 
@@ -257,6 +277,10 @@ class ValidatedWorkflow(Workflow):
     @cached_property
     def output_type(self) -> Type[Data]:
         return self.node_output_types[self.output_node.id]
+
+
+class ValidatedWorkflow(ResolvedWorkflow):
+    """A complete typed graph ready for execution."""
 
     def get_node_input_if_ready(
         self,
@@ -526,6 +550,7 @@ class WorkflowValue(Value[Workflow]):
 
 
 __all__ = [
+    "ResolvedWorkflow",
     "Workflow",
     "WorkflowValue",
 ]

@@ -1131,3 +1131,27 @@ class TestUninstall:
             result = invoke_cli(runner, "uninstall", "Nope")
             assert result.exit_code != 0
             assert "No explicit entry" in result.output
+
+
+@pytest.mark.parametrize("command", ["check", "verify", "run"])
+def test_incomplete_draft_is_editable_but_not_executable(
+    runner: CliRunner, tmp_path: Path, base_dir: Path, command: str
+):
+    path = tmp_path / "draft.json"
+    _run(runner, "workflow", "init", str(path))
+    _run(runner, "workflow", "edit", "add-node", str(path), "Sum", "summer")
+    # A draft can still be inspected to discover the edge needed for completion.
+    _run(runner, "workflow", "describe", str(path), "--json")
+    _run(runner, "workflow", "edit", "possible-edges", str(path), "summer.values")
+    if command == "verify":
+        result = invoke_cli(runner, "verify", str(path))
+    elif command == "run":
+        result = invoke_cli(
+            runner, "workflow", "run", str(path), "{}", "--base-dir", str(base_dir)
+        )
+    else:
+        result = invoke_cli(runner, "workflow", "check", str(path))
+    assert result.exit_code != 0
+    detail = result.output + str(result.exception)
+    assert "summer" in detail
+    assert "values" in detail

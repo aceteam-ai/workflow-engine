@@ -10,6 +10,18 @@ This project uses [PEP 440](https://peps.python.org/pep-0440/) versioning with r
 
 - **`declared_errors` on `NodeTypeInfo`** (`core/node.py`): an optional list of `DeclaredError` (`name`, default `error_class`, description) documenting the error names a node type may raise into a `Result` err arm. This is the surviving half of the per-node-error-types proposal #234 otherwise rejects: `error_class` stays the closed vocabulary routing and retry key on, and `name` becomes the open per-node vocabulary a node type can document. Documentation-level and non-exhaustive by construction, on purpose: `ResultError`'s schema does not change, a `name` absent from the list is still valid on the wire, and adding a name is not a schema change, so an older stored graph never rejects a newer node's error. A follow-on CI check that cross-references names raised in a node's own tests against its declaration is explicitly out of scope until declarations are actually used by node authors (#237).
 
+### Changed
+
+- Every `Value` subclass now publishes `x-value-type` through its JSON schema hook, including nested definitions and Float values (#224).
+
+### Fixed
+
+- Registered schema identity now survives extra metadata and constraints (#97). Intrinsic metadata and bounds retain the exact registered class; declared string patterns and enums can no longer bypass validation, and added constraints build a subclass preserving custom casts, serializers, and validation. Conflicting `value_type` / `x-value-type` aliases fail explicitly, and unstamped recursive references fail with the repeated definition name instead of overflowing recursion (#224).
+
+### Breaking changes
+
+- Removed the legacy `title` fallback for registered Value identity (#224). Titles are display metadata. Regenerate stored schemas that relied on a title to recover a custom type before upgrading; keep their recursive `$defs` and new `x-value-type` markers.
+
 ## [2.0.0rc16] - 2026-09-09
 
 ### Added
