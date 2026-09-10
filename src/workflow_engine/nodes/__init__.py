@@ -87,6 +87,7 @@ from .statistics import (
 from .text import (
     AppendToFileNode,
 )
+from .unfold import UnfoldJoinNode, UnfoldNextNode, UnfoldNode
 
 __all__ = [
     "AbsoluteValueNode",
@@ -149,6 +150,9 @@ __all__ = [
     "StandardDeviationNode",
     "SubtractNode",
     "SumNode",
+    "UnfoldJoinNode",
+    "UnfoldNextNode",
+    "UnfoldNode",
     "UnwrapNode",
     "UnwrapOrNode",
     "UnwrapOrValueNode",
