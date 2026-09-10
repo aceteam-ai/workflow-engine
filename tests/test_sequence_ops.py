@@ -5,6 +5,7 @@ from collections.abc import Mapping, Sequence
 from typing import Any
 
 import pytest
+from pydantic import ValidationError, field_validator
 
 from workflow_engine import (
     Edge,
@@ -21,6 +22,7 @@ from workflow_engine import (
     WorkflowExecutionResultStatus,
 )
 from workflow_engine.contexts import InMemoryExecutionContext
+from workflow_engine.core.values import ErrorClassValue
 from workflow_engine.nodes import (
     AttemptNode,
     ChunkSequenceNode,
@@ -231,3 +233,60 @@ async def test_shape_errors_remain_user_visible_validation_errors(
     assert error.error_class.root is ErrorClass.VALIDATION
     assert message in error.message.root
     assert error.node_id.root.endswith("/node")
+
+
+class PositiveSequenceItemValue(Value[int]):
+    @field_validator("root")
+    @classmethod
+    def positive(cls, value: int) -> int:
+        if value <= 0:
+            raise ValueError("Item must be positive.")
+        return value
+
+
+@pytest.mark.parametrize(
+    "cls,inputs",
+    [
+        (FlattenSequenceNode, {"sequence": [["not_a_class"]]}),
+        (ChunkSequenceNode, {"sequence": ["not_a_class"]}),
+        (EntriesNode, {"mapping": {"item": "not_a_class"}}),
+        (SelectSequenceNode, {"sequence": ["not_a_class"], "decisions": [True]}),
+        (GroupSequenceNode, {"sequence": ["not_a_class"], "keys": ["group"]}),
+        (ZipNode, {"first": ["not_a_class"], "second": ["not_a_class"]}),
+    ],
+)
+async def test_element_schema_preserves_registered_enum_identity(engine, cls, inputs):
+    params = element_params(ErrorClassValue)
+    if cls is ChunkSequenceNode:
+        params["size"] = 2
+    if cls is ZipNode:
+        params = {
+            "first_schema": ErrorClassValue.to_value_schema(),
+            "second_schema": ErrorClassValue.to_value_schema(),
+        }
+    graph = await engine.build_single_node_workflow(cls, params=params)
+    restored = Workflow.model_validate_json(graph.model_dump_json())
+    with pytest.raises(ValidationError):
+        await engine.execute(
+            context=InMemoryExecutionContext(), workflow=restored, input=inputs
+        )
+
+
+async def test_enum_and_custom_marker_schema_roundtrip(engine):
+    assert await run_roundtrip(
+        engine,
+        FlattenSequenceNode,
+        element_params(ErrorClassValue),
+        {"sequence": [["timeout"], ["validation"]]},
+    ) == {"sequence": ["timeout", "validation"]}
+    params = {"element_schema": {"x-value-type": "PositiveSequenceItemValue"}}
+    assert await run_roundtrip(
+        engine, FlattenSequenceNode, params, {"sequence": [[1], [2]]}
+    ) == {"sequence": [1, 2]}
+    graph = await engine.build_single_node_workflow(FlattenSequenceNode, params=params)
+    with pytest.raises(ValidationError):
+        await engine.execute(
+            context=InMemoryExecutionContext(),
+            workflow=Workflow.model_validate_json(graph.model_dump_json()),
+            input={"sequence": [[-1]]},
+        )
