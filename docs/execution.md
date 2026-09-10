@@ -151,3 +151,18 @@ Two `ExecutionContext` hooks exist for boundaries, both with safe default implem
 
 - `on_node_cancelled(node, input_type, output_type, input, boundary_id, reason, cause)`: fires once per pass for each member of a failed boundary that will not run this pass. `reason` is a `CancelReason`: `NOT_SCHEDULED` (the boundary failed before this member was dispatched; `input` is `None`) or `RETRY_ABANDONED` (the member was in `ShouldRetry` backoff; `input` is its input). Never fires for a member that was in flight (it gets its normal terminal hook instead), nor for a yielded member, nor for the boundary's own output node.
 - `on_boundary_error(node, input_type, output_type, input, error, output, cause)`: fires when a boundary materializes its `err` arm, after every member has settled and none yielded this pass. `node` is the boundary node itself (e.g. the `AttemptNode`); `output` is the mapping about to be written as the output of its output node, returnable (possibly replaced) like `on_node_finish`. A host that persists `output` against `node.id` may safely short-circuit the whole boundary from `on_node_start` on a later pass, since by construction nothing inside is suspended when this hook fires.
+
+### Per-instance retry budgets
+
+A node can carry `max_retries` as an optional nonnegative integer. Both executors
+resolve the budget in this order: node instance, `NodeTypeInfo.max_retries`, then
+the execution algorithm's default. `None` falls through and `0` disables retries.
+The budget counts additional calls after the first, and applies only to
+`ShouldRetry`; ordinary errors do not become retryable because a budget exists.
+Copies expanded by `ForEach` retain the setting and have independent retry state.
+
+This field is an execution setting on `Node`, outside the erasable `hints` channel.
+Changing the budget can change whether a transient failure succeeds, so
+`without_hints()` preserves it. Unset budgets are omitted from serialized graphs;
+older graphs retain their existing behavior. Boundary-level `Attempt` retries
+have their own budget and accounting.

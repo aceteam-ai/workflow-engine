@@ -6,6 +6,7 @@ import warnings
 from abc import ABC, abstractmethod
 from collections.abc import Mapping, Sequence
 from functools import cached_property
+from threading import Lock
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -21,6 +22,7 @@ from typing import (
 
 from overrides import final, override
 from pydantic import (
+    BaseModel,
     ConfigDict,
     Field,
     SerializerFunctionWrapHandler,
@@ -56,6 +58,34 @@ if TYPE_CHECKING:
     from .workflow import ValidatedWorkflow, Workflow
 
 logger = logging.getLogger(__name__)
+
+
+def _without_nested_workflow_hints(value: Any) -> Any:
+    """Copy parameter containers, erasing hints only in embedded workflows."""
+    from .workflow import Workflow
+
+    if isinstance(value, Workflow):
+        return value.without_hints()
+    if isinstance(value, BaseModel):
+        fields = {
+            name: _without_nested_workflow_hints(getattr(value, name))
+            for name in type(value).model_fields
+        }
+        if value.model_extra:
+            fields.update(
+                {
+                    key: _without_nested_workflow_hints(v)
+                    for key, v in value.model_extra.items()
+                }
+            )
+        return value.model_copy(update=fields)
+    if isinstance(value, Mapping):
+        return {key: _without_nested_workflow_hints(v) for key, v in value.items()}
+    if isinstance(value, tuple):
+        return tuple(_without_nested_workflow_hints(v) for v in value)
+    if isinstance(value, list):
+        return [_without_nested_workflow_hints(v) for v in value]
+    return value
 
 
 class Params(Data):
@@ -218,6 +248,16 @@ class Node(ImmutableBaseModel, Generic[Input_contra, Output, Params_co]):
             "May affect what inputs are accepted by the node."
         ),
     )
+    max_retries: int | None = Field(
+        default=None,
+        ge=0,
+        title="Max Retries",
+        description=(
+            "The maximum number of retries after a transient failure. "
+            "Overrides the node type and execution defaults when set; "
+            "zero disables retries."
+        ),
+    )
     hints: Hints = Field(
         default_factory=Hints,
         description=(
@@ -299,7 +339,17 @@ class Node(ImmutableBaseModel, Generic[Input_contra, Output, Params_co]):
         result as the original, since a host is always allowed to ignore
         every hint.
         """
-        return self.model_update(hints=Hints())
+        # Reconstruct the node so validated inner-workflow caches cannot retain
+        # the original hinted graph. Work on model instances, not serialized
+        # dictionaries: a JSON object containing a "hints" key is ordinary data.
+        return type(self).model_validate(
+            {
+                **{name: getattr(self, name) for name in type(self).model_fields},
+                **(self.model_extra or {}),
+                "hints": Hints(),
+                "params": _without_nested_workflow_hints(self.params),
+            }
+        )
 
     @model_serializer(mode="wrap")
     def _serialize_omit_empty_hints(self, handler: SerializerFunctionWrapHandler):
@@ -308,10 +358,13 @@ class Node(ImmutableBaseModel, Generic[Input_contra, Output, Params_co]):
         serializes the same as a bare ``Hints()``), so a node that has never
         touched this channel dumps exactly as it did before the channel
         existed. A node with a real hint set is unaffected.
+        Likewise, omit an unset retry budget while preserving explicit zero.
         """
         data = handler(self)
         if not data.get("hints"):
             data.pop("hints", None)
+        if data.get("max_retries") is None:
+            data.pop("max_retries", None)
         return data
 
     # --------------------------------------------------------------------------
@@ -982,6 +1035,7 @@ class LazyNodeRegistry(NodeRegistryBuilder, NodeRegistry):
     """
 
     def __init__(self):
+        self._lock = Lock()
         self._registrations: list[tuple[str, type[Node]]] = []
         self._removals: dict[
             str, tuple[type[Node] | None, bool]
@@ -999,22 +1053,26 @@ class LazyNodeRegistry(NodeRegistryBuilder, NodeRegistry):
         node_cls: type[Node],
         name: str | None = None,
     ) -> Self:
-        if self._frozen:
-            raise ValueError("Node registry is frozen, cannot register new node types.")
-        key = node_cls.default_type_name() if name is None else name
-        self._registrations.append((key, node_cls))
-        return self
+        with self._lock:
+            if self._frozen:
+                raise ValueError(
+                    "Node registry is frozen, cannot register new node types."
+                )
+            key = node_cls.default_type_name() if name is None else name
+            self._registrations.append((key, node_cls))
+            return self
 
     @override
     def _pop(self, name: str) -> type[Node]:
-        if self._frozen:
-            raise ValueError("Cannot remove types from a frozen node registry.")
-        for i in range(len(self._registrations) - 1, -1, -1):
-            reg_name, cls = self._registrations[i]
-            if reg_name == name:
-                self._registrations.pop(i)
-                return cls
-        raise KeyError(name)
+        with self._lock:
+            if self._frozen:
+                raise ValueError("Cannot remove types from a frozen node registry.")
+            for i in range(len(self._registrations) - 1, -1, -1):
+                reg_name, cls = self._registrations[i]
+                if reg_name == name:
+                    self._registrations.pop(i)
+                    return cls
+            raise KeyError(name)
 
     @override
     def unregister(
@@ -1024,51 +1082,56 @@ class LazyNodeRegistry(NodeRegistryBuilder, NodeRegistry):
         expect: type[Node] | None = None,
         missing_ok: bool = False,
     ) -> Self:
-        if self._frozen:
-            raise ValueError("Node registry is frozen, cannot remove node types.")
-        self._removals[name] = (expect, missing_ok)
-        return self
+        with self._lock:
+            if self._frozen:
+                raise ValueError("Node registry is frozen, cannot remove node types.")
+            self._removals[name] = (expect, missing_ok)
+            return self
 
     @override
     def build(self) -> NodeRegistry:
-        if self._frozen:
-            return self
+        # Readers and registration mutations share the same freeze boundary.
+        # Publish only a fully validated mapping; a failed build remains usable
+        # as a builder and subsequent reads repeat the original validation error.
+        with self._lock:
+            if self._frozen:
+                return self
 
-        self._frozen = True
-        _node_classes: dict[str, type[Node]] = {}
-        for name, node_cls in self._registrations:
-            if name in _node_classes:
-                conflict = _node_classes[name]
-                if node_cls is conflict:
-                    logger.warning(
-                        "Node type %s is already registered to class %s, skipping registration",
-                        name,
-                        node_cls.__name__,
-                    )
+            _node_classes: dict[str, type[Node]] = {}
+            for name, node_cls in self._registrations:
+                if name in _node_classes:
+                    conflict = _node_classes[name]
+                    if node_cls is conflict:
+                        logger.warning(
+                            "Node type %s is already registered to class %s, skipping registration",
+                            name,
+                            node_cls.__name__,
+                        )
+                    else:
+                        raise ValueError(
+                            f'Node type "{name}" (class {node_cls.__name__}) is already registered to a different class ({conflict.__name__})'
+                        )
                 else:
+                    _node_classes[name] = node_cls
+
+            for name, (expect, missing_ok) in self._removals.items():
+                if name not in _node_classes:
+                    if not missing_ok:
+                        raise ValueError(f'Node type "{name}" is not registered')
+                    continue
+                registered = _node_classes[name]
+                if expect is not None and registered is not expect:
                     raise ValueError(
-                        f'Node type "{name}" (class {node_cls.__name__}) is already registered to a different class ({conflict.__name__})'
+                        f'Node type "{name}" is registered to {registered.__name__}, expected {expect.__name__}'
                     )
-            else:
-                _node_classes[name] = node_cls
+                del _node_classes[name]
 
-        for name, (expect, missing_ok) in self._removals.items():
-            if name not in _node_classes:
-                if not missing_ok:
-                    raise ValueError(f'Node type "{name}" is not registered')
-                continue
-            registered = _node_classes[name]
-            if expect is not None and registered is not expect:
-                raise ValueError(
-                    f'Node type "{name}" is registered to {registered.__name__}, expected {expect.__name__}'
-                )
-            del _node_classes[name]
+            del self._registrations  # just to be extra sure
+            del self._removals
+            self._node_classes = _node_classes
+            self._frozen = True
 
-        del self._registrations  # just to be extra sure
-        del self._removals
-        self._node_classes = _node_classes
-
-        return self
+            return self
 
     # USE PHASE
 

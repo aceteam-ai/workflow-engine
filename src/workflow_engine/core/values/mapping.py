@@ -88,7 +88,6 @@ class StringMapValue(Value[Mapping[str, V]], Generic[V]):
         return StringMapValueSchema(
             **raw,
             additionalProperties=additional_properties,
-            value_type=cls.__name__,
         )
 
 
