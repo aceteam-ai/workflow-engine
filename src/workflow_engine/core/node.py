@@ -497,12 +497,14 @@ class Node(ImmutableBaseModel, Generic[Input_contra, Output, Params_co]):
                 raise NodeException.for_builder(
                     f"Unknown input field '{key}' for node {self.id}",
                     node=self,
+                    error_class=ErrorClass.VALIDATION,
                 )
             input_field_type, _ = input_fields[key]
             if not value.can_cast_to(input_field_type):
                 raise NodeException.for_user(
                     f"Input {value} for node {self.id} is invalid: {value} is not assignable to {input_field_type}",
                     node=self,
+                    error_class=ErrorClass.VALIDATION,
                 )
 
             # avoid asyncio overhead by keeping original value
@@ -525,6 +527,7 @@ class Node(ImmutableBaseModel, Generic[Input_contra, Output, Params_co]):
             raise NodeException.for_user(
                 f"Input {casted_input} for node {self.id} is invalid: {e}",
                 node=self,
+                error_class=ErrorClass.VALIDATION,
             ) from e
 
     # @abstractmethod
