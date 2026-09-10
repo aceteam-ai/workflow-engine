@@ -218,6 +218,16 @@ class Node(ImmutableBaseModel, Generic[Input_contra, Output, Params_co]):
             "May affect what inputs are accepted by the node."
         ),
     )
+    max_retries: int | None = Field(
+        default=None,
+        ge=0,
+        title="Max Retries",
+        description=(
+            "The maximum number of retries after a transient failure. "
+            "Overrides the node type and execution defaults when set; "
+            "zero disables retries."
+        ),
+    )
     hints: Hints = Field(
         default_factory=Hints,
         description=(
@@ -308,10 +318,13 @@ class Node(ImmutableBaseModel, Generic[Input_contra, Output, Params_co]):
         serializes the same as a bare ``Hints()``), so a node that has never
         touched this channel dumps exactly as it did before the channel
         existed. A node with a real hint set is unaffected.
+        Likewise, omit an unset retry budget while preserving explicit zero.
         """
         data = handler(self)
         if not data.get("hints"):
             data.pop("hints", None)
+        if data.get("max_retries") is None:
+            data.pop("max_retries", None)
         return data
 
     # --------------------------------------------------------------------------
