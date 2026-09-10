@@ -319,6 +319,7 @@ def test_cycle_guard_resets_after_a_failure_and_does_not_reject_shared_siblings(
     schema = validate_value_schema(
         {
             "type": "object",
+            "title": "SharedSiblingRecord",
             "properties": {
                 "a": {"$ref": "#/$defs/leaf"},
                 "b": {"$ref": "#/$defs/leaf"},
