@@ -22,6 +22,7 @@ from typing import (
 
 from overrides import final, override
 from pydantic import (
+    BaseModel,
     ConfigDict,
     Field,
     SerializerFunctionWrapHandler,
@@ -57,6 +58,34 @@ if TYPE_CHECKING:
     from .workflow import ValidatedWorkflow, Workflow
 
 logger = logging.getLogger(__name__)
+
+
+def _without_nested_workflow_hints(value: Any) -> Any:
+    """Copy parameter containers, erasing hints only in embedded workflows."""
+    from .workflow import Workflow
+
+    if isinstance(value, Workflow):
+        return value.without_hints()
+    if isinstance(value, BaseModel):
+        fields = {
+            name: _without_nested_workflow_hints(getattr(value, name))
+            for name in type(value).model_fields
+        }
+        if value.model_extra:
+            fields.update(
+                {
+                    key: _without_nested_workflow_hints(v)
+                    for key, v in value.model_extra.items()
+                }
+            )
+        return value.model_copy(update=fields)
+    if isinstance(value, Mapping):
+        return {key: _without_nested_workflow_hints(v) for key, v in value.items()}
+    if isinstance(value, tuple):
+        return tuple(_without_nested_workflow_hints(v) for v in value)
+    if isinstance(value, list):
+        return [_without_nested_workflow_hints(v) for v in value]
+    return value
 
 
 class Params(Data):
@@ -310,7 +339,17 @@ class Node(ImmutableBaseModel, Generic[Input_contra, Output, Params_co]):
         result as the original, since a host is always allowed to ignore
         every hint.
         """
-        return self.model_update(hints=Hints())
+        # Reconstruct the node so validated inner-workflow caches cannot retain
+        # the original hinted graph. Work on model instances, not serialized
+        # dictionaries: a JSON object containing a "hints" key is ordinary data.
+        return type(self).model_validate(
+            {
+                **{name: getattr(self, name) for name in type(self).model_fields},
+                **(self.model_extra or {}),
+                "hints": Hints(),
+                "params": _without_nested_workflow_hints(self.params),
+            }
+        )
 
     @model_serializer(mode="wrap")
     def _serialize_omit_empty_hints(self, handler: SerializerFunctionWrapHandler):
