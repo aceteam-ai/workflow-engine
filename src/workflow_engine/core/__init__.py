@@ -79,7 +79,7 @@ from .values import (
     ValueSchemaValue,
     ValueType,
 )
-from .workflow import ValidatedWorkflow, Workflow, WorkflowValue
+from .workflow import ResolvedWorkflow, ValidatedWorkflow, Workflow, WorkflowValue
 
 __all__ = [
     "JSON",
@@ -126,6 +126,7 @@ __all__ = [
     "OutputNode",
     "Params",
     "PropagatedResultError",
+    "ResolvedWorkflow",
     "Result",
     "ResultError",
     "RoundingMode",
