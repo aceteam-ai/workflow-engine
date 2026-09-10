@@ -15,6 +15,7 @@ from pydantic import Field
 
 from ..core import (
     Data,
+    DeclaredError,
     Empty,
     ErrorClass,
     ExecutionContext,
@@ -257,12 +258,23 @@ class FactorizationData(Data):
     )
 
 
+class InvalidFactorizationInput(NodeException):
+    """Factorization requires a strictly positive integer."""
+
+
 class FactorizationNode(Node[IntegerData, FactorizationData, Empty]):
     TYPE_INFO: ClassVar[NodeTypeInfo] = NodeTypeInfo.from_parameter_type(
         display_name="Factorization",
         description="Factorizes an integer into a sequence of its factors.",
         version="0.4.0",
         parameter_type=Empty,
+        declared_errors=(
+            DeclaredError(
+                name="InvalidFactorizationInput",
+                error_class=ErrorClass.VALIDATION,
+                description="The number to factorize is not a positive integer.",
+            ),
+        ),
     )
 
     @classmethod
@@ -291,7 +303,7 @@ class FactorizationNode(Node[IntegerData, FactorizationData, Empty]):
                     [IntegerValue(i) for i in range(1, value + 1) if value % i == 0]
                 )
             )
-        raise NodeException.for_user(
+        raise InvalidFactorizationInput.for_user(
             "Can only factorize positive integers",
             node=self,
             error_class=ErrorClass.VALIDATION,
