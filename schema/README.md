@@ -153,9 +153,10 @@ Draft202012Validator(contract).validate(graph)
 
 A receiver must then load the graph through its node/value registries and run
 engine validation before execution. That checks installed implementations and
-versions, node parameters, DAG structure, node IDs, edge endpoints, and port types. Input values are validated during
-execution. Missing required input edges are currently detected during execution
-rather than rejected by graph validation (see [#95](https://github.com/aceteam-ai/workflow-engine/issues/95)).
+versions, node parameters, DAG structure, node IDs, edge endpoints, port types,
+and required input edges. Input values are validated during execution.
+`resolve()` produces a typed draft for inspection and editing; `validate()`
+checks that required inputs are connected before execution.
 Resource availability, credentials and host environment references also remain
 the recipient's responsibility. Schema and graph validation therefore do not
 prove that every node can execute successfully.
