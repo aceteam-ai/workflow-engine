@@ -8,6 +8,7 @@ import pytest
 
 from workflow_engine import (
     Edge,
+    ErrorClass,
     ExecutionAlgorithm,
     IntegerValue,
     Node,
@@ -21,9 +22,12 @@ from workflow_engine import (
 )
 from workflow_engine.contexts import InMemoryExecutionContext
 from workflow_engine.nodes import (
+    AttemptNode,
     ChunkSequenceNode,
     EntriesNode,
     FlattenSequenceNode,
+    GroupSequenceNode,
+    SelectSequenceNode,
     ZipNode,
 )
 
@@ -182,3 +186,48 @@ async def test_zip_preserves_result_positions(engine):
             for name, result in zip(["first", "second"], results, strict=True)
         ]
     }
+
+
+@pytest.mark.parametrize(
+    "cls,params,inputs,message",
+    [
+        (
+            ZipNode,
+            {
+                "first_schema": IntegerValue.to_value_schema(),
+                "second_schema": IntegerValue.to_value_schema(),
+            },
+            {"first": [1], "second": []},
+            "Zip requires equal lengths",
+        ),
+        (
+            SelectSequenceNode,
+            element_params(),
+            {"sequence": [1], "decisions": []},
+            "exactly one decision",
+        ),
+        (
+            GroupSequenceNode,
+            element_params(),
+            {"sequence": [1], "keys": []},
+            "exactly one group key",
+        ),
+    ],
+)
+async def test_shape_errors_remain_user_visible_validation_errors(
+    engine, cls, params, inputs, message
+):
+    inner = await engine.build_single_node_workflow(cls, params=params)
+    result = await engine.execute_node(
+        context=InMemoryExecutionContext(),
+        node=AttemptNode,
+        params={"workflow": inner},
+        input=inputs,
+    )
+    assert result.status is WorkflowExecutionResultStatus.SUCCESS
+    captured = result.output["result"]
+    assert isinstance(captured, Result)
+    error = captured.unwrap_err()
+    assert error.error_class.root is ErrorClass.VALIDATION
+    assert message in error.message.root
+    assert error.node_id.root.endswith("/node")

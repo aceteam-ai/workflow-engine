@@ -15,9 +15,11 @@ from ..core import (
     BooleanValue,
     Data,
     DataValue,
+    ErrorClass,
     ExecutionContext,
     IntegerValue,
     Node,
+    NodeException,
     NodeTypeInfo,
     Params,
     SequenceValue,
@@ -186,8 +188,10 @@ class ZipNode(Node[Data, Data, ZipParams]):
         fields = get_data_dict(input)
         first, second = fields["first"].root, fields["second"].root
         if len(first) != len(second):
-            raise ValueError(
-                f"Zip requires equal lengths, got {len(first)} and {len(second)}."
+            raise NodeException.for_user(
+                f"Zip requires equal lengths, got {len(first)} and {len(second)}.",
+                node=self,
+                error_class=ErrorClass.VALIDATION,
             )
         return output_type.model_validate(
             {
@@ -270,7 +274,11 @@ class SelectSequenceNode(_ElementNode):
         fields = get_data_dict(input)
         items, decisions = fields["sequence"].root, fields["decisions"].root
         if len(items) != len(decisions):
-            raise ValueError("Each sequence item must have exactly one decision.")
+            raise NodeException.for_user(
+                "Each sequence item must have exactly one decision.",
+                node=self,
+                error_class=ErrorClass.VALIDATION,
+            )
         return output_type.model_validate(
             {
                 "sequence": [
@@ -319,7 +327,11 @@ class GroupSequenceNode(_ElementNode):
         fields = get_data_dict(input)
         items, keys = fields["sequence"].root, fields["keys"].root
         if len(items) != len(keys):
-            raise ValueError("Each sequence item must have exactly one group key.")
+            raise NodeException.for_user(
+                "Each sequence item must have exactly one group key.",
+                node=self,
+                error_class=ErrorClass.VALIDATION,
+            )
         groups: dict[str, list[Value]] = {}
         for item, key in zip(items, keys, strict=True):
             groups.setdefault(key.root, []).append(item)
