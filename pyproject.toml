@@ -98,6 +98,10 @@ FlattenSequence = "workflow_engine.nodes.sequence:FlattenSequenceNode"
 GroupSequence = "workflow_engine.nodes.sequence:GroupSequenceNode"
 SelectSequence = "workflow_engine.nodes.sequence:SelectSequenceNode"
 Zip = "workflow_engine.nodes.sequence:ZipNode"
+Filter = "workflow_engine.nodes.sequence_workflow:FilterNode"
+Fold = "workflow_engine.nodes.sequence_workflow:FoldNode"
+FoldStep = "workflow_engine.nodes.sequence_workflow:FoldStepNode"
+GroupBy = "workflow_engine.nodes.sequence_workflow:GroupByNode"
 
 [project.urls]
 Homepage = "https://aceteam.ai/workflow-engine"
