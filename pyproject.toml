@@ -102,6 +102,9 @@ Filter = "workflow_engine.nodes.sequence_workflow:FilterNode"
 Fold = "workflow_engine.nodes.sequence_workflow:FoldNode"
 FoldStep = "workflow_engine.nodes.sequence_workflow:FoldStepNode"
 GroupBy = "workflow_engine.nodes.sequence_workflow:GroupByNode"
+Unfold = "workflow_engine.nodes.unfold:UnfoldNode"
+UnfoldNext = "workflow_engine.nodes.unfold:UnfoldNextNode"
+UnfoldJoin = "workflow_engine.nodes.unfold:UnfoldJoinNode"
 
 [project.urls]
 Homepage = "https://aceteam.ai/workflow-engine"

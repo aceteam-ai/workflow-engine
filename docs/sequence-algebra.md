@@ -106,3 +106,10 @@ Filter and grouping emit `traverse` plus `combine`. Their inner ids become
 alignment and runs after all decisions are available. Completed item work can
 be loaded from a host context's cache after a yield; missing work resumes under
 the same ids. Concurrency hints retain the normal portable annotation contract.
+
+## Generating a sequence
+
+[`Unfold`](unfold.md) complements traversal and fold: it repeatedly invokes a
+cursor step until completion, with a required finite iteration budget and flat,
+checkpointed expansion. It returns the concatenated page items as a sequence
+that the operators above can consume.
