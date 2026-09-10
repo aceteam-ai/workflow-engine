@@ -15,6 +15,18 @@ This project uses [PEP 440](https://peps.python.org/pep-0440/) versioning with r
 
 - **`ErrorNode`'s wire `name` is now the author's `error_name`, not a generic wrapper class name** (`nodes/error.py`): `error_name` is a `StringValue` parameter chosen at graph-authoring time, so it is passed through the `name=` channel above rather than folded into `message`. Inside an `attempt`, the materialized `err.name` moves from `"WorkflowException"` to the author's string; `message` is now the author's own `info` text, no longer prefixed with `error_name`. An empty `error_name` still materializes a normal err arm (`name` falls back to `"WorkflowException"`), not an operator error (#248).
 
+### Changed
+
+- Every `Value` subclass now publishes `x-value-type` through its JSON schema hook, including nested definitions and Float values (#224).
+
+### Fixed
+
+- Registered schema identity now survives extra metadata and constraints (#97). Intrinsic metadata and bounds retain the exact registered class; declared string patterns and enums can no longer bypass validation, and added constraints build a subclass preserving custom casts, serializers, and validation. Conflicting `value_type` / `x-value-type` aliases fail explicitly, and unstamped recursive references fail with the repeated definition name instead of overflowing recursion (#224).
+
+### Breaking changes
+
+- Removed the legacy `title` fallback for registered Value identity (#224). Titles are display metadata. Regenerate stored schemas that relied on a title to recover a custom type before upgrading; keep their recursive `$defs` and new `x-value-type` markers.
+
 ## [2.0.0rc16] - 2026-09-09
 
 ### Added

@@ -8,13 +8,23 @@ Value types serialize to JSON Schema via `to_value_schema()`. Most Value types (
 
 ### How schema resolution works
 
-1. **Title-based lookup**: Each Value type can register itself in a `ValueRegistry` by name (e.g. `"IntegerValue"`, `"JSONValue"`). When a schema has a `title` that matches a registered type, it resolves to that type immediately.
+1. **Explicit identity**: Each Value type can register itself in a `ValueRegistry` by name (e.g. `"IntegerValue"`, `"JSONValue"`). Only `x-value-type` selects a registered type; `title` is display metadata. Every `Value` subclass stamps its identity through Pydantic's JSON schema hook, including nested `$defs`. Without an identity marker, the engine rebuilds the structural type, so `{"type": "string", "title": "IntegerValue"}` remains a string. This removes the legacy title fallback before 2.0.0 stable: regenerate older schemas if they relied on a title to recover a custom type.
 
 2. **Delegated containers embed, not reference**: `SequenceValue[T].to_value_schema()` sets `items` to `T.to_value_schema()` directly (and `StringMapValue[V]` does the same for `additionalProperties`), the same way `Result[T].to_value_schema()` sets `ok` to `T.to_value_schema()`. There is no `$ref`/`$defs` indirection at this level: the full nested schema is inlined, however deep the nesting goes, so each level's wire shape stays whatever that type itself publishes.
 
-3. **$defs and $ref elsewhere**: Pydantic's own `model_json_schema()` (used directly by `Data` classes, and to harvest schema-level extras like `minItems`/`maxItems` for constrained containers) still uses `$defs`/`$ref` for nested and recursive types. The registry can supply these defs via `extra_defs` so references resolve without embedding `$defs` in the schema.
+3. **$defs and $ref elsewhere**: Pydantic's own `model_json_schema()` (used directly by `Data` classes, and to harvest schema-level extras like `minItems`/`maxItems` for constrained containers) still uses `$defs`/`$ref` for nested and recursive types. Definitions for Value types carry `x-value-type`; definitions for plain Data/models do not. Preserving references is necessary for recursive types such as `WorkflowValue` and `ValueSchemaValue`, which cannot be fully inlined. The registry can supply these defs via `extra_defs` so references resolve without embedding `$defs` in the schema.
 
 4. **Composite def IDs**: For types nested beyond one level under `model_json_schema()` (e.g. `StringMapValue[SequenceValue[StringMapValue[IntegerValue]]]`), Pydantic generates composite def IDs such as `SequenceValue_StringMapValue_IntegerValue__`. These IDs are internal to that schema and do **not** correspond to any registry entry.
+
+### Registered identity and additional constraints
+
+Resolution always checks `x-value-type` before structural reconstruction, even when the schema includes extra keywords. The registered class's own published constraints and metadata are intrinsic: a ticket ID with `x-resource-type: ticket`, or a percentage type with `minimum: 0` and `maximum: 100`, resolves to that exact class. A changed title, description, or structural `type` does not override explicit identity. The Python spelling `value_type` is also accepted; supplying both identity spellings with different values is an error.
+
+Additional constraints produce an unregistered subclass of the identified type, preserving its custom casts, serializers, and validators. For example, adding `maximum: 50` to the percentage schema keeps its minimum of zero and rejects values above fifty. Changing the maximum to 200 does not relax the registered class's maximum of 100. Numeric bounds and `multipleOf`, string lengths, `pattern` and `enum`, and collection sizes are enforced after the inherited root validators. Unknown extra keywords remain schema metadata; they do not acquire validation semantics.
+
+When two inherited and added constraints cannot fit in a single keyword (such as two patterns), the emitted schema retains their intersection in `allOf`. The resolver enforces these constraint-only conjunctions when rebuilding the class. Unsupported conjunction clauses raise an error rather than silently discarding a restriction. This does not implement arbitrary JSON Schema composition.
+
+Keep recursive `$defs` when storing schemas. An unstamped legacy recursive definition raises a `ValueError` naming the repeated definition and asking for regeneration. Newly generated explicit identities resolve without unfolding the recursion.
 
 ### Limitation: deeply nested generics require $defs when using model_json_schema() directly
 
@@ -184,7 +194,35 @@ result = await value.cast_to(FloatValue)  # FloatValue(42.0)
 | `DataValue[D]`      | `StringMapValue[V]` | If all fields can cast to `V` |
 | `StringMapValue[V]` | `DataValue[D]`      | Runtime field matching        |
 
-The full casting graph is visualized in the repository: [typecast_graph.svg](typecast_graph.svg).
+The [casting graph](typecast_graph.svg) shows registered concrete types only.
+An edge means a cast is available; validation of a particular value can still
+fail. Generic families are omitted from the picture because their edges depend
+on their parameters; their rules follow below.
+
+### Generic cast rules
+
+| Family | Assignment rule |
+| ------ | --------------- |
+| `Result[S]` → `Result[T]` | Only when `S` can cast to `T`. The err payload passes through unchanged. No direct assignment to strings, JSON, or another non-Result type. |
+| `SequenceValue[S]` → `SequenceValue[T]` | Only when `S` can cast to `T`; cast each element, preserving order. |
+| `StringMapValue[S]` → `StringMapValue[T]` | Only when `S` can cast to `T`; cast each value, preserving keys. |
+| `DataValue[S]` → `DataValue[T]` | Every required target field must exist in the source and every shared field must cast to its target type. Optional target fields can use defaults; runtime record validation still applies. |
+| `DataValue[D]` → `StringMapValue[V]` | Every source field must cast to `V`. |
+| `StringMapValue[V]` → `DataValue[D]` | Available statically; field conversion and required-field validation occur at runtime and may fail. |
+| `ModelValue[S]` → `ModelValue[T]` | Both parameters must be Pydantic model classes; cross-model casts serialize and validate against `T` at runtime. |
+
+For example, `SequenceValue[IntegerValue]` can feed
+`SequenceValue[FloatValue]`, but `SequenceValue[Result[IntegerValue]]` cannot:
+it can feed `SequenceValue[Result[FloatValue]]` instead. The same item-type rule
+applies to maps. It never silently unwraps a Result element.
+
+Containers, records and ModelValue retain the base casts to StringValue and
+JSONValue. Those whole-container casts are distinct from element assignment
+and serialize the container as a whole, including any Result tags. JSONValue
+also casts to sequences, maps and ModelValue through runtime validation.
+The graph therefore cannot be read as a complete catalogue of generic edges.
+Use `Source.can_cast_to(Target)` with both types fully parameterized for the
+actual static decision, and expect data-dependent validation during casting.
 
 ## Result Values
 

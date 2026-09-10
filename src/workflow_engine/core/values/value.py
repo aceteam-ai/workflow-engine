@@ -24,8 +24,9 @@ from typing import (
 )
 
 from overrides import override
-from pydantic import PrivateAttr
-from pydantic.json_schema import GenerateJsonSchema
+from pydantic import GetJsonSchemaHandler, PrivateAttr
+from pydantic.json_schema import GenerateJsonSchema, JsonSchemaValue
+from pydantic_core import core_schema
 
 from ...utils.asynchronous import is_coroutine
 from ...utils.model import ImmutableRootModel
@@ -334,11 +335,25 @@ class Value(ImmutableRootModel[T], Generic[T]):
         return await v.cast_to(cls, context=context)
 
     @classmethod
+    def __get_pydantic_json_schema__(
+        cls,
+        schema: core_schema.CoreSchema,
+        handler: GetJsonSchemaHandler,
+    ) -> JsonSchemaValue:
+        """Publish identity on nested definitions as well as the root schema.
+
+        Keep references: WorkflowValue and ValueSchemaValue are recursive.
+        Calling the handler (never to_value_schema) also avoids recursing
+        through container schema generation. Copy before stamping so a root
+        model referencing another model never changes that model's identity.
+        """
+        return {**handler(schema), "x-value-type": cls.__name__}
+
+    @classmethod
     def to_value_schema(cls) -> "ValueSchema":
         from .schema import validate_value_schema  # avoid circular import
 
         schema = model_json_schema_without_docstring(cls)
-        schema["x-value-type"] = cls.__name__
         return validate_value_schema(schema)
 
 
@@ -368,20 +383,18 @@ class ValueRegistry(ABC):
         """
         Load a value type from a schema by looking up the registry.
 
-        Checks x-value-type first, then falls back to title for backwards
-        compatibility. If no match is found, returns None to indicate that the
-        caller should fall back to building the value class from the schema.
+        Only x-value-type identifies a registered class. Titles are display
+        metadata, even when they happen to match a registered type name. If no
+        match is found, the caller builds the value class from the schema.
 
         Args:
-            schema: A ValueSchema with an optional value_type or title field
+            schema: A ValueSchema with an optional value_type field
 
         Returns:
             The registered value class if a match is found, None otherwise
         """
         if schema.value_type is not None and self.has_name(schema.value_type):
             return self.get_value_class(schema.value_type)
-        if schema.title is not None and self.has_name(schema.title):
-            return self.get_value_class(schema.title)
         return None
 
     @overload

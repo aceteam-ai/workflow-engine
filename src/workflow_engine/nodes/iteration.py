@@ -9,6 +9,7 @@ from overrides import override
 from pydantic import Field, PrivateAttr
 
 from ..core import (
+    Data,
     DataValue,
     Edge,
     Empty,
@@ -20,13 +21,19 @@ from ..core import (
     OutputNode,
     Params,
     SequenceValue,
+    StringValue,
     ValidatedWorkflow,
     ValidationContext,
     Value,
     Workflow,
     WorkflowValue,
 )
-from ..core.values.data import get_field_annotations, get_only_field
+from ..core.values.data import (
+    build_data_type,
+    get_data_fields,
+    get_field_annotations,
+    get_only_field,
+)
 from .data import (
     ExpandDataNode,
     ExpandSequenceNode,
@@ -41,6 +48,12 @@ from .data import (
 class ForEachParams(Params):
     workflow: WorkflowValue = Field(
         title="Workflow", description="The workflow to run for each item."
+    )
+
+    constant_inputs: SequenceValue[StringValue] = Field(
+        default=SequenceValue[StringValue](()),
+        title="Constant Inputs",
+        description="The workflow inputs held constant for every item.",
     )
 
 
@@ -66,7 +79,7 @@ class ForEachNode(Node[SequenceData, SequenceData | Empty, ForEachParams]):
     TYPE_INFO: ClassVar[NodeTypeInfo] = NodeTypeInfo.from_parameter_type(
         display_name="For Each",
         description="Executes the internal workflow for each item in the input sequence.",
-        version="1.0.0",
+        version="1.1.0",
         parameter_type=ForEachParams,
     )
 
@@ -75,10 +88,34 @@ class ForEachNode(Node[SequenceData, SequenceData | Empty, ForEachParams]):
     async def workflow(self, context: ValidationContext) -> ValidatedWorkflow:
         if self._workflow is None:
             self._workflow = await self.params.workflow.root.validate(context=context)
+        fields = get_field_annotations(self._workflow.input_type)
+        names = [name.root for name in self.params.constant_inputs]
+        if len(names) != len(set(names)):
+            raise ValueError("Constant input names must be unique.")
+        if "sequence" in names:
+            raise ValueError("The name 'sequence' is reserved for the item sequence.")
+        unknown = set(names) - fields.keys()
+        if unknown:
+            raise ValueError(f"Unknown constant inputs: {sorted(unknown)}")
+        if names and len(names) == len(fields):
+            raise ValueError("At least one workflow input must vary per item.")
         return self._workflow
 
+    def _item_input_type(self, workflow: ValidatedWorkflow) -> Type[Data]:
+        if not self.params.constant_inputs.root:
+            return workflow.input_type
+        constants = {name.root for name in self.params.constant_inputs}
+        return build_data_type(
+            name="ForEachItem",
+            fields={
+                name: field
+                for name, field in get_data_fields(workflow.input_type).items()
+                if name not in constants
+            },
+        )
+
     def _input_field_count(self, workflow: ValidatedWorkflow) -> int:
-        return len(get_field_annotations(workflow.input_type))
+        return len(get_field_annotations(self._item_input_type(workflow)))
 
     def _output_field_count(self, workflow: ValidatedWorkflow) -> int:
         return len(get_field_annotations(workflow.output_type))
@@ -94,7 +131,7 @@ class ForEachNode(Node[SequenceData, SequenceData | Empty, ForEachParams]):
 
     def _input_item_type(self, workflow: ValidatedWorkflow) -> Type[Value]:
         """Single input field type; only valid when _has_single_input()."""
-        return get_only_field(workflow.input_type)[1]
+        return get_only_field(self._item_input_type(workflow))[1]
 
     def _output_item_type(self, workflow: ValidatedWorkflow) -> Type[Value]:
         """Single output field type; only valid when _has_single_output()."""
@@ -103,7 +140,7 @@ class ForEachNode(Node[SequenceData, SequenceData | Empty, ForEachParams]):
     def _input_element_type(self, workflow: ValidatedWorkflow) -> Type[Value]:
         if self._has_single_input(workflow):
             return self._input_item_type(workflow)
-        return DataValue[workflow.input_type]
+        return DataValue[self._item_input_type(workflow)]
 
     def _output_element_type(self, workflow: ValidatedWorkflow) -> Type[Value]:
         """Only valid when _has_no_output() is False."""
@@ -116,7 +153,19 @@ class ForEachNode(Node[SequenceData, SequenceData | Empty, ForEachParams]):
         context: ValidationContext,
     ) -> Type[SequenceData]:
         workflow = await self.workflow(context)
-        return SequenceData[self._input_element_type(workflow)]
+        base = SequenceData[self._input_element_type(workflow)]
+        fields = get_data_fields(workflow.input_type)
+        return (
+            build_data_type(
+                name="ForEachInput",
+                base_cls=base,
+                fields={
+                    name.root: fields[name.root] for name in self.params.constant_inputs
+                },
+            )
+            if self.params.constant_inputs.root
+            else base
+        )
 
     @override
     async def dynamic_output_type(
@@ -141,7 +190,13 @@ class ForEachNode(Node[SequenceData, SequenceData | Empty, ForEachParams]):
         """
         node_registry = context.node_registry
         input_seq_type = SequenceValue[self._input_element_type(workflow)]
-        input_node = node_registry.create_input_node(sequence=input_seq_type)
+        input_node = node_registry.create_input_node(
+            sequence=input_seq_type,
+            **{
+                name.root: get_field_annotations(workflow.input_type)[name.root]
+                for name in self.params.constant_inputs
+            },
+        )
         if self._has_no_output(workflow):
             output_node = node_registry.create_output_node()
         else:
@@ -215,7 +270,7 @@ class ForEachNode(Node[SequenceData, SequenceData | Empty, ForEachParams]):
             else context.validation_context.node_registry.create_node(
                 ExpandDataNode,
                 id="input_adapter",
-                data_type=workflow.input_type,
+                data_type=self._item_input_type(workflow),
             )
         )
         base_output_adapter = (
@@ -261,12 +316,19 @@ class ForEachNode(Node[SequenceData, SequenceData | Empty, ForEachParams]):
 
             for edge in item_workflow.edges:
                 if edge.source_id == item_workflow.input_node.id:
-                    source_id = (
-                        input_adapter.id if input_adapter is not None else expand.id
-                    )
-                    source_key = (
-                        edge.source_key if input_adapter is not None else expand.key(i)
-                    )
+                    if edge.source_key in {
+                        name.root for name in self.params.constant_inputs
+                    }:
+                        source_id, source_key = input_node.id, edge.source_key
+                    else:
+                        source_id = (
+                            input_adapter.id if input_adapter is not None else expand.id
+                        )
+                        source_key = (
+                            edge.source_key
+                            if input_adapter is not None
+                            else expand.key(i)
+                        )
                 else:
                     source_id = edge.source_id
                     source_key = edge.source_key
