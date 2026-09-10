@@ -33,7 +33,9 @@ the engine's existing FloatValue serialization contract.
 Sort the `n` values and compute position `h = (n-1) * q`, where percentile `q`
 is first divided by 100. The endpoints return the minimum and maximum. A
 singleton returns its only value at every valid quantile. At an exact integer
-position, every method returns that position's value.
+position, every method returns that position's value. Rank and index selection
+are exact even under a low-precision Decimal context; arithmetic on the selected
+values still follows the active context's precision and rounding.
 
 Between positions `i = floor(h)` and `i+1`:
 

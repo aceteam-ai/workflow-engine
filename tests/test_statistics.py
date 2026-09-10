@@ -1,6 +1,6 @@
 """Numeric conventions, Decimal behavior, portable schemas, and sequence length."""
 
-from decimal import Decimal
+from decimal import Decimal, localcontext
 
 import pytest
 from pydantic import ValidationError
@@ -328,3 +328,59 @@ async def test_length_counts_result_errors_as_elements(engine):
     )
     assert result.status is WorkflowExecutionResultStatus.SUCCESS
     assert result.output["length"].root == 2
+
+
+@pytest.mark.parametrize("cls,upper_q", [(QuantileNode, 1), (PercentileNode, 100)])
+@pytest.mark.parametrize("method", ["linear", "lower", "higher", "midpoint", "nearest"])
+async def test_quantile_endpoints_ignore_decimal_rank_rounding(
+    engine, cls, upper_q, method
+):
+    with localcontext() as context:
+        context.prec = 1
+        for q, expected in [(0, 0), (upper_q, 15)]:
+            result = await engine.execute_node(
+                context=InMemoryExecutionContext(),
+                node=cls,
+                params={"q": q, "interpolation": method},
+                input={"values": list(range(16))},
+            )
+            assert result.status is WorkflowExecutionResultStatus.SUCCESS, result.errors
+            assert result.output["value"].root == expected
+
+
+@pytest.mark.parametrize(
+    "cls,q,method,expected",
+    [
+        (QuantileNode, "0.4999999999999999999999999999999999", "lower", 0),
+        (QuantileNode, "0.5000000000000000000000000000000001", "higher", 10),
+        (QuantileNode, "0.2500000000000000000000000000000001", "nearest", 5),
+        (PercentileNode, "49.99999999999999999999999999999999", "lower", 0),
+        (PercentileNode, "50.00000000000000000000000000000001", "higher", 10),
+        (PercentileNode, "25.00000000000000000000000000000001", "nearest", 5),
+    ],
+)
+async def test_quantile_selects_exact_side_of_rank_boundary(
+    engine, cls, q, method, expected
+):
+    result = await engine.execute_node(
+        context=InMemoryExecutionContext(),
+        node=cls,
+        params={"q": Decimal(q), "interpolation": method},
+        input={"values": [0, 5, 10]},
+    )
+    assert result.status is WorkflowExecutionResultStatus.SUCCESS, result.errors
+    assert result.output["value"].root == expected
+
+
+@pytest.mark.parametrize("cls,q", [(QuantileNode, "0.75"), (PercentileNode, "75")])
+async def test_quantile_interpolated_value_keeps_decimal_rounding(engine, cls, q):
+    with localcontext() as context:
+        context.prec = 1
+        result = await engine.execute_node(
+            context=InMemoryExecutionContext(),
+            node=cls,
+            params={"q": Decimal(q)},
+            input={"values": [0, 10]},
+        )
+    assert result.status is WorkflowExecutionResultStatus.SUCCESS, result.errors
+    assert result.output["value"].root == 8
