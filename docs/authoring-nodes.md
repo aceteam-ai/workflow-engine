@@ -102,7 +102,10 @@ Notes:
   with dynamic types).
 - `NodeTypeInfo.from_parameter_type` takes `display_name`, `version`, and
   `parameter_type` (required), plus optional `description`, `max_retries`,
-  and `declared_errors`. There is no `name=` argument.
+  `declared_errors`, and `metered`. There is no `name=` argument.
+- Set `metered=True` when the node may incur a charge, including when it
+  dynamically dispatches charged work. Attempt uses this functional type
+  metadata to require explicit permission before repeating that work.
 - `declared_errors` documents the error `name`s this node type may raise into
   a `Result` err arm, each with a default `error_class` and a description.
   It is documentation only, not wire-enforced: a name absent from the list is

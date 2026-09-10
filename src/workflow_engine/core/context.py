@@ -189,6 +189,27 @@ class ExecutionContext(ABC, EnforceOverrides):
         """
         pass
 
+    async def on_boundary_retry(
+        self,
+        *,
+        node: "Node",
+        boundary_id: str,
+        error: ResultError,
+        attempt: int,
+        max_retries: int,
+        allow_metered: bool,
+    ) -> None:
+        """Record a boundary retry before its next single-shot child is dispatched.
+
+        ``node`` is the continuation that schedules the retry; ``boundary_id``
+        identifies the author's Attempt. ``attempt`` is one-based and capped
+        by ``max_retries``. The error retains the failed child's provenance.
+        This hook does not consume or report executor ShouldRetry attempts.
+        Hosts replaying a yielded workflow should upsert ledger entries by
+        (run, boundary_id, attempt), because hooks may be delivered again.
+        """
+        pass
+
     async def on_node_cancelled(
         self,
         *,

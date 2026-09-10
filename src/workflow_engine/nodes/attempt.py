@@ -15,10 +15,11 @@ execution.
 from typing import ClassVar, Type
 
 from overrides import override
-from pydantic import Field, PrivateAttr
+from pydantic import Field, PrivateAttr, field_validator
 from pydantic.fields import FieldInfo
 
 from ..core import (
+    BooleanValue,
     Data,
     DataMapping,
     DataValue,
@@ -26,13 +27,16 @@ from ..core import (
     Empty,
     ErrorBoundaryNode,
     ErrorClass,
+    ErrorClassValue,
     ExecutionContext,
+    IntegerValue,
     Node,
     NodeException,
     NodeTypeInfo,
     Params,
     Result,
     ResultError,
+    SequenceValue,
     ValidatedWorkflow,
     ValidationContext,
     Workflow,
@@ -50,6 +54,39 @@ class AttemptParams(Params):
         title="Workflow",
         description="The workflow to run inside the error boundary.",
     )
+
+    retries: IntegerValue = Field(
+        default=IntegerValue(0),
+        title="Retries",
+        description="The maximum number of additional runs after a matching failure.",
+        json_schema_extra={"minimum": 0},
+    )
+    retry_on: SequenceValue[ErrorClassValue] = Field(
+        default=SequenceValue[ErrorClassValue](
+            [
+                ErrorClassValue(c)
+                for c in (
+                    ErrorClass.TIMEOUT,
+                    ErrorClass.UNREACHABLE,
+                    ErrorClass.RATE_LIMIT,
+                )
+            ]
+        ),
+        title="Retry On",
+        description="The error classes that permit another run of the workflow.",
+    )
+    allow_metered: BooleanValue = Field(
+        default=BooleanValue(False),
+        title="Allow Metered Retries",
+        description="The permission to repeat work that may incur an additional charge.",
+    )
+
+    @field_validator("retries")
+    @classmethod
+    def nonnegative_retries(cls, value: IntegerValue) -> IntegerValue:
+        if value.root < 0:
+            raise ValueError("retries must be nonnegative")
+        return value
 
 
 class AttemptNode(ErrorBoundaryNode, Node[Data, Data, AttemptParams]):
@@ -72,7 +109,7 @@ class AttemptNode(ErrorBoundaryNode, Node[Data, Data, AttemptParams]):
     TYPE_INFO: ClassVar[NodeTypeInfo] = NodeTypeInfo.from_parameter_type(
         display_name="Attempt",
         description="Runs the inner workflow inside an error boundary, producing Result.",
-        version="1.0.0",
+        version="1.1.0",
         parameter_type=AttemptParams,
     )
 
@@ -81,6 +118,10 @@ class AttemptNode(ErrorBoundaryNode, Node[Data, Data, AttemptParams]):
     async def workflow(self, context: ValidationContext) -> ValidatedWorkflow:
         if self._workflow is None:
             self._workflow = await self.params.workflow.root.validate(context=context)
+        if self.params.retries.root and not self.params.allow_metered.root:
+            from .attempt_retry import validate_unmetered_workflow
+
+            await validate_unmetered_workflow(self, self._workflow, context)
         return self._workflow
 
     @override
@@ -126,6 +167,19 @@ class AttemptNode(ErrorBoundaryNode, Node[Data, Data, AttemptParams]):
         input: Data,
     ) -> Workflow:
         w = await self.workflow(context.validation_context)
+
+        if self.params.retries.root:
+            from .attempt_retry import build_retry_workflow
+
+            return await build_retry_workflow(
+                context=context.validation_context,
+                params=self.params,
+                boundary_id=self.id,
+                attempt=0,
+                input_type=input_type,
+                output_type=output_type,
+                forwarded=False,
+            )
 
         reserved_collision = _RESERVED_OK_ID in {node.id for node in w.inner_nodes} | {
             w.input_node.id,

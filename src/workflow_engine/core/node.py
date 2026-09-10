@@ -131,6 +131,11 @@ class NodeTypeInfo(ImmutableBaseModel):
         description="Maximum number of retry attempts for this node type. "
         "None means use the execution algorithm's default.",
     )
+    metered: bool = Field(
+        default=False,
+        description="Whether this node may perform work that incurs a charge. "
+        "Declare this on nodes that dispatch metered work dynamically as well.",
+    )
     declared_errors: Sequence[DeclaredError] = Field(
         default=(),
         description="The error names this node type may raise into a "
@@ -158,6 +163,7 @@ class NodeTypeInfo(ImmutableBaseModel):
         parameter_type: type[Params],
         max_retries: int | None = None,
         declared_errors: Sequence[DeclaredError] = (),
+        metered: bool = False,
     ) -> Self:
         return cls(
             display_name=display_name,
@@ -166,6 +172,7 @@ class NodeTypeInfo(ImmutableBaseModel):
             parameter_schema=get_data_schema(parameter_type),
             max_retries=max_retries,
             declared_errors=declared_errors,
+            metered=metered,
         )
 
 

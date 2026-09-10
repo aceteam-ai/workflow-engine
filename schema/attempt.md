@@ -7,7 +7,7 @@ propagate to the run. See discussion
 motivation and #201 for the design.
 
 This document covers the node's wire shape, the flat id table an expansion
-produces, the reserved `ok` id, the boundary semantics, and the two
+produces, the reserved `ok` id, the boundary semantics, and the
 `ExecutionContext` hooks a host uses to observe a boundary. See
 [`docs/execution.md`](../docs/execution.md#error-boundaries) for the
 execution-algorithm-level walkthrough and
@@ -19,7 +19,7 @@ signature.
 | | |
 | --- | --- |
 | Wire type name | `"Attempt"` |
-| Params | `{ "workflow": <inline Workflow value> }` |
+| Params | `{ "workflow": <inline Workflow value>, "retries": 0, "retry_on": ["timeout", "unreachable", "rate_limit"], "allow_metered": false }` |
 | Input | the inner workflow's own input type, `A` |
 | Output | `{ "result": Result[B] }` |
 
@@ -37,6 +37,51 @@ This is the same shape `ForEach` uses for its own `workflow` param: an inline,
 serialized `Workflow` value, not a reference. Wrapping an `Attempt` node in
 the standard input/output nodes (as `WorkflowEngine.build_single_node_workflow`
 does) gives a workflow of type `A -> Result[B]`.
+
+### Boundary retries (Attempt 1.1.0)
+
+`retries` is a nonnegative number of **additional** runs; its default is zero.
+`retry_on` selects the `error_class` values that permit a retry and defaults to
+`timeout`, `unreachable`, and `rate_limit`. Empty `retry_on` disables retry.
+Validation, permission, and unknown systemic failures are returned immediately
+unless explicitly selected. For example:
+
+```python
+attempted = await engine.build_single_node_workflow(
+    AttemptNode,
+    node_id="attempt",
+    params={"workflow": w, "retries": 2, "allow_metered": True},
+)
+```
+
+This authorizes at most three runs of `w`. Each run retains its own executor
+`ShouldRetry` budget. Boundary retries do not increment `RetryTracker` or call
+`on_node_retry`. Work that already succeeded inside `w` may run again, while
+work outside this Attempt is not retried. There is no additional boundary
+backoff; nodes still control courtesy backoff using `ShouldRetry`.
+
+`NodeTypeInfo.metered=True` declares that a node may incur a charge. Graph
+validation checks all nodes, including nested workflows in params, and rejects
+a positive retry budget containing declared metered work unless
+`allow_metered=True`. Defaults never retry metered work. This permission is a
+functional parameter, independent of hints. Authors of nodes that dynamically
+dispatch metered work must declare their owning node as metered: the engine
+cannot infer charges from Python code or host callbacks. An inner Attempt's
+consent does not authorize its enclosing Attempt to repeat the entire graph.
+
+With a positive budget the first single-shot child has ID `attempt/try_0`;
+subsequent children have IDs `attempt/next/try_1`,
+`attempt/next/next/try_2`, and so on. `AttemptRetry` is the runtime continuation
+that advances the graph only after a matching err is materialized. Every try
+keeps drain-before-retry and yield-before-err behavior. The table below describes
+one single-shot child; `retries=0` retains those original IDs unchanged.
+
+Each failed child fires `on_boundary_error` with its own ID. Success or exhaustion
+passes the final Result through the continuation unchanged; exhaustion preserves
+the last failing node's full attempt-specific ID. `on_boundary_retry` reports
+the original boundary ID, next attempt number, budget, and metered consent before
+any new work is dispatched. See the hook below and the
+[design rationale](../docs/plans/attempt-retries.md).
 
 ### The `B` rule
 
@@ -194,3 +239,27 @@ replaced) the same way `on_node_finish` works. A host that persists `output`
 against `node.id` may short-circuit the whole boundary from `on_node_start`
 on a later pass: that is safe specifically because nothing inside the
 boundary is left suspended when this hook fires.
+
+
+### `on_boundary_retry`
+
+```python
+async def on_boundary_retry(
+    self, *, node, boundary_id, error, attempt, max_retries, allow_metered,
+) -> None:
+    ...
+```
+
+`node` is the continuation that schedules the next try. `boundary_id` identifies
+the author's Attempt, `attempt` is one-based, and `max_retries` is the original
+budget. `error` is the previous child's `ResultError`; `allow_metered` records
+the author's explicit consent. The serialized parameters and these events make
+the additional dispatch budget attributable at each boundary in a fan-out.
+
+On resume, hosts should cache child boundary results by `node.id` from
+`on_boundary_error`, and successful nodes through `on_node_finish`, as usual.
+A yielded child resumes under the same ID; it cannot advance the continuation
+until it produces a Result. Continuation parameters encode the already-consumed
+budget and never reset it. Hook delivery may repeat during replay, so a durable
+ledger should upsert `(run_id, boundary_id, attempt)`. Restarting with no retained
+context is a new execution, as for any other workflow.
