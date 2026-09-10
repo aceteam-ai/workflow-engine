@@ -25,6 +25,7 @@ from ..core import (
     StringValue,
     ValidationContext,
     Value,
+    ValueSchemaValue,
     ValueType,
 )
 from ..core.values import build_data_type, get_data_dict, get_data_field
@@ -452,6 +453,53 @@ class ExpandDataNode(Node[NestedData, Data, Empty]):
         return input.data.root
 
 
+class LengthParams(Params):
+    element_schema: ValueSchemaValue = Field(
+        title="Element Schema", description="The value schema of each sequence item."
+    )
+
+
+class LengthOutput(Data):
+    length: IntegerValue = Field(
+        title="Length", description="The number of items in the sequence."
+    )
+
+
+class LengthNode(Node[SequenceData, LengthOutput, LengthParams]):
+    TYPE_INFO: ClassVar[NodeTypeInfo] = NodeTypeInfo.from_parameter_type(
+        display_name="Length",
+        description="Counts the items in a sequence, including an empty sequence.",
+        version="1.0.0",
+        parameter_type=LengthParams,
+    )
+
+    @cached_property
+    def element_type(self) -> type[Value]:
+        return self.params.element_schema.root.to_value_cls()
+
+    @override
+    async def dynamic_input_type(
+        self, context: ValidationContext
+    ) -> type[SequenceData]:
+        return SequenceData[self.element_type]
+
+    @classmethod
+    @override
+    def static_output_type(cls) -> type[LengthOutput]:
+        return LengthOutput
+
+    @override
+    async def run(
+        self,
+        *,
+        context: ExecutionContext,
+        input_type: type[SequenceData],
+        output_type: type[LengthOutput],
+        input: SequenceData,
+    ) -> LengthOutput:
+        return output_type(length=IntegerValue(len(input.sequence)))
+
+
 __all__ = [
     "ExpandDataNode",
     "ExpandMappingNode",
@@ -459,5 +507,6 @@ __all__ = [
     "GatherDataNode",
     "GatherMappingNode",
     "GatherSequenceNode",
+    "LengthNode",
     "single_field_or_wrapped",
 ]
