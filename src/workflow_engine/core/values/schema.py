@@ -335,17 +335,6 @@ class BaseValueSchema(ImmutableBaseModel):
         faithfully convert the schema to a FieldInfo object.
         """
         annotation = self.to_value_cls(*extra_defs)
-        if "default" not in self.model_fields_set:
-            if not is_required:
-                raise ValueError(
-                    "Non-required properties need an explicit default; "
-                    "the engine cannot represent an absent Value field"
-                )
-            return FieldInfo(
-                annotation=annotation,
-                title=self.title,
-                description=self.description,
-            )
         try:
             default_value = annotation.model_validate(self.default)
         except ValidationError as e:
@@ -545,7 +534,8 @@ class DataValueSchema(BaseValueSchema):
             )
             for k, v in self.properties.items()
         }
-        return build_data_type(name=self.title or "Data", fields=properties)
+        assert self.title is not None
+        return build_data_type(name=self.title, fields=properties)
 
     @override
     def build_value_cls(
