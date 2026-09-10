@@ -673,3 +673,108 @@ class TestNodeRegistryLoad:
         assert isinstance(loaded_node, SampleNodeA)
         assert loaded_node.params is not None
         assert isinstance(loaded_node.params, Empty)
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    "operation", ["get", "items", "load", "build", "register", "unregister"]
+)
+def test_lazy_freeze_serializes_readers_and_mutations(monkeypatch, operation):
+    """Pause the first freeze and force another caller to contend, without sleeps."""
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Event, Lock
+
+    entered_freeze = Event()
+    finish_freeze = Event()
+    contended = Event()
+    freezes = []
+
+    class PausedRegistrations(list[tuple[str, type[Node]]]):
+        def __iter__(self):
+            freezes.append(True)
+            entered_freeze.set()
+            assert finish_freeze.wait(timeout=5)
+            return super().__iter__()
+
+    class ObservedLock:
+        """A real lock that signals when the second caller actually blocks."""
+
+        def __init__(self):
+            self.lock = Lock()
+
+        def __enter__(self):
+            if not self.lock.acquire(blocking=False):
+                contended.set()
+                assert self.lock.acquire(timeout=5)
+            return self
+
+        def __exit__(self, *_):
+            self.lock.release()
+
+    registry = NodeRegistry.builder(lazy=True)
+    registry.register(SampleNodeA, name="TestA")
+    registry.register(SampleNodeB, name="TestB")
+    monkeypatch.setattr(
+        registry, "_registrations", PausedRegistrations(registry._registrations)
+    )
+    monkeypatch.setattr(registry, "_lock", ObservedLock())
+    raw = Node.model_construct(type="TestB", id="test-b", version="1.0.0")
+
+    def concurrent_access():
+        if operation == "get":
+            return registry.get("TestB")
+        if operation == "items":
+            return dict(registry.items())
+        if operation == "load":
+            return registry.load(raw)
+        if operation == "build":
+            return registry.build()
+        if operation == "register":
+            return registry.register(SampleNodeC, name="TestC")
+        return registry.unregister("TestA")
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        first = pool.submit(registry.get, "TestA")
+        try:
+            assert entered_freeze.wait(timeout=5)
+            second = pool.submit(concurrent_access)
+            assert contended.wait(timeout=5)
+            assert not second.done()
+        finally:
+            finish_freeze.set()
+        assert first.result(timeout=5) is SampleNodeA
+        if operation in {"register", "unregister"}:
+            with pytest.raises(ValueError, match="frozen"):
+                second.result(timeout=5)
+        else:
+            result = second.result(timeout=5)
+            if operation == "get":
+                assert result is SampleNodeB
+            elif operation == "items":
+                assert result == {"TestA": SampleNodeA, "TestB": SampleNodeB}
+            elif operation == "load":
+                assert isinstance(result, SampleNodeB)
+                assert result.id == "test-b"
+            else:
+                assert result is registry
+    assert len(freezes) == 1
+    assert dict(registry.items()) == {"TestA": SampleNodeA, "TestB": SampleNodeB}
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("invalid", ["duplicate", "missing_removal", "wrong_removal"])
+def test_failed_lazy_build_does_not_publish_incomplete_registry(invalid):
+    registry = NodeRegistry.builder(lazy=True)
+    registry.register(SampleNodeA, name="TestA")
+    if invalid == "duplicate":
+        registry.register(SampleNodeB, name="TestA")
+    elif invalid == "missing_removal":
+        registry.unregister("missing")
+    else:
+        registry.unregister("TestA", expect=SampleNodeB)
+    messages = []
+    for access in (registry.build, lambda: registry.get("TestA"), registry.items):
+        with pytest.raises(ValueError) as caught:
+            access()
+        messages.append(str(caught.value))
+    assert messages[0] == messages[1] == messages[2]
