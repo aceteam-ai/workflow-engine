@@ -8,11 +8,11 @@ Value types serialize to JSON Schema via `to_value_schema()`. Most Value types (
 
 ### How schema resolution works
 
-1. **Title-based lookup**: Each Value type can register itself in a `ValueRegistry` by name (e.g. `"IntegerValue"`, `"JSONValue"`). When a schema has a `title` that matches a registered type, it resolves to that type immediately.
+1. **Explicit identity**: Each Value type can register itself in a `ValueRegistry` by name (e.g. `"IntegerValue"`, `"JSONValue"`). Only `x-value-type` selects a registered type; `title` is display metadata. Every `Value` subclass stamps its identity through Pydantic's JSON schema hook, including nested `$defs`. Without an identity marker, the engine rebuilds the structural type, so `{"type": "string", "title": "IntegerValue"}` remains a string. This removes the legacy title fallback before 2.0.0 stable: regenerate older schemas if they relied on a title to recover a custom type.
 
 2. **Delegated containers embed, not reference**: `SequenceValue[T].to_value_schema()` sets `items` to `T.to_value_schema()` directly (and `StringMapValue[V]` does the same for `additionalProperties`), the same way `Result[T].to_value_schema()` sets `ok` to `T.to_value_schema()`. There is no `$ref`/`$defs` indirection at this level: the full nested schema is inlined, however deep the nesting goes, so each level's wire shape stays whatever that type itself publishes.
 
-3. **$defs and $ref elsewhere**: Pydantic's own `model_json_schema()` (used directly by `Data` classes, and to harvest schema-level extras like `minItems`/`maxItems` for constrained containers) still uses `$defs`/`$ref` for nested and recursive types. The registry can supply these defs via `extra_defs` so references resolve without embedding `$defs` in the schema.
+3. **$defs and $ref elsewhere**: Pydantic's own `model_json_schema()` (used directly by `Data` classes, and to harvest schema-level extras like `minItems`/`maxItems` for constrained containers) still uses `$defs`/`$ref` for nested and recursive types. Definitions for Value types carry `x-value-type`; definitions for plain Data/models do not. Preserving references is necessary for recursive types such as `WorkflowValue` and `ValueSchemaValue`, which cannot be fully inlined. The registry can supply these defs via `extra_defs` so references resolve without embedding `$defs` in the schema.
 
 4. **Composite def IDs**: For types nested beyond one level under `model_json_schema()` (e.g. `StringMapValue[SequenceValue[StringMapValue[IntegerValue]]]`), Pydantic generates composite def IDs such as `SequenceValue_StringMapValue_IntegerValue__`. These IDs are internal to that schema and do **not** correspond to any registry entry.
 
