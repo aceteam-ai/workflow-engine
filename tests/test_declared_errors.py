@@ -307,3 +307,112 @@ async def test_undeclared_error_name_still_produces_valid_result_on_wire():
     assert revalidated.is_err()
     assert revalidated.unwrap_err().name.root == error.name.root
     assert revalidated.unwrap_err().node_id.root == error.node_id.root
+
+
+class UpstreamRateLimited(NodeException):
+    """An author-selected public failure name."""
+
+
+class ChainedDeclaredErrorProbeNode(UndeclaredErrorProbeNode):
+    @override
+    async def run(
+        self,
+        *,
+        context: ExecutionContext,
+        input_type: Type[Empty],
+        output_type: Type[Empty],
+        input: Empty,
+    ) -> Empty:
+        try:
+            raise TimeoutError("provider transport details")
+        except TimeoutError as cause:
+            raise UpstreamRateLimited.for_user(
+                "Provider throttled the request",
+                node=self,
+                error_class=ErrorClass.RATE_LIMIT,
+            ) from cause
+
+
+@pytest.mark.asyncio
+async def test_raised_from_preserves_author_name_end_to_end(algorithm):
+    engine = WorkflowEngine(execution_algorithm=algorithm)
+    inner = Workflow(
+        input_node=engine.create_input_node(),
+        inner_nodes=[engine.create_node(ChainedDeclaredErrorProbeNode, id="provider")],
+        output_node=engine.create_output_node(),
+        edges=[],
+    )
+    result = await engine.execute_node(
+        context=InMemoryExecutionContext(),
+        node=AttemptNode,
+        input={},
+        params={"workflow": inner},
+    )
+    value = result.output["result"]
+    assert isinstance(value, Result)
+    error = value.unwrap_err()
+    assert error.name.root == "UpstreamRateLimited"
+    assert error.error_class.root == ErrorClass.RATE_LIMIT
+    assert error.message.root == "Provider throttled the request"
+
+
+@pytest.mark.unit
+def test_generic_wrappers_retain_root_diagnostic_name():
+    from workflow_engine import WorkflowException
+    from workflow_engine.execution.boundary import result_error_from_exception
+
+    try:
+        try:
+            raise ValueError("private provider detail")
+        except ValueError as cause:
+            raise WorkflowException.for_operator("wrapper") from cause
+    except WorkflowException as cause:
+        exc = NodeException.for_operator(
+            "outer wrapper",
+            node=WorkflowEngine().create_node(UndeclaredErrorProbeNode, id="probe"),
+        )
+        exc.__cause__ = cause
+    error = result_error_from_exception(exc)
+    assert error.name.root == "ValueError"
+    assert error.error_class.root == ErrorClass.SYSTEMIC
+    assert error.message.root == "An internal error occurred"
+
+
+@pytest.mark.unit
+def test_generic_wrapper_preserves_concrete_cause_name_and_handles_cycles():
+    from workflow_engine import WorkflowException
+    from workflow_engine.execution.boundary import result_error_from_exception
+
+    inner = UpstreamRateLimited.for_user(
+        "rate limit",
+        node=WorkflowEngine().create_node(UndeclaredErrorProbeNode, id="probe"),
+    )
+    inner.__cause__ = TimeoutError("transport")
+    outer = WorkflowException.for_user("wrapper", node_id="probe")
+    outer.__cause__ = inner
+    assert result_error_from_exception(outer).name.root == "UpstreamRateLimited"
+    cyclic = WorkflowException.for_user("cycle", node_id="probe")
+    cyclic.__cause__ = cyclic
+    assert result_error_from_exception(cyclic).name.root == "WorkflowException"
+
+
+@pytest.mark.asyncio
+async def test_factorization_emitted_errors_match_declaration(algorithm):
+    from workflow_engine import IntegerValue
+    from workflow_engine.nodes import FactorizationNode
+
+    engine = WorkflowEngine(execution_algorithm=algorithm)
+    inner = await engine.build_single_node_workflow(FactorizationNode)
+    result = await engine.execute_node(
+        context=InMemoryExecutionContext(),
+        node=AttemptNode,
+        input={"value": IntegerValue(0)},
+        params={"workflow": inner},
+    )
+    assert result.status is WorkflowExecutionResultStatus.SUCCESS
+    value = result.output["result"]
+    assert isinstance(value, Result)
+    error = value.unwrap_err()
+    declarations = {d.name: d for d in FactorizationNode.TYPE_INFO.declared_errors}
+    assert error.name.root == "InvalidFactorizationInput"
+    assert declarations[error.name.root].error_class == error.error_class.root
