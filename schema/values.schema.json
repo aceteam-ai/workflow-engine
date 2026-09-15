@@ -13,6 +13,20 @@
           "title": "Id",
           "type": "string"
         },
+        "max_retries": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The maximum number of retries after a transient failure. Overrides the node type and execution defaults when set; zero disables retries.",
+          "title": "Max Retries"
+        },
         "params": {
           "$ref": "#/$defs/Empty",
           "description": "Any parameters for the node which are independent of the workflow inputs. May affect what inputs are accepted by the node."
@@ -47,6 +61,20 @@
           "description": "The ID of the node, which must be unique within the workflow.",
           "title": "Id",
           "type": "string"
+        },
+        "max_retries": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The maximum number of retries after a transient failure. Overrides the node type and execution defaults when set; zero disables retries.",
+          "title": "Max Retries"
         },
         "params": {
           "$ref": "#/$defs/AddNodeParams",
@@ -99,6 +127,20 @@
           "title": "Id",
           "type": "string"
         },
+        "max_retries": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The maximum number of retries after a transient failure. Overrides the node type and execution defaults when set; zero disables retries.",
+          "title": "Max Retries"
+        },
         "params": {
           "$ref": "#/$defs/Empty",
           "description": "Any parameters for the node which are independent of the workflow inputs. May affect what inputs are accepted by the node."
@@ -133,6 +175,20 @@
           "description": "The ID of the node, which must be unique within the workflow.",
           "title": "Id",
           "type": "string"
+        },
+        "max_retries": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The maximum number of retries after a transient failure. Overrides the node type and execution defaults when set; zero disables retries.",
+          "title": "Max Retries"
         },
         "params": {
           "$ref": "#/$defs/LogicalParams",
@@ -170,6 +226,20 @@
           "description": "The ID of the node, which must be unique within the workflow.",
           "title": "Id",
           "type": "string"
+        },
+        "max_retries": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The maximum number of retries after a transient failure. Overrides the node type and execution defaults when set; zero disables retries.",
+          "title": "Max Retries"
         },
         "params": {
           "$ref": "#/$defs/AppendToFileParams",
@@ -221,6 +291,20 @@
           "description": "The ID of the node, which must be unique within the workflow.",
           "title": "Id",
           "type": "string"
+        },
+        "max_retries": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The maximum number of retries after a transient failure. Overrides the node type and execution defaults when set; zero disables retries.",
+          "title": "Max Retries"
         },
         "params": {
           "$ref": "#/$defs/AttemptParams",
@@ -412,6 +496,77 @@
       "title": "CSVFileValue",
       "x-value-type": "CSVFileValue"
     },
+    "ChunkSequenceNode": {
+      "additionalProperties": true,
+      "properties": {
+        "hints": {
+          "$ref": "#/$defs/Hints",
+          "description": "Host-facing annotations for this node. A host may honor, clamp, or ignore any hint; unlike params, hints never affect the node's input/output types or the workflow's result."
+        },
+        "id": {
+          "description": "The ID of the node, which must be unique within the workflow.",
+          "title": "Id",
+          "type": "string"
+        },
+        "max_retries": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The maximum number of retries after a transient failure. Overrides the node type and execution defaults when set; zero disables retries.",
+          "title": "Max Retries"
+        },
+        "params": {
+          "$ref": "#/$defs/ChunkSequenceParams",
+          "description": "Any parameters for the node which are independent of the workflow inputs. May affect what inputs are accepted by the node."
+        },
+        "type": {
+          "description": "The type of the node, which should be a literal string for discriminating concrete subclasses. Used to determine which node class to load.",
+          "title": "Type",
+          "type": "string"
+        },
+        "version": {
+          "description": "The resolved node version. Export must pin latest before sharing.",
+          "pattern": "^\\d+\\.\\d+\\.\\d+$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "params",
+        "type",
+        "version"
+      ],
+      "title": "ChunkSequenceNode",
+      "type": "object"
+    },
+    "ChunkSequenceParams": {
+      "additionalProperties": false,
+      "properties": {
+        "element_schema": {
+          "$ref": "#/$defs/ValueSchemaValue",
+          "description": "The value schema of each sequence item.",
+          "title": "Element Schema"
+        },
+        "size": {
+          "$ref": "#/$defs/IntegerValue",
+          "description": "The maximum number of items in each chunk.",
+          "title": "Size"
+        }
+      },
+      "required": [
+        "element_schema",
+        "size"
+      ],
+      "title": "ChunkSequenceParams",
+      "type": "object"
+    },
     "ComparisonParams": {
       "additionalProperties": false,
       "properties": {},
@@ -444,6 +599,20 @@
           "description": "The ID of the node, which must be unique within the workflow.",
           "title": "Id",
           "type": "string"
+        },
+        "max_retries": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The maximum number of retries after a transient failure. Overrides the node type and execution defaults when set; zero disables retries.",
+          "title": "Max Retries"
         },
         "params": {
           "$ref": "#/$defs/ConstantBoolean",
@@ -496,6 +665,20 @@
           "title": "Id",
           "type": "string"
         },
+        "max_retries": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The maximum number of retries after a transient failure. Overrides the node type and execution defaults when set; zero disables retries.",
+          "title": "Max Retries"
+        },
         "params": {
           "$ref": "#/$defs/ConstantInteger",
           "description": "Any parameters for the node which are independent of the workflow inputs. May affect what inputs are accepted by the node."
@@ -546,6 +729,20 @@
           "description": "The ID of the node, which must be unique within the workflow.",
           "title": "Id",
           "type": "string"
+        },
+        "max_retries": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The maximum number of retries after a transient failure. Overrides the node type and execution defaults when set; zero disables retries.",
+          "title": "Max Retries"
         },
         "params": {
           "$ref": "#/$defs/ConstantString",
@@ -775,6 +972,20 @@
           "title": "Id",
           "type": "string"
         },
+        "max_retries": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The maximum number of retries after a transient failure. Overrides the node type and execution defaults when set; zero disables retries.",
+          "title": "Max Retries"
+        },
         "params": {
           "$ref": "#/$defs/DivideParams",
           "default": {
@@ -859,10 +1070,75 @@
       "title": "Edge",
       "type": "object"
     },
+    "ElementParams": {
+      "additionalProperties": false,
+      "properties": {
+        "element_schema": {
+          "$ref": "#/$defs/ValueSchemaValue",
+          "description": "The value schema of each sequence item.",
+          "title": "Element Schema"
+        }
+      },
+      "required": [
+        "element_schema"
+      ],
+      "title": "ElementParams",
+      "type": "object"
+    },
     "Empty": {
       "additionalProperties": false,
       "properties": {},
       "title": "Empty",
+      "type": "object"
+    },
+    "EntriesNode": {
+      "additionalProperties": true,
+      "properties": {
+        "hints": {
+          "$ref": "#/$defs/Hints",
+          "description": "Host-facing annotations for this node. A host may honor, clamp, or ignore any hint; unlike params, hints never affect the node's input/output types or the workflow's result."
+        },
+        "id": {
+          "description": "The ID of the node, which must be unique within the workflow.",
+          "title": "Id",
+          "type": "string"
+        },
+        "max_retries": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The maximum number of retries after a transient failure. Overrides the node type and execution defaults when set; zero disables retries.",
+          "title": "Max Retries"
+        },
+        "params": {
+          "$ref": "#/$defs/ElementParams",
+          "description": "Any parameters for the node which are independent of the workflow inputs. May affect what inputs are accepted by the node."
+        },
+        "type": {
+          "description": "The type of the node, which should be a literal string for discriminating concrete subclasses. Used to determine which node class to load.",
+          "title": "Type",
+          "type": "string"
+        },
+        "version": {
+          "description": "The resolved node version. Export must pin latest before sharing.",
+          "pattern": "^\\d+\\.\\d+\\.\\d+$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "params",
+        "type",
+        "version"
+      ],
+      "title": "EntriesNode",
       "type": "object"
     },
     "EqualNode": {
@@ -876,6 +1152,20 @@
           "description": "The ID of the node, which must be unique within the workflow.",
           "title": "Id",
           "type": "string"
+        },
+        "max_retries": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The maximum number of retries after a transient failure. Overrides the node type and execution defaults when set; zero disables retries.",
+          "title": "Max Retries"
         },
         "params": {
           "$ref": "#/$defs/EqualityParams",
@@ -954,6 +1244,20 @@
           "title": "Id",
           "type": "string"
         },
+        "max_retries": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The maximum number of retries after a transient failure. Overrides the node type and execution defaults when set; zero disables retries.",
+          "title": "Max Retries"
+        },
         "params": {
           "$ref": "#/$defs/ErrorParams",
           "description": "Any parameters for the node which are independent of the workflow inputs. May affect what inputs are accepted by the node."
@@ -1005,6 +1309,20 @@
           "title": "Id",
           "type": "string"
         },
+        "max_retries": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The maximum number of retries after a transient failure. Overrides the node type and execution defaults when set; zero disables retries.",
+          "title": "Max Retries"
+        },
         "params": {
           "$ref": "#/$defs/Empty",
           "description": "Any parameters for the node which are independent of the workflow inputs. May affect what inputs are accepted by the node."
@@ -1039,6 +1357,20 @@
           "description": "The ID of the node, which must be unique within the workflow.",
           "title": "Id",
           "type": "string"
+        },
+        "max_retries": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The maximum number of retries after a transient failure. Overrides the node type and execution defaults when set; zero disables retries.",
+          "title": "Max Retries"
         },
         "params": {
           "$ref": "#/$defs/MappingParams",
@@ -1082,6 +1414,20 @@
           "title": "Id",
           "type": "string"
         },
+        "max_retries": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The maximum number of retries after a transient failure. Overrides the node type and execution defaults when set; zero disables retries.",
+          "title": "Max Retries"
+        },
         "params": {
           "$ref": "#/$defs/SequenceParams",
           "description": "Any parameters for the node which are independent of the workflow inputs. May affect what inputs are accepted by the node."
@@ -1117,6 +1463,20 @@
           "description": "The ID of the node, which must be unique within the workflow.",
           "title": "Id",
           "type": "string"
+        },
+        "max_retries": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The maximum number of retries after a transient failure. Overrides the node type and execution defaults when set; zero disables retries.",
+          "title": "Max Retries"
         },
         "params": {
           "$ref": "#/$defs/Empty",
@@ -1173,6 +1533,56 @@
       "title": "FileValue",
       "x-value-type": "FileValue"
     },
+    "FilterNode": {
+      "additionalProperties": true,
+      "properties": {
+        "hints": {
+          "$ref": "#/$defs/Hints",
+          "description": "Host-facing annotations for this node. A host may honor, clamp, or ignore any hint; unlike params, hints never affect the node's input/output types or the workflow's result."
+        },
+        "id": {
+          "description": "The ID of the node, which must be unique within the workflow.",
+          "title": "Id",
+          "type": "string"
+        },
+        "max_retries": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The maximum number of retries after a transient failure. Overrides the node type and execution defaults when set; zero disables retries.",
+          "title": "Max Retries"
+        },
+        "params": {
+          "$ref": "#/$defs/WorkflowSequenceParams",
+          "description": "Any parameters for the node which are independent of the workflow inputs. May affect what inputs are accepted by the node."
+        },
+        "type": {
+          "description": "The type of the node, which should be a literal string for discriminating concrete subclasses. Used to determine which node class to load.",
+          "title": "Type",
+          "type": "string"
+        },
+        "version": {
+          "description": "The resolved node version. Export must pin latest before sharing.",
+          "pattern": "^\\d+\\.\\d+\\.\\d+$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "params",
+        "type",
+        "version"
+      ],
+      "title": "FilterNode",
+      "type": "object"
+    },
     "FirstErrorNode": {
       "additionalProperties": true,
       "properties": {
@@ -1184,6 +1594,20 @@
           "description": "The ID of the node, which must be unique within the workflow.",
           "title": "Id",
           "type": "string"
+        },
+        "max_retries": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The maximum number of retries after a transient failure. Overrides the node type and execution defaults when set; zero disables retries.",
+          "title": "Max Retries"
         },
         "params": {
           "$ref": "#/$defs/Empty",
@@ -1206,6 +1630,56 @@
         "version"
       ],
       "title": "FirstErrorNode",
+      "type": "object"
+    },
+    "FlattenSequenceNode": {
+      "additionalProperties": true,
+      "properties": {
+        "hints": {
+          "$ref": "#/$defs/Hints",
+          "description": "Host-facing annotations for this node. A host may honor, clamp, or ignore any hint; unlike params, hints never affect the node's input/output types or the workflow's result."
+        },
+        "id": {
+          "description": "The ID of the node, which must be unique within the workflow.",
+          "title": "Id",
+          "type": "string"
+        },
+        "max_retries": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The maximum number of retries after a transient failure. Overrides the node type and execution defaults when set; zero disables retries.",
+          "title": "Max Retries"
+        },
+        "params": {
+          "$ref": "#/$defs/ElementParams",
+          "description": "Any parameters for the node which are independent of the workflow inputs. May affect what inputs are accepted by the node."
+        },
+        "type": {
+          "description": "The type of the node, which should be a literal string for discriminating concrete subclasses. Used to determine which node class to load.",
+          "title": "Type",
+          "type": "string"
+        },
+        "version": {
+          "description": "The resolved node version. Export must pin latest before sharing.",
+          "pattern": "^\\d+\\.\\d+\\.\\d+$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "params",
+        "type",
+        "version"
+      ],
+      "title": "FlattenSequenceNode",
       "type": "object"
     },
     "FloatValue": {
@@ -1290,6 +1764,106 @@
       "title": "FloatValueSchema",
       "type": "object"
     },
+    "FoldNode": {
+      "additionalProperties": true,
+      "properties": {
+        "hints": {
+          "$ref": "#/$defs/Hints",
+          "description": "Host-facing annotations for this node. A host may honor, clamp, or ignore any hint; unlike params, hints never affect the node's input/output types or the workflow's result."
+        },
+        "id": {
+          "description": "The ID of the node, which must be unique within the workflow.",
+          "title": "Id",
+          "type": "string"
+        },
+        "max_retries": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The maximum number of retries after a transient failure. Overrides the node type and execution defaults when set; zero disables retries.",
+          "title": "Max Retries"
+        },
+        "params": {
+          "$ref": "#/$defs/WorkflowSequenceParams",
+          "description": "Any parameters for the node which are independent of the workflow inputs. May affect what inputs are accepted by the node."
+        },
+        "type": {
+          "description": "The type of the node, which should be a literal string for discriminating concrete subclasses. Used to determine which node class to load.",
+          "title": "Type",
+          "type": "string"
+        },
+        "version": {
+          "description": "The resolved node version. Export must pin latest before sharing.",
+          "pattern": "^\\d+\\.\\d+\\.\\d+$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "params",
+        "type",
+        "version"
+      ],
+      "title": "FoldNode",
+      "type": "object"
+    },
+    "FoldStepNode": {
+      "additionalProperties": true,
+      "properties": {
+        "hints": {
+          "$ref": "#/$defs/Hints",
+          "description": "Host-facing annotations for this node. A host may honor, clamp, or ignore any hint; unlike params, hints never affect the node's input/output types or the workflow's result."
+        },
+        "id": {
+          "description": "The ID of the node, which must be unique within the workflow.",
+          "title": "Id",
+          "type": "string"
+        },
+        "max_retries": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The maximum number of retries after a transient failure. Overrides the node type and execution defaults when set; zero disables retries.",
+          "title": "Max Retries"
+        },
+        "params": {
+          "$ref": "#/$defs/WorkflowSequenceParams",
+          "description": "Any parameters for the node which are independent of the workflow inputs. May affect what inputs are accepted by the node."
+        },
+        "type": {
+          "description": "The type of the node, which should be a literal string for discriminating concrete subclasses. Used to determine which node class to load.",
+          "title": "Type",
+          "type": "string"
+        },
+        "version": {
+          "description": "The resolved node version. Export must pin latest before sharing.",
+          "pattern": "^\\d+\\.\\d+\\.\\d+$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "params",
+        "type",
+        "version"
+      ],
+      "title": "FoldStepNode",
+      "type": "object"
+    },
     "ForEachNode": {
       "additionalProperties": true,
       "properties": {
@@ -1301,6 +1875,20 @@
           "description": "The ID of the node, which must be unique within the workflow.",
           "title": "Id",
           "type": "string"
+        },
+        "max_retries": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The maximum number of retries after a transient failure. Overrides the node type and execution defaults when set; zero disables retries.",
+          "title": "Max Retries"
         },
         "params": {
           "$ref": "#/$defs/ForEachParams",
@@ -1329,6 +1917,12 @@
     "ForEachParams": {
       "additionalProperties": false,
       "properties": {
+        "constant_inputs": {
+          "$ref": "#/$defs/SequenceValue_StringValue_",
+          "default": [],
+          "description": "The workflow inputs held constant for every item.",
+          "title": "Constant Inputs"
+        },
         "workflow": {
           "$ref": "#/$defs/WorkflowValue",
           "description": "The workflow to run for each item.",
@@ -1352,6 +1946,20 @@
           "description": "The ID of the node, which must be unique within the workflow.",
           "title": "Id",
           "type": "string"
+        },
+        "max_retries": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The maximum number of retries after a transient failure. Overrides the node type and execution defaults when set; zero disables retries.",
+          "title": "Max Retries"
         },
         "params": {
           "$ref": "#/$defs/Empty",
@@ -1387,6 +1995,20 @@
           "description": "The ID of the node, which must be unique within the workflow.",
           "title": "Id",
           "type": "string"
+        },
+        "max_retries": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The maximum number of retries after a transient failure. Overrides the node type and execution defaults when set; zero disables retries.",
+          "title": "Max Retries"
         },
         "params": {
           "$ref": "#/$defs/MappingParams",
@@ -1427,6 +2049,20 @@
           "title": "Id",
           "type": "string"
         },
+        "max_retries": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The maximum number of retries after a transient failure. Overrides the node type and execution defaults when set; zero disables retries.",
+          "title": "Max Retries"
+        },
         "params": {
           "$ref": "#/$defs/SequenceParams",
           "description": "Any parameters for the node which are independent of the workflow inputs. May affect what inputs are accepted by the node."
@@ -1463,6 +2099,20 @@
           "title": "Id",
           "type": "string"
         },
+        "max_retries": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The maximum number of retries after a transient failure. Overrides the node type and execution defaults when set; zero disables retries.",
+          "title": "Max Retries"
+        },
         "params": {
           "$ref": "#/$defs/ComparisonParams",
           "description": "Any parameters for the node which are independent of the workflow inputs. May affect what inputs are accepted by the node."
@@ -1498,6 +2148,20 @@
           "title": "Id",
           "type": "string"
         },
+        "max_retries": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The maximum number of retries after a transient failure. Overrides the node type and execution defaults when set; zero disables retries.",
+          "title": "Max Retries"
+        },
         "params": {
           "$ref": "#/$defs/ComparisonParams",
           "description": "Any parameters for the node which are independent of the workflow inputs. May affect what inputs are accepted by the node."
@@ -1519,6 +2183,106 @@
         "version"
       ],
       "title": "GreaterThanNode",
+      "type": "object"
+    },
+    "GroupByNode": {
+      "additionalProperties": true,
+      "properties": {
+        "hints": {
+          "$ref": "#/$defs/Hints",
+          "description": "Host-facing annotations for this node. A host may honor, clamp, or ignore any hint; unlike params, hints never affect the node's input/output types or the workflow's result."
+        },
+        "id": {
+          "description": "The ID of the node, which must be unique within the workflow.",
+          "title": "Id",
+          "type": "string"
+        },
+        "max_retries": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The maximum number of retries after a transient failure. Overrides the node type and execution defaults when set; zero disables retries.",
+          "title": "Max Retries"
+        },
+        "params": {
+          "$ref": "#/$defs/WorkflowSequenceParams",
+          "description": "Any parameters for the node which are independent of the workflow inputs. May affect what inputs are accepted by the node."
+        },
+        "type": {
+          "description": "The type of the node, which should be a literal string for discriminating concrete subclasses. Used to determine which node class to load.",
+          "title": "Type",
+          "type": "string"
+        },
+        "version": {
+          "description": "The resolved node version. Export must pin latest before sharing.",
+          "pattern": "^\\d+\\.\\d+\\.\\d+$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "params",
+        "type",
+        "version"
+      ],
+      "title": "GroupByNode",
+      "type": "object"
+    },
+    "GroupSequenceNode": {
+      "additionalProperties": true,
+      "properties": {
+        "hints": {
+          "$ref": "#/$defs/Hints",
+          "description": "Host-facing annotations for this node. A host may honor, clamp, or ignore any hint; unlike params, hints never affect the node's input/output types or the workflow's result."
+        },
+        "id": {
+          "description": "The ID of the node, which must be unique within the workflow.",
+          "title": "Id",
+          "type": "string"
+        },
+        "max_retries": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The maximum number of retries after a transient failure. Overrides the node type and execution defaults when set; zero disables retries.",
+          "title": "Max Retries"
+        },
+        "params": {
+          "$ref": "#/$defs/ElementParams",
+          "description": "Any parameters for the node which are independent of the workflow inputs. May affect what inputs are accepted by the node."
+        },
+        "type": {
+          "description": "The type of the node, which should be a literal string for discriminating concrete subclasses. Used to determine which node class to load.",
+          "title": "Type",
+          "type": "string"
+        },
+        "version": {
+          "description": "The resolved node version. Export must pin latest before sharing.",
+          "pattern": "^\\d+\\.\\d+\\.\\d+$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "params",
+        "type",
+        "version"
+      ],
+      "title": "GroupSequenceNode",
       "type": "object"
     },
     "Hints": {
@@ -1553,6 +2317,20 @@
           "description": "The ID of the node, which must be unique within the workflow.",
           "title": "Id",
           "type": "string"
+        },
+        "max_retries": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The maximum number of retries after a transient failure. Overrides the node type and execution defaults when set; zero disables retries.",
+          "title": "Max Retries"
         },
         "params": {
           "$ref": "#/$defs/IfElseParams",
@@ -1611,6 +2389,20 @@
           "title": "Id",
           "type": "string"
         },
+        "max_retries": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The maximum number of retries after a transient failure. Overrides the node type and execution defaults when set; zero disables retries.",
+          "title": "Max Retries"
+        },
         "params": {
           "$ref": "#/$defs/IfParams",
           "description": "Any parameters for the node which are independent of the workflow inputs. May affect what inputs are accepted by the node."
@@ -1661,6 +2453,20 @@
           "description": "The ID of the node, which must be unique within the workflow.",
           "title": "Id",
           "type": "string"
+        },
+        "max_retries": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The maximum number of retries after a transient failure. Overrides the node type and execution defaults when set; zero disables retries.",
+          "title": "Max Retries"
         },
         "params": {
           "$ref": "#/$defs/SchemaParams",
@@ -1779,6 +2585,20 @@
           "title": "Id",
           "type": "string"
         },
+        "max_retries": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The maximum number of retries after a transient failure. Overrides the node type and execution defaults when set; zero disables retries.",
+          "title": "Max Retries"
+        },
         "params": {
           "$ref": "#/$defs/Empty",
           "description": "Any parameters for the node which are independent of the workflow inputs. May affect what inputs are accepted by the node."
@@ -1849,6 +2669,71 @@
       "title": "JSONValue",
       "x-value-type": "JSONValue"
     },
+    "LengthNode": {
+      "additionalProperties": true,
+      "properties": {
+        "hints": {
+          "$ref": "#/$defs/Hints",
+          "description": "Host-facing annotations for this node. A host may honor, clamp, or ignore any hint; unlike params, hints never affect the node's input/output types or the workflow's result."
+        },
+        "id": {
+          "description": "The ID of the node, which must be unique within the workflow.",
+          "title": "Id",
+          "type": "string"
+        },
+        "max_retries": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The maximum number of retries after a transient failure. Overrides the node type and execution defaults when set; zero disables retries.",
+          "title": "Max Retries"
+        },
+        "params": {
+          "$ref": "#/$defs/LengthParams",
+          "description": "Any parameters for the node which are independent of the workflow inputs. May affect what inputs are accepted by the node."
+        },
+        "type": {
+          "description": "The type of the node, which should be a literal string for discriminating concrete subclasses. Used to determine which node class to load.",
+          "title": "Type",
+          "type": "string"
+        },
+        "version": {
+          "description": "The resolved node version. Export must pin latest before sharing.",
+          "pattern": "^\\d+\\.\\d+\\.\\d+$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "params",
+        "type",
+        "version"
+      ],
+      "title": "LengthNode",
+      "type": "object"
+    },
+    "LengthParams": {
+      "additionalProperties": false,
+      "properties": {
+        "element_schema": {
+          "$ref": "#/$defs/ValueSchemaValue",
+          "description": "The value schema of each sequence item.",
+          "title": "Element Schema"
+        }
+      },
+      "required": [
+        "element_schema"
+      ],
+      "title": "LengthParams",
+      "type": "object"
+    },
     "LessThanEqualNode": {
       "additionalProperties": true,
       "properties": {
@@ -1860,6 +2745,20 @@
           "description": "The ID of the node, which must be unique within the workflow.",
           "title": "Id",
           "type": "string"
+        },
+        "max_retries": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The maximum number of retries after a transient failure. Overrides the node type and execution defaults when set; zero disables retries.",
+          "title": "Max Retries"
         },
         "params": {
           "$ref": "#/$defs/ComparisonParams",
@@ -1895,6 +2794,20 @@
           "description": "The ID of the node, which must be unique within the workflow.",
           "title": "Id",
           "type": "string"
+        },
+        "max_retries": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The maximum number of retries after a transient failure. Overrides the node type and execution defaults when set; zero disables retries.",
+          "title": "Max Retries"
         },
         "params": {
           "$ref": "#/$defs/ComparisonParams",
@@ -1965,6 +2878,20 @@
           "title": "Id",
           "type": "string"
         },
+        "max_retries": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The maximum number of retries after a transient failure. Overrides the node type and execution defaults when set; zero disables retries.",
+          "title": "Max Retries"
+        },
         "params": {
           "$ref": "#/$defs/MatchErrorClassParams",
           "description": "Any parameters for the node which are independent of the workflow inputs. May affect what inputs are accepted by the node."
@@ -2016,6 +2943,20 @@
           "title": "Id",
           "type": "string"
         },
+        "max_retries": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The maximum number of retries after a transient failure. Overrides the node type and execution defaults when set; zero disables retries.",
+          "title": "Max Retries"
+        },
         "params": {
           "$ref": "#/$defs/Empty",
           "description": "Any parameters for the node which are independent of the workflow inputs. May affect what inputs are accepted by the node."
@@ -2039,6 +2980,55 @@
       "title": "MaximumNode",
       "type": "object"
     },
+    "MedianNode": {
+      "additionalProperties": true,
+      "properties": {
+        "hints": {
+          "$ref": "#/$defs/Hints",
+          "description": "Host-facing annotations for this node. A host may honor, clamp, or ignore any hint; unlike params, hints never affect the node's input/output types or the workflow's result."
+        },
+        "id": {
+          "description": "The ID of the node, which must be unique within the workflow.",
+          "title": "Id",
+          "type": "string"
+        },
+        "max_retries": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The maximum number of retries after a transient failure. Overrides the node type and execution defaults when set; zero disables retries.",
+          "title": "Max Retries"
+        },
+        "params": {
+          "$ref": "#/$defs/Empty",
+          "description": "Any parameters for the node which are independent of the workflow inputs. May affect what inputs are accepted by the node."
+        },
+        "type": {
+          "description": "The type of the node, which should be a literal string for discriminating concrete subclasses. Used to determine which node class to load.",
+          "title": "Type",
+          "type": "string"
+        },
+        "version": {
+          "description": "The resolved node version. Export must pin latest before sharing.",
+          "pattern": "^\\d+\\.\\d+\\.\\d+$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "type",
+        "version"
+      ],
+      "title": "MedianNode",
+      "type": "object"
+    },
     "MinimumNode": {
       "additionalProperties": true,
       "properties": {
@@ -2050,6 +3040,20 @@
           "description": "The ID of the node, which must be unique within the workflow.",
           "title": "Id",
           "type": "string"
+        },
+        "max_retries": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The maximum number of retries after a transient failure. Overrides the node type and execution defaults when set; zero disables retries.",
+          "title": "Max Retries"
         },
         "params": {
           "$ref": "#/$defs/Empty",
@@ -2074,6 +3078,55 @@
       "title": "MinimumNode",
       "type": "object"
     },
+    "ModeNode": {
+      "additionalProperties": true,
+      "properties": {
+        "hints": {
+          "$ref": "#/$defs/Hints",
+          "description": "Host-facing annotations for this node. A host may honor, clamp, or ignore any hint; unlike params, hints never affect the node's input/output types or the workflow's result."
+        },
+        "id": {
+          "description": "The ID of the node, which must be unique within the workflow.",
+          "title": "Id",
+          "type": "string"
+        },
+        "max_retries": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The maximum number of retries after a transient failure. Overrides the node type and execution defaults when set; zero disables retries.",
+          "title": "Max Retries"
+        },
+        "params": {
+          "$ref": "#/$defs/Empty",
+          "description": "Any parameters for the node which are independent of the workflow inputs. May affect what inputs are accepted by the node."
+        },
+        "type": {
+          "description": "The type of the node, which should be a literal string for discriminating concrete subclasses. Used to determine which node class to load.",
+          "title": "Type",
+          "type": "string"
+        },
+        "version": {
+          "description": "The resolved node version. Export must pin latest before sharing.",
+          "pattern": "^\\d+\\.\\d+\\.\\d+$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "type",
+        "version"
+      ],
+      "title": "ModeNode",
+      "type": "object"
+    },
     "MultiplyNode": {
       "additionalProperties": true,
       "properties": {
@@ -2085,6 +3138,20 @@
           "description": "The ID of the node, which must be unique within the workflow.",
           "title": "Id",
           "type": "string"
+        },
+        "max_retries": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The maximum number of retries after a transient failure. Overrides the node type and execution defaults when set; zero disables retries.",
+          "title": "Max Retries"
         },
         "params": {
           "$ref": "#/$defs/Empty",
@@ -2120,6 +3187,20 @@
           "description": "The ID of the node, which must be unique within the workflow.",
           "title": "Id",
           "type": "string"
+        },
+        "max_retries": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The maximum number of retries after a transient failure. Overrides the node type and execution defaults when set; zero disables retries.",
+          "title": "Max Retries"
         },
         "params": {
           "$ref": "#/$defs/Empty",
@@ -2265,6 +3346,25 @@
           "if": {
             "properties": {
               "type": {
+                "const": "ChunkSequence"
+              },
+              "version": {
+                "const": "1.0.0"
+              }
+            },
+            "required": [
+              "type",
+              "version"
+            ]
+          },
+          "then": {
+            "$ref": "#/$defs/ChunkSequenceNode"
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
                 "const": "ConstantBoolean"
               },
               "version": {
@@ -2335,6 +3435,25 @@
           },
           "then": {
             "$ref": "#/$defs/DivideNode"
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "Entries"
+              },
+              "version": {
+                "const": "1.0.0"
+              }
+            },
+            "required": [
+              "type",
+              "version"
+            ]
+          },
+          "then": {
+            "$ref": "#/$defs/EntriesNode"
           }
         },
         {
@@ -2455,6 +3574,25 @@
           "if": {
             "properties": {
               "type": {
+                "const": "Filter"
+              },
+              "version": {
+                "const": "1.0.0"
+              }
+            },
+            "required": [
+              "type",
+              "version"
+            ]
+          },
+          "then": {
+            "$ref": "#/$defs/FilterNode"
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
                 "const": "FirstError"
               },
               "version": {
@@ -2474,10 +3612,67 @@
           "if": {
             "properties": {
               "type": {
-                "const": "ForEach"
+                "const": "FlattenSequence"
               },
               "version": {
                 "const": "1.0.0"
+              }
+            },
+            "required": [
+              "type",
+              "version"
+            ]
+          },
+          "then": {
+            "$ref": "#/$defs/FlattenSequenceNode"
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "Fold"
+              },
+              "version": {
+                "const": "1.0.0"
+              }
+            },
+            "required": [
+              "type",
+              "version"
+            ]
+          },
+          "then": {
+            "$ref": "#/$defs/FoldNode"
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "FoldStep"
+              },
+              "version": {
+                "const": "1.0.0"
+              }
+            },
+            "required": [
+              "type",
+              "version"
+            ]
+          },
+          "then": {
+            "$ref": "#/$defs/FoldStepNode"
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "ForEach"
+              },
+              "version": {
+                "const": "1.1.0"
               }
             },
             "required": [
@@ -2588,6 +3783,44 @@
           "if": {
             "properties": {
               "type": {
+                "const": "GroupBy"
+              },
+              "version": {
+                "const": "1.0.0"
+              }
+            },
+            "required": [
+              "type",
+              "version"
+            ]
+          },
+          "then": {
+            "$ref": "#/$defs/GroupByNode"
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "GroupSequence"
+              },
+              "version": {
+                "const": "1.0.0"
+              }
+            },
+            "required": [
+              "type",
+              "version"
+            ]
+          },
+          "then": {
+            "$ref": "#/$defs/GroupSequenceNode"
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
                 "const": "If"
               },
               "version": {
@@ -2658,6 +3891,25 @@
           },
           "then": {
             "$ref": "#/$defs/IsOkNode"
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "Length"
+              },
+              "version": {
+                "const": "1.0.0"
+              }
+            },
+            "required": [
+              "type",
+              "version"
+            ]
+          },
+          "then": {
+            "$ref": "#/$defs/LengthNode"
           }
         },
         {
@@ -2740,6 +3992,25 @@
           "if": {
             "properties": {
               "type": {
+                "const": "Median"
+              },
+              "version": {
+                "const": "1.0.0"
+              }
+            },
+            "required": [
+              "type",
+              "version"
+            ]
+          },
+          "then": {
+            "$ref": "#/$defs/MedianNode"
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
                 "const": "Minimum"
               },
               "version": {
@@ -2753,6 +4024,25 @@
           },
           "then": {
             "$ref": "#/$defs/MinimumNode"
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "Mode"
+              },
+              "version": {
+                "const": "1.0.0"
+              }
+            },
+            "required": [
+              "type",
+              "version"
+            ]
+          },
+          "then": {
+            "$ref": "#/$defs/ModeNode"
           }
         },
         {
@@ -2930,6 +4220,25 @@
           "if": {
             "properties": {
               "type": {
+                "const": "Percentile"
+              },
+              "version": {
+                "const": "1.0.0"
+              }
+            },
+            "required": [
+              "type",
+              "version"
+            ]
+          },
+          "then": {
+            "$ref": "#/$defs/PercentileNode"
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
                 "const": "Power"
               },
               "version": {
@@ -2949,6 +4258,44 @@
           "if": {
             "properties": {
               "type": {
+                "const": "Quantile"
+              },
+              "version": {
+                "const": "1.0.0"
+              }
+            },
+            "required": [
+              "type",
+              "version"
+            ]
+          },
+          "then": {
+            "$ref": "#/$defs/QuantileNode"
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "Range"
+              },
+              "version": {
+                "const": "1.0.0"
+              }
+            },
+            "required": [
+              "type",
+              "version"
+            ]
+          },
+          "then": {
+            "$ref": "#/$defs/RangeNode"
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
                 "const": "Round"
               },
               "version": {
@@ -2962,6 +4309,44 @@
           },
           "then": {
             "$ref": "#/$defs/RoundNode"
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "SelectSequence"
+              },
+              "version": {
+                "const": "1.0.0"
+              }
+            },
+            "required": [
+              "type",
+              "version"
+            ]
+          },
+          "then": {
+            "$ref": "#/$defs/SelectSequenceNode"
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "StandardDeviation"
+              },
+              "version": {
+                "const": "1.0.0"
+              }
+            },
+            "required": [
+              "type",
+              "version"
+            ]
+          },
+          "then": {
+            "$ref": "#/$defs/StandardDeviationNode"
           }
         },
         {
@@ -3000,6 +4385,63 @@
           },
           "then": {
             "$ref": "#/$defs/SumNode"
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "Unfold"
+              },
+              "version": {
+                "const": "1.0.0"
+              }
+            },
+            "required": [
+              "type",
+              "version"
+            ]
+          },
+          "then": {
+            "$ref": "#/$defs/UnfoldNode"
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "UnfoldJoin"
+              },
+              "version": {
+                "const": "1.0.0"
+              }
+            },
+            "required": [
+              "type",
+              "version"
+            ]
+          },
+          "then": {
+            "$ref": "#/$defs/UnfoldJoinNode"
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "UnfoldNext"
+              },
+              "version": {
+                "const": "1.0.0"
+              }
+            },
+            "required": [
+              "type",
+              "version"
+            ]
+          },
+          "then": {
+            "$ref": "#/$defs/UnfoldNextNode"
           }
         },
         {
@@ -3058,6 +4500,44 @@
           "then": {
             "$ref": "#/$defs/UnwrapOrValueNode"
           }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "Variance"
+              },
+              "version": {
+                "const": "1.0.0"
+              }
+            },
+            "required": [
+              "type",
+              "version"
+            ]
+          },
+          "then": {
+            "$ref": "#/$defs/VarianceNode"
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "Zip"
+              },
+              "version": {
+                "const": "1.0.0"
+              }
+            },
+            "required": [
+              "type",
+              "version"
+            ]
+          },
+          "then": {
+            "$ref": "#/$defs/ZipNode"
+          }
         }
       ],
       "properties": {
@@ -3069,6 +4549,20 @@
           "description": "The ID of the node, which must be unique within the workflow.",
           "title": "Id",
           "type": "string"
+        },
+        "max_retries": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The maximum number of retries after a transient failure. Overrides the node type and execution defaults when set; zero disables retries.",
+          "title": "Max Retries"
         },
         "params": {
           "type": "object"
@@ -3103,6 +4597,20 @@
           "description": "The ID of the node, which must be unique within the workflow.",
           "title": "Id",
           "type": "string"
+        },
+        "max_retries": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The maximum number of retries after a transient failure. Overrides the node type and execution defaults when set; zero disables retries.",
+          "title": "Max Retries"
         },
         "params": {
           "$ref": "#/$defs/EqualityParams",
@@ -3142,6 +4650,20 @@
           "title": "Id",
           "type": "string"
         },
+        "max_retries": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The maximum number of retries after a transient failure. Overrides the node type and execution defaults when set; zero disables retries.",
+          "title": "Max Retries"
+        },
         "params": {
           "$ref": "#/$defs/Empty",
           "description": "Any parameters for the node which are independent of the workflow inputs. May affect what inputs are accepted by the node."
@@ -3176,6 +4698,20 @@
           "description": "The ID of the node, which must be unique within the workflow.",
           "title": "Id",
           "type": "string"
+        },
+        "max_retries": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The maximum number of retries after a transient failure. Overrides the node type and execution defaults when set; zero disables retries.",
+          "title": "Max Retries"
         },
         "params": {
           "$ref": "#/$defs/Empty",
@@ -3294,6 +4830,20 @@
           "title": "Id",
           "type": "string"
         },
+        "max_retries": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The maximum number of retries after a transient failure. Overrides the node type and execution defaults when set; zero disables retries.",
+          "title": "Max Retries"
+        },
         "params": {
           "$ref": "#/$defs/Empty",
           "description": "Any parameters for the node which are independent of the workflow inputs. May affect what inputs are accepted by the node."
@@ -3328,6 +4878,20 @@
           "description": "The ID of the node, which must be unique within the workflow.",
           "title": "Id",
           "type": "string"
+        },
+        "max_retries": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The maximum number of retries after a transient failure. Overrides the node type and execution defaults when set; zero disables retries.",
+          "title": "Max Retries"
         },
         "params": {
           "$ref": "#/$defs/LogicalParams",
@@ -3365,6 +4929,20 @@
           "description": "The ID of the node, which must be unique within the workflow.",
           "title": "Id",
           "type": "string"
+        },
+        "max_retries": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The maximum number of retries after a transient failure. Overrides the node type and execution defaults when set; zero disables retries.",
+          "title": "Max Retries"
         },
         "params": {
           "$ref": "#/$defs/SchemaParams",
@@ -3406,6 +4984,20 @@
           "title": "Id",
           "type": "string"
         },
+        "max_retries": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The maximum number of retries after a transient failure. Overrides the node type and execution defaults when set; zero disables retries.",
+          "title": "Max Retries"
+        },
         "params": {
           "$ref": "#/$defs/Empty",
           "description": "Any parameters for the node which are independent of the workflow inputs. May affect what inputs are accepted by the node."
@@ -3429,6 +5021,92 @@
       "title": "PartitionNode",
       "type": "object"
     },
+    "PercentileNode": {
+      "additionalProperties": true,
+      "properties": {
+        "hints": {
+          "$ref": "#/$defs/Hints",
+          "description": "Host-facing annotations for this node. A host may honor, clamp, or ignore any hint; unlike params, hints never affect the node's input/output types or the workflow's result."
+        },
+        "id": {
+          "description": "The ID of the node, which must be unique within the workflow.",
+          "title": "Id",
+          "type": "string"
+        },
+        "max_retries": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The maximum number of retries after a transient failure. Overrides the node type and execution defaults when set; zero disables retries.",
+          "title": "Max Retries"
+        },
+        "params": {
+          "$ref": "#/$defs/PercentileParams",
+          "description": "Any parameters for the node which are independent of the workflow inputs. May affect what inputs are accepted by the node."
+        },
+        "type": {
+          "description": "The type of the node, which should be a literal string for discriminating concrete subclasses. Used to determine which node class to load.",
+          "title": "Type",
+          "type": "string"
+        },
+        "version": {
+          "description": "The resolved node version. Export must pin latest before sharing.",
+          "pattern": "^\\d+\\.\\d+\\.\\d+$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "params",
+        "type",
+        "version"
+      ],
+      "title": "PercentileNode",
+      "type": "object"
+    },
+    "PercentileParams": {
+      "additionalProperties": false,
+      "properties": {
+        "interpolation": {
+          "$ref": "#/$defs/QuantileInterpolationValue",
+          "default": "linear",
+          "description": "The method used between adjacent sorted values. Linear blends them by the fractional position; nearest uses the even index on a tie.",
+          "title": "Interpolation"
+        },
+        "q": {
+          "$ref": "#/$defs/FloatValue",
+          "description": "The percentile from 0 to 100, including both endpoints.",
+          "maximum": 100,
+          "minimum": 0,
+          "title": "Percentile"
+        }
+      },
+      "required": [
+        "q"
+      ],
+      "title": "PercentileParams",
+      "type": "object"
+    },
+    "PopulationParams": {
+      "additionalProperties": false,
+      "properties": {
+        "population": {
+          "$ref": "#/$defs/BooleanValue",
+          "default": false,
+          "description": "The choice to treat the values as an entire population. False uses the sample estimate and requires at least two values.",
+          "title": "Population"
+        }
+      },
+      "title": "PopulationParams",
+      "type": "object"
+    },
     "PowerNode": {
       "additionalProperties": true,
       "properties": {
@@ -3440,6 +5118,20 @@
           "description": "The ID of the node, which must be unique within the workflow.",
           "title": "Id",
           "type": "string"
+        },
+        "max_retries": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The maximum number of retries after a transient failure. Overrides the node type and execution defaults when set; zero disables retries.",
+          "title": "Max Retries"
         },
         "params": {
           "$ref": "#/$defs/Empty",
@@ -3462,6 +5154,144 @@
         "version"
       ],
       "title": "PowerNode",
+      "type": "object"
+    },
+    "QuantileInterpolation": {
+      "enum": [
+        "linear",
+        "lower",
+        "higher",
+        "nearest",
+        "midpoint"
+      ],
+      "title": "QuantileInterpolation",
+      "type": "string"
+    },
+    "QuantileInterpolationValue": {
+      "$ref": "#/$defs/QuantileInterpolation",
+      "title": "QuantileInterpolationValue",
+      "x-value-type": "QuantileInterpolationValue"
+    },
+    "QuantileNode": {
+      "additionalProperties": true,
+      "properties": {
+        "hints": {
+          "$ref": "#/$defs/Hints",
+          "description": "Host-facing annotations for this node. A host may honor, clamp, or ignore any hint; unlike params, hints never affect the node's input/output types or the workflow's result."
+        },
+        "id": {
+          "description": "The ID of the node, which must be unique within the workflow.",
+          "title": "Id",
+          "type": "string"
+        },
+        "max_retries": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The maximum number of retries after a transient failure. Overrides the node type and execution defaults when set; zero disables retries.",
+          "title": "Max Retries"
+        },
+        "params": {
+          "$ref": "#/$defs/QuantileParams",
+          "description": "Any parameters for the node which are independent of the workflow inputs. May affect what inputs are accepted by the node."
+        },
+        "type": {
+          "description": "The type of the node, which should be a literal string for discriminating concrete subclasses. Used to determine which node class to load.",
+          "title": "Type",
+          "type": "string"
+        },
+        "version": {
+          "description": "The resolved node version. Export must pin latest before sharing.",
+          "pattern": "^\\d+\\.\\d+\\.\\d+$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "params",
+        "type",
+        "version"
+      ],
+      "title": "QuantileNode",
+      "type": "object"
+    },
+    "QuantileParams": {
+      "additionalProperties": false,
+      "properties": {
+        "interpolation": {
+          "$ref": "#/$defs/QuantileInterpolationValue",
+          "default": "linear",
+          "description": "The method used between adjacent sorted values. Linear blends them by the fractional position; nearest uses the even index on a tie.",
+          "title": "Interpolation"
+        },
+        "q": {
+          "$ref": "#/$defs/FloatValue",
+          "description": "The quantile from 0 to 1, including both endpoints.",
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Quantile"
+        }
+      },
+      "required": [
+        "q"
+      ],
+      "title": "QuantileParams",
+      "type": "object"
+    },
+    "RangeNode": {
+      "additionalProperties": true,
+      "properties": {
+        "hints": {
+          "$ref": "#/$defs/Hints",
+          "description": "Host-facing annotations for this node. A host may honor, clamp, or ignore any hint; unlike params, hints never affect the node's input/output types or the workflow's result."
+        },
+        "id": {
+          "description": "The ID of the node, which must be unique within the workflow.",
+          "title": "Id",
+          "type": "string"
+        },
+        "max_retries": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The maximum number of retries after a transient failure. Overrides the node type and execution defaults when set; zero disables retries.",
+          "title": "Max Retries"
+        },
+        "params": {
+          "$ref": "#/$defs/Empty",
+          "description": "Any parameters for the node which are independent of the workflow inputs. May affect what inputs are accepted by the node."
+        },
+        "type": {
+          "description": "The type of the node, which should be a literal string for discriminating concrete subclasses. Used to determine which node class to load.",
+          "title": "Type",
+          "type": "string"
+        },
+        "version": {
+          "description": "The resolved node version. Export must pin latest before sharing.",
+          "pattern": "^\\d+\\.\\d+\\.\\d+$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "type",
+        "version"
+      ],
+      "title": "RangeNode",
       "type": "object"
     },
     "ReferenceValueSchema": {
@@ -3638,6 +5468,20 @@
           "title": "Id",
           "type": "string"
         },
+        "max_retries": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The maximum number of retries after a transient failure. Overrides the node type and execution defaults when set; zero disables retries.",
+          "title": "Max Retries"
+        },
         "params": {
           "$ref": "#/$defs/RoundParams",
           "default": {
@@ -3715,6 +5559,56 @@
         }
       },
       "title": "SchemaParams",
+      "type": "object"
+    },
+    "SelectSequenceNode": {
+      "additionalProperties": true,
+      "properties": {
+        "hints": {
+          "$ref": "#/$defs/Hints",
+          "description": "Host-facing annotations for this node. A host may honor, clamp, or ignore any hint; unlike params, hints never affect the node's input/output types or the workflow's result."
+        },
+        "id": {
+          "description": "The ID of the node, which must be unique within the workflow.",
+          "title": "Id",
+          "type": "string"
+        },
+        "max_retries": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The maximum number of retries after a transient failure. Overrides the node type and execution defaults when set; zero disables retries.",
+          "title": "Max Retries"
+        },
+        "params": {
+          "$ref": "#/$defs/ElementParams",
+          "description": "Any parameters for the node which are independent of the workflow inputs. May affect what inputs are accepted by the node."
+        },
+        "type": {
+          "description": "The type of the node, which should be a literal string for discriminating concrete subclasses. Used to determine which node class to load.",
+          "title": "Type",
+          "type": "string"
+        },
+        "version": {
+          "description": "The resolved node version. Export must pin latest before sharing.",
+          "pattern": "^\\d+\\.\\d+\\.\\d+$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "params",
+        "type",
+        "version"
+      ],
+      "title": "SelectSequenceNode",
       "type": "object"
     },
     "SequenceParams": {
@@ -3829,6 +5723,55 @@
       "title": "SequenceValue[StringValue]",
       "type": "array",
       "x-value-type": "SequenceValue[StringValue]"
+    },
+    "StandardDeviationNode": {
+      "additionalProperties": true,
+      "properties": {
+        "hints": {
+          "$ref": "#/$defs/Hints",
+          "description": "Host-facing annotations for this node. A host may honor, clamp, or ignore any hint; unlike params, hints never affect the node's input/output types or the workflow's result."
+        },
+        "id": {
+          "description": "The ID of the node, which must be unique within the workflow.",
+          "title": "Id",
+          "type": "string"
+        },
+        "max_retries": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The maximum number of retries after a transient failure. Overrides the node type and execution defaults when set; zero disables retries.",
+          "title": "Max Retries"
+        },
+        "params": {
+          "$ref": "#/$defs/PopulationParams",
+          "description": "Any parameters for the node which are independent of the workflow inputs. May affect what inputs are accepted by the node."
+        },
+        "type": {
+          "description": "The type of the node, which should be a literal string for discriminating concrete subclasses. Used to determine which node class to load.",
+          "title": "Type",
+          "type": "string"
+        },
+        "version": {
+          "description": "The resolved node version. Export must pin latest before sharing.",
+          "pattern": "^\\d+\\.\\d+\\.\\d+$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "type",
+        "version"
+      ],
+      "title": "StandardDeviationNode",
+      "type": "object"
     },
     "StringMapValueSchema": {
       "additionalProperties": true,
@@ -4068,6 +6011,20 @@
           "title": "Id",
           "type": "string"
         },
+        "max_retries": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The maximum number of retries after a transient failure. Overrides the node type and execution defaults when set; zero disables retries.",
+          "title": "Max Retries"
+        },
         "params": {
           "$ref": "#/$defs/Empty",
           "description": "Any parameters for the node which are independent of the workflow inputs. May affect what inputs are accepted by the node."
@@ -4103,6 +6060,20 @@
           "title": "Id",
           "type": "string"
         },
+        "max_retries": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The maximum number of retries after a transient failure. Overrides the node type and execution defaults when set; zero disables retries.",
+          "title": "Max Retries"
+        },
         "params": {
           "$ref": "#/$defs/Empty",
           "description": "Any parameters for the node which are independent of the workflow inputs. May affect what inputs are accepted by the node."
@@ -4130,6 +6101,184 @@
       "$ref": "#/$defs/File",
       "title": "TextFileValue",
       "x-value-type": "TextFileValue"
+    },
+    "UnfoldJoinNode": {
+      "additionalProperties": true,
+      "properties": {
+        "hints": {
+          "$ref": "#/$defs/Hints",
+          "description": "Host-facing annotations for this node. A host may honor, clamp, or ignore any hint; unlike params, hints never affect the node's input/output types or the workflow's result."
+        },
+        "id": {
+          "description": "The ID of the node, which must be unique within the workflow.",
+          "title": "Id",
+          "type": "string"
+        },
+        "max_retries": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The maximum number of retries after a transient failure. Overrides the node type and execution defaults when set; zero disables retries.",
+          "title": "Max Retries"
+        },
+        "params": {
+          "$ref": "#/$defs/ElementParams",
+          "description": "Any parameters for the node which are independent of the workflow inputs. May affect what inputs are accepted by the node."
+        },
+        "type": {
+          "description": "The type of the node, which should be a literal string for discriminating concrete subclasses. Used to determine which node class to load.",
+          "title": "Type",
+          "type": "string"
+        },
+        "version": {
+          "description": "The resolved node version. Export must pin latest before sharing.",
+          "pattern": "^\\d+\\.\\d+\\.\\d+$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "params",
+        "type",
+        "version"
+      ],
+      "title": "UnfoldJoinNode",
+      "type": "object"
+    },
+    "UnfoldNextNode": {
+      "additionalProperties": true,
+      "properties": {
+        "hints": {
+          "$ref": "#/$defs/Hints",
+          "description": "Host-facing annotations for this node. A host may honor, clamp, or ignore any hint; unlike params, hints never affect the node's input/output types or the workflow's result."
+        },
+        "id": {
+          "description": "The ID of the node, which must be unique within the workflow.",
+          "title": "Id",
+          "type": "string"
+        },
+        "max_retries": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The maximum number of retries after a transient failure. Overrides the node type and execution defaults when set; zero disables retries.",
+          "title": "Max Retries"
+        },
+        "params": {
+          "$ref": "#/$defs/UnfoldParams",
+          "description": "Any parameters for the node which are independent of the workflow inputs. May affect what inputs are accepted by the node."
+        },
+        "type": {
+          "description": "The type of the node, which should be a literal string for discriminating concrete subclasses. Used to determine which node class to load.",
+          "title": "Type",
+          "type": "string"
+        },
+        "version": {
+          "description": "The resolved node version. Export must pin latest before sharing.",
+          "pattern": "^\\d+\\.\\d+\\.\\d+$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "params",
+        "type",
+        "version"
+      ],
+      "title": "UnfoldNextNode",
+      "type": "object"
+    },
+    "UnfoldNode": {
+      "additionalProperties": true,
+      "properties": {
+        "hints": {
+          "$ref": "#/$defs/Hints",
+          "description": "Host-facing annotations for this node. A host may honor, clamp, or ignore any hint; unlike params, hints never affect the node's input/output types or the workflow's result."
+        },
+        "id": {
+          "description": "The ID of the node, which must be unique within the workflow.",
+          "title": "Id",
+          "type": "string"
+        },
+        "max_retries": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The maximum number of retries after a transient failure. Overrides the node type and execution defaults when set; zero disables retries.",
+          "title": "Max Retries"
+        },
+        "params": {
+          "$ref": "#/$defs/UnfoldParams",
+          "description": "Any parameters for the node which are independent of the workflow inputs. May affect what inputs are accepted by the node."
+        },
+        "type": {
+          "description": "The type of the node, which should be a literal string for discriminating concrete subclasses. Used to determine which node class to load.",
+          "title": "Type",
+          "type": "string"
+        },
+        "version": {
+          "description": "The resolved node version. Export must pin latest before sharing.",
+          "pattern": "^\\d+\\.\\d+\\.\\d+$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "params",
+        "type",
+        "version"
+      ],
+      "title": "UnfoldNode",
+      "type": "object"
+    },
+    "UnfoldParams": {
+      "additionalProperties": false,
+      "properties": {
+        "max_iterations": {
+          "$ref": "#/$defs/IntegerValue",
+          "description": "The maximum number of step executions allowed.",
+          "minimum": 1,
+          "title": "Maximum Iterations"
+        },
+        "truncate": {
+          "$ref": "#/$defs/BooleanValue",
+          "default": false,
+          "description": "The choice to return generated items when the iteration limit is reached before completion.",
+          "title": "Truncate"
+        },
+        "workflow": {
+          "$ref": "#/$defs/WorkflowValue",
+          "description": "The step workflow that produces items, a next seed, and a completion flag.",
+          "title": "Workflow"
+        }
+      },
+      "required": [
+        "workflow",
+        "max_iterations"
+      ],
+      "title": "UnfoldParams",
+      "type": "object"
     },
     "UnionValueSchema": {
       "additionalProperties": true,
@@ -4223,6 +6372,20 @@
           "title": "Id",
           "type": "string"
         },
+        "max_retries": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The maximum number of retries after a transient failure. Overrides the node type and execution defaults when set; zero disables retries.",
+          "title": "Max Retries"
+        },
         "params": {
           "$ref": "#/$defs/Empty",
           "description": "Any parameters for the node which are independent of the workflow inputs. May affect what inputs are accepted by the node."
@@ -4258,6 +6421,20 @@
           "title": "Id",
           "type": "string"
         },
+        "max_retries": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The maximum number of retries after a transient failure. Overrides the node type and execution defaults when set; zero disables retries.",
+          "title": "Max Retries"
+        },
         "params": {
           "$ref": "#/$defs/Empty",
           "description": "Any parameters for the node which are independent of the workflow inputs. May affect what inputs are accepted by the node."
@@ -4292,6 +6469,20 @@
           "description": "The ID of the node, which must be unique within the workflow.",
           "title": "Id",
           "type": "string"
+        },
+        "max_retries": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The maximum number of retries after a transient failure. Overrides the node type and execution defaults when set; zero disables retries.",
+          "title": "Max Retries"
         },
         "params": {
           "$ref": "#/$defs/Empty",
@@ -4365,6 +6556,55 @@
       "x-value-type": "ValueSchemaValue"
     },
     "ValueType": {},
+    "VarianceNode": {
+      "additionalProperties": true,
+      "properties": {
+        "hints": {
+          "$ref": "#/$defs/Hints",
+          "description": "Host-facing annotations for this node. A host may honor, clamp, or ignore any hint; unlike params, hints never affect the node's input/output types or the workflow's result."
+        },
+        "id": {
+          "description": "The ID of the node, which must be unique within the workflow.",
+          "title": "Id",
+          "type": "string"
+        },
+        "max_retries": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The maximum number of retries after a transient failure. Overrides the node type and execution defaults when set; zero disables retries.",
+          "title": "Max Retries"
+        },
+        "params": {
+          "$ref": "#/$defs/PopulationParams",
+          "description": "Any parameters for the node which are independent of the workflow inputs. May affect what inputs are accepted by the node."
+        },
+        "type": {
+          "description": "The type of the node, which should be a literal string for discriminating concrete subclasses. Used to determine which node class to load.",
+          "title": "Type",
+          "type": "string"
+        },
+        "version": {
+          "description": "The resolved node version. Export must pin latest before sharing.",
+          "pattern": "^\\d+\\.\\d+\\.\\d+$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "type",
+        "version"
+      ],
+      "title": "VarianceNode",
+      "type": "object"
+    },
     "Workflow": {
       "properties": {
         "edges": {
@@ -4397,10 +6637,96 @@
       "title": "Workflow",
       "type": "object"
     },
+    "WorkflowSequenceParams": {
+      "additionalProperties": false,
+      "properties": {
+        "workflow": {
+          "$ref": "#/$defs/WorkflowValue",
+          "description": "The workflow to run for each item.",
+          "title": "Workflow"
+        }
+      },
+      "required": [
+        "workflow"
+      ],
+      "title": "WorkflowSequenceParams",
+      "type": "object"
+    },
     "WorkflowValue": {
       "$ref": "#/$defs/Workflow",
       "title": "WorkflowValue",
       "x-value-type": "WorkflowValue"
+    },
+    "ZipNode": {
+      "additionalProperties": true,
+      "properties": {
+        "hints": {
+          "$ref": "#/$defs/Hints",
+          "description": "Host-facing annotations for this node. A host may honor, clamp, or ignore any hint; unlike params, hints never affect the node's input/output types or the workflow's result."
+        },
+        "id": {
+          "description": "The ID of the node, which must be unique within the workflow.",
+          "title": "Id",
+          "type": "string"
+        },
+        "max_retries": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The maximum number of retries after a transient failure. Overrides the node type and execution defaults when set; zero disables retries.",
+          "title": "Max Retries"
+        },
+        "params": {
+          "$ref": "#/$defs/ZipParams",
+          "description": "Any parameters for the node which are independent of the workflow inputs. May affect what inputs are accepted by the node."
+        },
+        "type": {
+          "description": "The type of the node, which should be a literal string for discriminating concrete subclasses. Used to determine which node class to load.",
+          "title": "Type",
+          "type": "string"
+        },
+        "version": {
+          "description": "The resolved node version. Export must pin latest before sharing.",
+          "pattern": "^\\d+\\.\\d+\\.\\d+$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "params",
+        "type",
+        "version"
+      ],
+      "title": "ZipNode",
+      "type": "object"
+    },
+    "ZipParams": {
+      "additionalProperties": false,
+      "properties": {
+        "first_schema": {
+          "$ref": "#/$defs/ValueSchemaValue",
+          "description": "The value schema of each item in the first sequence.",
+          "title": "First Schema"
+        },
+        "second_schema": {
+          "$ref": "#/$defs/ValueSchemaValue",
+          "description": "The value schema of each item in the second sequence.",
+          "title": "Second Schema"
+        }
+      },
+      "required": [
+        "first_schema",
+        "second_schema"
+      ],
+      "title": "ZipParams",
+      "type": "object"
     }
   },
   "$id": "https://raw.githubusercontent.com/aceteam-ai/workflow-engine/main/schema/values.schema.json",
@@ -4450,6 +6776,9 @@
     },
     {
       "$ref": "#/$defs/PDFFileValue"
+    },
+    {
+      "$ref": "#/$defs/QuantileInterpolationValue"
     },
     {
       "$ref": "#/$defs/RoundingModeValue"

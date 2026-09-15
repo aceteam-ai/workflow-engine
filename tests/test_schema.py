@@ -6,8 +6,8 @@ Tests two sets of functionalities:
 2. that we can manually write JSON Schemas that will turn into the correct Value
    classes when .to_value_cls() is called on them.
 3. that the aliasing system (e.g. { "x-value-type": "StringValue" } -> StringValue)
-   works for all non-generic Value classes. { "title": "..." } also works as a
-   backwards-compatible fallback.
+   works for all non-generic Value classes. Titles are display metadata and do
+   not participate in registered type resolution.
 
 In this file we follow the convention of using T for the expected type and U for
 the type returned by .to_value_cls().

@@ -107,6 +107,35 @@ Notes:
   a `Result` err arm, each with a default `error_class` and a description.
   It is documentation only, not wire-enforced: a name absent from the list is
   still a valid `ResultError.name`, and adding a name is not a schema change.
+- To publish a stable error name, pass `name=` at the raise site:
+
+  ```python
+  raise NodeException.for_user(
+      "provider throttled the request",
+      node=self,
+      error_class=ErrorClass.RATE_LIMIT,
+      name="UpstreamRateLimited",
+  ) from exc
+  ```
+
+  `name=` is accepted by `WorkflowException`, `NodeException`, and
+  `ShouldRetry` (directly and through every `for_user`/`for_builder`/
+  `for_operator`/`for_engineer` classmethod). It survives `raise ... from
+  ...`: `result_error_from_exception` (`execution/boundary.py`) walks the
+  `__cause__` chain outward-in, starting at the raised exception, and takes
+  the first explicit `name` it finds, so a named exception that a generic
+  wrapper re-raises still reaches the wire under the author's name. Pair a
+  chosen name with a matching `DeclaredError` entry so the declaration and
+  the raise site say the same string; `name` is a plain string, not a class,
+  so it also works for a name chosen dynamically at runtime (e.g. from a
+  parameter), which a class-based channel cannot express.
+- `name=""` raises `ValueError` at construction; omit the argument (leave it
+  `None`) instead. When nothing in the cause chain sets an explicit name,
+  the resolver falls back to today's behavior: the type name of the root
+  cause (the deepest exception reachable by following `__cause__`, or
+  wherever a self-referential cause cycle was detected and stopped).
+  Declarations remain optional and non-exhaustive; arbitrary runtime
+  failures stay valid without a `name=` or a declaration.
 - Access parameters inside `run` via `self.params`.
 - `version` is a semantic version — see [Node versioning](#node-versioning).
 

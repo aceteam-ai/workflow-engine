@@ -16,6 +16,16 @@ Value types serialize to JSON Schema via `to_value_schema()`. Most Value types (
 
 4. **Composite def IDs**: For types nested beyond one level under `model_json_schema()` (e.g. `StringMapValue[SequenceValue[StringMapValue[IntegerValue]]]`), Pydantic generates composite def IDs such as `SequenceValue_StringMapValue_IntegerValue__`. These IDs are internal to that schema and do **not** correspond to any registry entry.
 
+### Registered identity and additional constraints
+
+Resolution always checks `x-value-type` before structural reconstruction, even when the schema includes extra keywords. The registered class's own published constraints and metadata are intrinsic: a ticket ID with `x-resource-type: ticket`, or a percentage type with `minimum: 0` and `maximum: 100`, resolves to that exact class. A changed title, description, or structural `type` does not override explicit identity. The Python spelling `value_type` is also accepted; supplying both identity spellings with different values is an error.
+
+Additional constraints produce an unregistered subclass of the identified type, preserving its custom casts, serializers, and validators. For example, adding `maximum: 50` to the percentage schema keeps its minimum of zero and rejects values above fifty. Changing the maximum to 200 does not relax the registered class's maximum of 100. Numeric bounds and `multipleOf`, string lengths, `pattern` and `enum`, and collection sizes are enforced after the inherited root validators. Unknown extra keywords remain schema metadata; they do not acquire validation semantics.
+
+When two inherited and added constraints cannot fit in a single keyword (such as two patterns), the emitted schema retains their intersection in `allOf`. The resolver enforces these constraint-only conjunctions when rebuilding the class. Unsupported conjunction clauses raise an error rather than silently discarding a restriction. This does not implement arbitrary JSON Schema composition.
+
+Keep recursive `$defs` when storing schemas. An unstamped legacy recursive definition raises a `ValueError` naming the repeated definition and asking for regeneration. Newly generated explicit identities resolve without unfolding the recursion.
+
 ### Limitation: deeply nested generics require $defs when using model_json_schema() directly
 
 This limitation is about calling Pydantic's `model_json_schema()` directly (as `_roundtrip_without_defs` in `tests/test_schema_roundtrip.py` does) and stripping `$defs`; it does not apply to `to_value_schema()`, which never relies on Pydantic's def IDs for delegated containers (see above).
@@ -184,7 +194,35 @@ result = await value.cast_to(FloatValue)  # FloatValue(42.0)
 | `DataValue[D]`      | `StringMapValue[V]` | If all fields can cast to `V` |
 | `StringMapValue[V]` | `DataValue[D]`      | Runtime field matching        |
 
-The full casting graph is visualized in the repository: [typecast_graph.svg](typecast_graph.svg).
+The [casting graph](typecast_graph.svg) shows registered concrete types only.
+An edge means a cast is available; validation of a particular value can still
+fail. Generic families are omitted from the picture because their edges depend
+on their parameters; their rules follow below.
+
+### Generic cast rules
+
+| Family | Assignment rule |
+| ------ | --------------- |
+| `Result[S]` → `Result[T]` | Only when `S` can cast to `T`. The err payload passes through unchanged. No direct assignment to strings, JSON, or another non-Result type. |
+| `SequenceValue[S]` → `SequenceValue[T]` | Only when `S` can cast to `T`; cast each element, preserving order. |
+| `StringMapValue[S]` → `StringMapValue[T]` | Only when `S` can cast to `T`; cast each value, preserving keys. |
+| `DataValue[S]` → `DataValue[T]` | Every required target field must exist in the source and every shared field must cast to its target type. Optional target fields can use defaults; runtime record validation still applies. |
+| `DataValue[D]` → `StringMapValue[V]` | Every source field must cast to `V`. |
+| `StringMapValue[V]` → `DataValue[D]` | Available statically; field conversion and required-field validation occur at runtime and may fail. |
+| `ModelValue[S]` → `ModelValue[T]` | Both parameters must be Pydantic model classes; cross-model casts serialize and validate against `T` at runtime. |
+
+For example, `SequenceValue[IntegerValue]` can feed
+`SequenceValue[FloatValue]`, but `SequenceValue[Result[IntegerValue]]` cannot:
+it can feed `SequenceValue[Result[FloatValue]]` instead. The same item-type rule
+applies to maps. It never silently unwraps a Result element.
+
+Containers, records and ModelValue retain the base casts to StringValue and
+JSONValue. Those whole-container casts are distinct from element assignment
+and serialize the container as a whole, including any Result tags. JSONValue
+also casts to sequences, maps and ModelValue through runtime validation.
+The graph therefore cannot be read as a complete catalogue of generic edges.
+Use `Source.can_cast_to(Target)` with both types fully parameterized for the
+actual static decision, and expect data-dependent validation during casting.
 
 ## Result Values
 
@@ -220,7 +258,7 @@ err.unwrap_err()     # ResultError(...)
 | Field         | Type              | Notes                                                     |
 | ------------- | ----------------- | ---------------------------------------------------------- |
 | `error_class` | `ErrorClassValue` | Closed vocabulary: `timeout`, `unreachable`, `rate_limit`, `validation`, `permission`, `systemic`. |
-| `name`        | `StringValue`     | Short, machine-readable name of the error.                 |
+| `name`        | `StringValue`     | The author-chosen `name` when a raise site sets one (see `docs/authoring-nodes.md`); otherwise the type name of the root cause. |
 | `message`     | `StringValue`     | User-facing description of what went wrong.                |
 | `node_id`     | `StringValue`     | The id of the node that produced the error (provenance).   |
 

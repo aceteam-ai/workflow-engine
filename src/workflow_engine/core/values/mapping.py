@@ -114,7 +114,8 @@ def cast_string_map_to_string_map(
     ) -> target_type:  # pyright: ignore[reportInvalidTypeForm]
         assert isinstance(value, StringMapValue)
         # Cast all values in parallel
-        keys, values = zip(*value.items())
+        keys = tuple(value.root)
+        values = value.root.values()
         casted_values = await gather(
             cast(source_value_type, v).cast_to(target_value_type, context=context)
             for v in values

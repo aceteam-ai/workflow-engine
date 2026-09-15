@@ -138,3 +138,49 @@ def test_result_declines_casting_to_string_or_json():
     """
     assert not Result.can_cast_to(StringValue)
     assert not Result.can_cast_to(JSONValue)
+
+
+def test_missing_dot_fails_with_installation_instruction(monkeypatch):
+    import pytest
+
+    monkeypatch.setattr(generator.shutil, "which", lambda name: None)
+    with pytest.raises(RuntimeError, match="Install Graphviz"):
+        generator.render_graph(generator.build_typecast_graph({}))
+
+
+def test_committed_svg_is_current_and_missing_nodes_are_rejected(tmp_path):
+    """Run in a clean process so test-only Value registrations cannot leak in."""
+    import subprocess
+
+    checked = subprocess.run(
+        [sys.executable, str(_SCRIPT_PATH), "--check"],
+        capture_output=True,
+        text=True,
+    )
+    assert checked.returncode == 0, checked.stdout + checked.stderr
+
+    stale_path = tmp_path / "stale.svg"
+    stale_path.write_text(
+        generator.OUTPUT_PATH.read_text().replace(
+            "<title>DateValue</title>", "<title>MissingDateValue</title>"
+        )
+    )
+    stale = subprocess.run(
+        [sys.executable, str(_SCRIPT_PATH), "--check", "--output", str(stale_path)],
+        capture_output=True,
+        text=True,
+    )
+    assert stale.returncode == 1
+    assert "Typecast diagram is stale" in stale.stderr
+
+
+def test_caption_names_every_omitted_generic():
+    for name in (
+        "Result",
+        "SequenceValue",
+        "StringMapValue",
+        "DataValue",
+        "ModelValue",
+    ):
+        assert name in generator.CAPTION
+    assert "docs/values.md#generic-cast-rules" in generator.CAPTION

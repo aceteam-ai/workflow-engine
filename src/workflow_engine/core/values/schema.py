@@ -6,8 +6,12 @@ Pydantic for Value subclasses.
 
 from __future__ import annotations
 
+import inspect
 import logging
 from collections.abc import Mapping, Sequence
+from contextvars import ContextVar
+from decimal import Decimal
+from enum import Enum
 from functools import cached_property
 from typing import Annotated, Any, ClassVar, Final, Literal, Self, TypeVar
 
@@ -16,7 +20,9 @@ from pydantic import (
     ConfigDict,
     Field,
     SerializerFunctionWrapHandler,
+    TypeAdapter,
     ValidationError,
+    field_validator,
     model_serializer,
     model_validator,
 )
@@ -77,49 +83,139 @@ _MAP_FIELD_MAP: dict[str, str] = {
 }
 
 
+def _enum_equal(value: Any, candidate: Any) -> bool:
+    if isinstance(value, bool) or isinstance(candidate, bool):
+        return value is candidate
+    if isinstance(value, (int, float, Decimal)) and isinstance(
+        candidate, (int, float, Decimal)
+    ):
+        return Decimal(str(value)) == Decimal(str(candidate))
+    return value == candidate
+
+
+def _additional_constraint_validators(
+    field_map: dict[str, str],
+    extras: Mapping[str, Any],
+    *,
+    in_conjunction: bool = False,
+) -> list[tuple[TypeAdapter[Any] | None, Sequence[Any] | None]]:
+    """Compile constraints, including conjunctions emitted for inherited bounds.
+
+    Arbitrary JSON Schema composition is not implemented here. Reject an
+    unsupported allOf clause instead of silently dropping part of a constraint.
+    """
+    if in_conjunction:
+        unsupported = {
+            key
+            for key in extras
+            if key not in field_map
+            and key not in {"enum", "allOf", "title", "description", "$comment"}
+            and not key.startswith("x-")
+        }
+        if unsupported:
+            raise ValueError(
+                f"Unsupported allOf constraint keywords: {', '.join(sorted(unsupported))}"
+            )
+    field_kwargs = {
+        field_map[key]: value for key, value in extras.items() if key in field_map
+    }
+    adapter = None
+    if field_kwargs:
+        # Any's generic multiple_of validator uses Python's %, which is both
+        # inexact for floats and invalid for Decimal % float. Decimal's native
+        # Pydantic validator preserves the wire number's intended decimal value.
+        adapter = (
+            TypeAdapter(Annotated[Decimal, Field(**field_kwargs)])
+            if field_map is _NUMERIC_FIELD_MAP
+            else TypeAdapter(Annotated[Any, Field(**field_kwargs)])
+        )
+    enum = extras.get("enum")
+    if enum is not None and not isinstance(enum, (list, tuple)):
+        raise ValueError("enum must be a list of allowed values")
+    validators: list[tuple[TypeAdapter[Any] | None, Sequence[Any] | None]] = (
+        [(adapter, enum)] if adapter is not None or enum is not None else []
+    )
+    if "allOf" in extras:
+        conjunction = extras["allOf"]
+        if not isinstance(conjunction, (list, tuple)):
+            raise ValueError("allOf must be a list of constraint objects")
+        for clause in conjunction:
+            if not isinstance(clause, Mapping):
+                raise ValueError("allOf must contain constraint objects")
+            validators.extend(
+                _additional_constraint_validators(
+                    field_map, clause, in_conjunction=True
+                )
+            )
+    return validators
+
+
 def _build_constrained_cls(
     base_cls: type,
     field_map: dict[str, str],
     extras: dict[str, Any],
 ) -> type:
-    """
-    Return a constrained subclass of *base_cls*, or *base_cls* itself if there
-    is nothing to add.
+    """Constrain the identified class while retaining its validators and casts.
 
-    Known JSON Schema keywords (per *field_map*) become Pydantic Field
-    constraints on the ``root`` annotation, so they are both enforced at
-    runtime and reflected correctly in the schema.  Anything not in the map
-    is passed through as ``json_schema_extra`` (schema-only, no enforcement).
+    Validate additional constraints after the inherited root validators. Replacing
+    the root annotation would discard its metadata or overwrite an intrinsic bound
+    with a weaker one. Unknown keywords remain schema-only metadata.
     """
     if not extras:
         return base_cls
 
-    field_kwargs: dict[str, Any] = {}
-    schema_extras: dict[str, Any] = {}
-    for key, value in extras.items():
-        if key in field_map:
-            field_kwargs[field_map[key]] = value
-        else:
-            schema_extras[key] = value
+    validators = _additional_constraint_validators(field_map, extras)
 
-    root_annotation = base_cls.model_fields["root"].annotation
-    if field_kwargs:
-        root_annotation = Annotated[root_annotation, Field(**field_kwargs)]
+    def validate_constraints(cls: type, value: Any) -> Any:
+        comparable = value.value if isinstance(value, Enum) else value
+        for adapter, enum in validators:
+            if adapter is not None:
+                adapter.validate_python(comparable)
+            if enum is not None and not any(
+                _enum_equal(comparable, item) for item in enum
+            ):
+                raise ValueError(f"Value must be one of {enum!r}")
+        return value
 
-    # Give the subclass a unique title so that multiple constrained variants of
-    # the same base type (e.g. two FloatValue fields with different bounds in a
-    # DataValue) produce distinct $defs keys instead of colliding.
-    digest = json_digest(extras)
-    unique_title = f"{base_cls.__name__}_{digest}"
+    inherited_extras = base_cls.model_config.get("json_schema_extra")
 
-    config_updates: dict[str, Any] = {"title": unique_title}
-    if schema_extras:
-        config_updates["json_schema_extra"] = schema_extras
+    def publish_constraints(schema: dict[str, Any], model: type) -> None:
+        if isinstance(inherited_extras, Mapping):
+            schema.update(inherited_extras)
+        elif callable(inherited_extras):
+            if len(inspect.signature(inherited_extras).parameters) > 1:
+                inherited_extras(schema, model)
+            else:
+                inherited_extras(schema)
+        # The serialized schema must describe both the original and additional
+        # constraints, including two different patterns or multipleOf values.
+        inherited = {
+            key: schema[key]
+            for key, value in extras.items()
+            if (key in field_map or key == "enum")
+            and key in schema
+            and schema[key] != value
+        }
+        conjunctions = list(schema.get("allOf", []))
+        schema.update(extras)
+        for constraint in [
+            *schema.get("allOf", []),
+            *([inherited] if inherited else []),
+        ]:
+            if constraint not in conjunctions:
+                conjunctions.append(constraint)
+        if conjunctions:
+            schema["allOf"] = conjunctions
+
+    unique_title = f"{base_cls.__name__}_{json_digest(extras)}"
     namespace: dict[str, Any] = {
-        "__annotations__": {"root": root_annotation},
-        "model_config": base_cls.model_config | ConfigDict(**config_updates),
+        "model_config": base_cls.model_config
+        | ConfigDict(title=unique_title, json_schema_extra=publish_constraints),
     }
-
+    if validators:
+        namespace[f"_validate_schema_constraints_{json_digest(extras)}"] = (
+            field_validator("root")(classmethod(validate_constraints))
+        )
     return type(base_cls.__name__, (base_cls,), namespace, register=False)
 
 
@@ -233,8 +329,11 @@ class BaseValueSchema(ImmutableBaseModel):
         if "$defs" not in data and "defs" in data:
             data["$defs"] = data.pop("defs")
         # Accept "x-value-type" (wire name) and map it to the Python field name.
-        if "value_type" not in data and "x-value-type" in data:
-            data["value_type"] = data.pop("x-value-type")
+        if "x-value-type" in data:
+            value_type = data.pop("x-value-type")
+            if "value_type" in data and data["value_type"] != value_type:
+                raise ValueError("Conflicting value_type and x-value-type identities")
+            data["value_type"] = value_type
         return data
 
     @model_serializer(mode="wrap")
@@ -284,23 +383,27 @@ class BaseValueSchema(ImmutableBaseModel):
     ) -> ValueType:
         """
         Resolves this schema to a Pydantic class.
-        If the x-value-type field matches a registered Value class and the
-        schema carries no additional fields, that class is returned directly.
-        This lets users provide { "x-value-type": "CustomValue" } as a
-        shorthand for the entire CustomValue schema.
-
-        If extra fields are present alongside x-value-type (e.g. constraints
-        such as ``minimum`` or ``maxLength``), the schema is built normally so
-        that a constrained subclass is produced and the constraints are not lost.
+        Always consult explicit registry identity first. The class's own published
+        constraints and metadata do not change its identity. Additional constraints
+        produce a subclass of that registered class, preserving its validators,
+        serializers and casts; unknown extras are retained as schema metadata.
 
         References, if any, are resolved using self.defs first, then any
         extra_defs in order of decreasing precedence.
         """
-        if not self.model_extra:
-            value_cls = ValueRegistry.DEFAULT.load_value(self)
-            if value_cls is not None:
-                return value_cls
-        return self.build_value_cls(*extra_defs)
+        value_cls = ValueRegistry.DEFAULT.load_value(self)
+        if value_cls is None:
+            return self.build_value_cls(*extra_defs)
+        published, intrinsic = _registered_constraints(value_cls)
+        _, declared = _schema_constraints(self, *extra_defs)
+        residual = {
+            key: value
+            for key, value in declared.items()
+            if key not in intrinsic or intrinsic[key] != value
+        }
+        return _build_constrained_cls(
+            value_cls, _constraint_field_map(published), residual
+        )
 
     def build_value_cls(
         self,
@@ -434,6 +537,8 @@ class StringValueSchema(BaseValueSchema):
         extras = dict(self.model_extra or {})
         if self.pattern is not None:
             extras["pattern"] = self.pattern
+        if self.enum is not None:
+            extras["enum"] = list(self.enum)
         return _build_constrained_cls(StringValue, _STRING_FIELD_MAP, extras)
 
 
@@ -620,8 +725,80 @@ class ReferenceValueSchema(BaseValueSchema):
     ) -> ValueType:
         for defs in (self.defs, *extra_defs):
             if self.id in defs:
-                return defs[self.id].to_value_cls(self.defs, *extra_defs)
+                target = defs[self.id]
+                key = (id(target), self.id)
+                stack = _REFERENCE_STACK.get()
+                if key in stack:
+                    raise ValueError(
+                        f"Cyclic schema reference to definition {self.id!r}; "
+                        "regenerate legacy schemas with explicit x-value-type identities"
+                    )
+                token = _REFERENCE_STACK.set((*stack, key))
+                try:
+                    return target.to_value_cls(self.defs, *extra_defs)
+                finally:
+                    _REFERENCE_STACK.reset(token)
         raise KeyError(f"Schema definition for {self.id} not found")
+
+
+_REFERENCE_STACK: ContextVar[tuple[tuple[int, str], ...]] = ContextVar(
+    "value_schema_reference_stack", default=()
+)
+
+
+def _schema_constraints(
+    schema: BaseValueSchema, *extra_defs: Mapping[str, ValueSchema]
+) -> tuple[BaseValueSchema, dict[str, Any]]:
+    """Read root constraints, including those behind an enum/model wrapper ref."""
+    shapes = [schema]
+    scopes = (schema.defs, *extra_defs)
+    seen = {id(schema)}
+    while isinstance(schema, ReferenceValueSchema):
+        target = next((defs[schema.id] for defs in scopes if schema.id in defs), None)
+        if target is None or id(target) in seen:
+            break
+        seen.add(id(target))
+        schema = target
+        shapes.append(schema)
+        scopes = (schema.defs, *scopes)
+    constraints = {}
+    for shape in reversed(shapes):
+        wire = shape.model_dump(
+            mode="json", include=set(shape.model_extra or {}) | {"pattern", "enum"}
+        )
+        constraints.update({key: wire[key] for key in shape.model_extra or {}})
+        if isinstance(shape, StringValueSchema):
+            for key in ("pattern", "enum"):
+                if wire.get(key) is not None:
+                    constraints[key] = wire[key]
+    return schema, constraints
+
+
+_REGISTERED_CONSTRAINTS: dict[ValueType, tuple[BaseValueSchema, dict[str, Any]]] = {}
+
+
+def _registered_constraints(
+    value_cls: ValueType,
+) -> tuple[BaseValueSchema, dict[str, Any]]:
+    # Value classes are immutable contracts. Schema generation never consults
+    # the registry, so this does not freeze it during class-definition time.
+    if value_cls not in _REGISTERED_CONSTRAINTS:
+        _REGISTERED_CONSTRAINTS[value_cls] = _schema_constraints(
+            value_cls.to_value_schema()
+        )
+    return _REGISTERED_CONSTRAINTS[value_cls]
+
+
+def _constraint_field_map(schema: BaseValueSchema) -> dict[str, str]:
+    if isinstance(schema, (IntegerValueSchema, FloatValueSchema)):
+        return _NUMERIC_FIELD_MAP
+    if isinstance(schema, StringValueSchema):
+        return _STRING_FIELD_MAP
+    if isinstance(schema, SequenceValueSchema):
+        return _SEQUENCE_FIELD_MAP
+    if isinstance(schema, StringMapValueSchema):
+        return _MAP_FIELD_MAP
+    return {}
 
 
 type ValueSchema = (

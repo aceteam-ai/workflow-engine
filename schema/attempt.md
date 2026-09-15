@@ -138,7 +138,7 @@ failing exception:
 | `ResultError` field | source |
 | --- | --- |
 | `node_id` | the failing member's own flat id |
-| `name` | the class name of the root cause (the exception's `__cause__` chain walked to its end) |
+| `name` | the author-chosen `name` set at a raise site (the first one found walking the `__cause__` chain outward-in, starting at the failing exception itself), if any; otherwise the root cause's class name |
 | `message` | the exception's own message if it is already `USER` level; otherwise `"An internal error occurred"` |
 | `error_class` | the exception's own `error_class` if set, otherwise `"systemic"` |
 
