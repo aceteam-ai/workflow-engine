@@ -137,3 +137,26 @@ Errors during execution are collected per-node in a `WorkflowErrors` object. The
 - **Parallel (CONTINUE)**: Runs all possible nodes, collects all errors
 
 Nodes downstream of a failed node are skipped. The engine returns both the errors and any partial output that was successfully computed.
+
+
+## Typed drafts and executable workflows
+
+`Workflow.resolve(context)` and `WorkflowEngine.resolve(workflow)` return a
+`ResolvedWorkflow`: concrete node types and checked existing edges, with
+required ports allowed to remain unwired. Editors need this stage to add a node
+before connecting its inputs. A resolved draft has I/O type information but no
+scheduler methods, so it does not claim to be executable.
+
+`validate` returns a `ValidatedWorkflow` only after every required input on
+inner nodes and the output node has an incoming edge. The input node receives
+its values from the execution caller instead. Defaults and default factories
+make an edge optional; nullable Value types still need edges unless they have
+a default. Deep source paths satisfy the corresponding top-level target port.
+`WorkflowEngine.execute` always performs full validation, even when given a
+resolved draft or a previously validated object.
+
+The split is deliberate rather than a permissive flag on `validate` (#95): an
+incomplete graph must not masquerade as a `ValidatedWorkflow`. Resolution
+continues to invoke each node's own dynamic schema validation. For example,
+Attempt and ForEach still require their nested workflow params to validate;
+resolving an outer draft does not disable those nested contracts.

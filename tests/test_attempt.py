@@ -1249,7 +1249,10 @@ class TestBlockedNotReReadied:
             input_node=engine.create_input_node(),
             inner_nodes=[succeed, blocked, failing],
             output_node=engine.create_output_node(final=StringValue),
-            edges=[edge("c", "value", "m", "value")],
+            edges=[
+                edge("c", "value", "m", "value"),
+                edge("m", "value", "output", "final"),
+            ],
         )
         attempt_node = engine.create_node(
             AttemptNode, id="attempt", params={"workflow": w}

@@ -7,6 +7,7 @@ from typing import Any, ClassVar, Self, TypeVar
 
 from ..core import (
     Caster,
+    ErrorClass,
     ExecutionContext,
     File,
     JSONValue,
@@ -49,6 +50,7 @@ async def json_to_csv(value: JSONValue, context: ExecutionContext) -> CSVFileVal
     if not isinstance(data, (Mapping, Sequence)):
         raise WorkflowException.for_user(
             "JSON value must be a mapping or sequence to be cast to CSV",
+            error_class=ErrorClass.VALIDATION,
         )
 
     if isinstance(data, Mapping):
@@ -64,6 +66,7 @@ async def json_to_csv(value: JSONValue, context: ExecutionContext) -> CSVFileVal
         else:
             raise WorkflowException.for_user(
                 f"Object {row} is not a mapping or sequence, need mappings or sequences to write to CSV",
+                error_class=ErrorClass.VALIDATION,
             )
 
     data_hash = md5(str(rows).encode()).hexdigest()
@@ -122,6 +125,7 @@ def sequence_to_csv(
             if not isinstance(row, Mapping):
                 raise WorkflowException.for_user(
                     f"Object {obj} is not a mapping, need mappings to write to CSV",
+                    error_class=ErrorClass.VALIDATION,
                 )
             rows.append(row)
 

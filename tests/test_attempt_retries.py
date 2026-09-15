@@ -13,6 +13,7 @@ from workflow_engine import (
     BooleanValue,
     Data,
     DataMapping,
+    DeclaredError,
     Edge,
     Empty,
     ErrorClass,
@@ -20,6 +21,7 @@ from workflow_engine import (
     ExecutionContext,
     IntegerValue,
     Node,
+    NodeException,
     NodeTypeInfo,
     Result,
     ResultError,
@@ -541,3 +543,125 @@ async def test_parallel_retry_drains_and_repeats_successful_inner_work():
     assert result_value(await run(engine, workflow, context)).is_ok()
     assert context.slow_finished == {"attempt/try_0", "attempt/next/try_1"}
     assert len(context.retry_events) == 1
+
+
+class UnclassifiedTimeoutProbeNode(BoundaryRetryProbeNode):
+    @override
+    async def run(
+        self,
+        *,
+        context: ExecutionContext,
+        input_type: type[RetryProbeData],
+        output_type: type[RetryProbeData],
+        input: RetryProbeData,
+    ) -> RetryProbeData:
+        assert isinstance(context, RetryContext)
+        context.calls[self.id] += 1
+        raise TimeoutError("provider transport timed out")
+
+
+class UnclassifiedCourtesyProbeNode(BoundaryRetryProbeNode):
+    @override
+    async def run(
+        self,
+        *,
+        context: ExecutionContext,
+        input_type: type[RetryProbeData],
+        output_type: type[RetryProbeData],
+        input: RetryProbeData,
+    ) -> RetryProbeData:
+        assert isinstance(context, RetryContext)
+        context.calls[self.id] += 1
+        raise ShouldRetry.for_user("transient blip", node=self, backoff=timedelta(0))
+
+
+class HostClassifiedTimeoutProbeNode(UnclassifiedTimeoutProbeNode):
+    # This intentionally incomplete declaration does not list transport failures.
+    TYPE_INFO: ClassVar[NodeTypeInfo] = NodeTypeInfo.from_parameter_type(
+        display_name="Host Classified Timeout Probe",
+        version="1.0.0",
+        parameter_type=Empty,
+        declared_errors=[
+            DeclaredError(
+                name="InvalidRequest",
+                error_class=ErrorClass.VALIDATION,
+                description="The request is invalid.",
+            )
+        ],
+    )
+
+    @override
+    async def run(
+        self,
+        *,
+        context: ExecutionContext,
+        input_type: type[RetryProbeData],
+        output_type: type[RetryProbeData],
+        input: RetryProbeData,
+    ) -> RetryProbeData:
+        try:
+            return await super().run(
+                context=context,
+                input_type=input_type,
+                output_type=output_type,
+                input=input,
+            )
+        except TimeoutError as error:
+            raise NodeException.for_user(
+                "Provider request timed out",
+                node=self,
+                name="UpstreamTimedOut",
+                error_class=ErrorClass.TIMEOUT,
+            ) from error
+
+
+@pytest.mark.asyncio
+async def test_timeout_exception_name_does_not_classify_a_host_failure(algorithm):
+    engine = WorkflowEngine(execution_algorithm=algorithm)
+    workflow = await build_attempt(
+        engine, params={"retries": 2}, probe=UnclassifiedTimeoutProbeNode
+    )
+    context = RetryContext()
+    error = result_value(await run(engine, workflow, context)).unwrap_err()
+    assert error.name.root == "TimeoutError"
+    assert error.error_class.root is ErrorClass.SYSTEMIC
+    assert context.calls == {"attempt/try_0/probe": 1}
+    assert context.retry_events == []
+
+
+@pytest.mark.asyncio
+async def test_unclassified_should_retry_exhausts_only_courtesy_budget(algorithm):
+    algorithm.max_retries = 1
+    engine = WorkflowEngine(execution_algorithm=algorithm)
+    workflow = await build_attempt(
+        engine, params={"retries": 2}, probe=UnclassifiedCourtesyProbeNode
+    )
+    context = RetryContext()
+    error = result_value(await run(engine, workflow, context)).unwrap_err()
+    assert error.name.root == "ShouldRetry"
+    assert error.error_class.root is ErrorClass.SYSTEMIC
+    assert context.calls == {"attempt/try_0/probe": 2}
+    assert context.courtesy_events == [("attempt/try_0/probe", 1)]
+    assert context.retry_events == []
+
+
+@pytest.mark.asyncio
+async def test_host_classification_retries_with_incomplete_error_declarations(
+    algorithm,
+):
+    engine = WorkflowEngine(execution_algorithm=algorithm)
+    workflow = await build_attempt(
+        engine, params={"retries": 2}, probe=HostClassifiedTimeoutProbeNode
+    )
+    context = RetryContext()
+    error = result_value(await run(engine, workflow, context)).unwrap_err()
+    assert error.name.root == "UpstreamTimedOut"
+    assert error.error_class.root is ErrorClass.TIMEOUT
+    assert error.node_id.root == "attempt/next/next/try_2/probe"
+    assert context.calls == {
+        "attempt/try_0/probe": 1,
+        "attempt/next/try_1/probe": 1,
+        "attempt/next/next/try_2/probe": 1,
+    }
+    assert len(context.retry_events) == 2
+    assert context.courtesy_events == []

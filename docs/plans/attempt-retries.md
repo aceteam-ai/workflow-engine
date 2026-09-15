@@ -11,6 +11,20 @@ that work may incur a charge. The engine cannot infer external billing from
 Python code or a host callback. Unknown failures remain systemic and do not
 retry by default; authors can include that class explicitly.
 
+The default classes depend on host-node classification. Built-in run paths do
+not currently emit timeout, unreachable, or rate_limit. A host must classify a
+provider failure at its raise site or in its error hook; a Python TimeoutError
+name alone still materializes as systemic. Exhausted ShouldRetry also keeps its
+actual class, which defaults to systemic: it receives courtesy retries but no
+default boundary retry after that budget runs out. The two budgets stay separate.
+
+Do not infer an impossible retry policy from absent declared_errors matches.
+Those declarations are deliberately optional and non-exhaustive, and their
+classes describe expectations rather than enforce runtime values. Rejecting on
+that basis would incorrectly reject classified failures from undeclared host
+nodes or dynamic work. The published schema and parameter description make this
+classification dependency explicit instead of introducing an unsound check.
+
 Retries compose ordinary single-shot boundaries and a runtime continuation
 node. The first child is `attempt/try_0`; later children are
 `attempt/next/try_1`, `attempt/next/next/try_2`, and so on. `retries=0` preserves

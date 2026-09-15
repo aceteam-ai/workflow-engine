@@ -98,33 +98,48 @@ This is the exact, unabridged output of `Result[FloatValue].to_value_schema().mo
   },
   "err": {
     "title": "ResultError",
-    "description": "The structured error carried by a ``Result[T]`` err arm.",
     "type": "object",
     "properties": {
       "error_class": {
         "title": "Error Class",
         "description": "The machine-readable classification of the error, from a closed vocabulary: timeout, unreachable, rate_limit, validation, permission, or systemic.",
         "type": "string",
-        "enum": ["timeout", "unreachable", "rate_limit", "validation", "permission", "systemic"]
+        "enum": [
+          "timeout",
+          "unreachable",
+          "rate_limit",
+          "validation",
+          "permission",
+          "systemic"
+        ],
+        "x-value-type": "ErrorClassValue"
       },
       "name": {
         "title": "Error Name",
         "description": "The short, machine-readable name of the error.",
-        "type": "string"
+        "type": "string",
+        "x-value-type": "StringValue"
       },
       "message": {
         "title": "Message",
         "description": "The user-facing description of what went wrong.",
-        "type": "string"
+        "type": "string",
+        "x-value-type": "StringValue"
       },
       "node_id": {
         "title": "Node ID",
         "description": "The identifier of the node that produced the error.",
-        "type": "string"
+        "type": "string",
+        "x-value-type": "StringValue"
       }
     },
     "additionalProperties": false,
-    "required": ["error_class", "name", "message", "node_id"]
+    "required": [
+      "error_class",
+      "name",
+      "message",
+      "node_id"
+    ]
   },
   "x-value-type": "Result[FloatValue]"
 }

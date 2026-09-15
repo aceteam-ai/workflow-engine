@@ -6,6 +6,7 @@ Thank you for your interest in contributing! This guide covers everything you ne
 
 ### Prerequisites
 
+- Graphviz (`dot`), required to regenerate and check the typecast diagram
 - Python 3.12+
 - [uv](https://docs.astral.sh/uv/) (recommended package manager)
 
@@ -100,6 +101,7 @@ schema, bump its version and add a migration — see
    uv run ruff check .
    uv run ruff format --check .
    uv run pyright
+   uv run python scripts/generate_typecast_graph.py --check
    uv run pytest
    ```
 4. Open a PR against `main`

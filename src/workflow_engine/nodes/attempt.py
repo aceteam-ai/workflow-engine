@@ -73,7 +73,11 @@ class AttemptParams(Params):
             ]
         ),
         title="Retry On",
-        description="The error classes that permit another run of the workflow.",
+        description=(
+            "The error classes that permit another run of the workflow. "
+            "Host nodes must classify transient failures; unclassified failures "
+            "are systemic and are excluded by default."
+        ),
     )
     allow_metered: BooleanValue = Field(
         default=BooleanValue(False),

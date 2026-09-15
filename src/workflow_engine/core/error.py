@@ -50,6 +50,14 @@ class WorkflowError(ImmutableBaseModel):
     cause: WorkflowError | str | None = Field(default=None)
     traceback: Sequence[str] | None = Field(default=None)
     error_class: ErrorClass | None = Field(default=None)
+    name: str | None = Field(
+        default=None,
+        description="The author-chosen name set at the raise site via "
+        "name=, if any. None when no raise site in the chain set one; a "
+        "host that needs to tell an explicit name from a fallback checks "
+        "this field, not ResultError.name (core/values/result.py), which "
+        "carries the same string with no such marker.",
+    )
 
     def filter(self, level: StakeholderLevel) -> Self | None:
         # remove errors that require a lower level of visibility to be seen
@@ -78,13 +86,17 @@ class WorkflowException(RuntimeError):
         level: StakeholderLevel,
         node_id: str | None = None,
         error_class: ErrorClass | None = None,
+        name: str | None = None,
     ):
+        if name == "":
+            raise ValueError("name must not be an empty string; pass None to omit it")
         super().__init__(message)
         self.timestamp = datetime.now(timezone.utc).timestamp()
         self.level = level
         self.message = message
         self.node_id = node_id
         self.error_class = error_class
+        self.name = name
 
     def dump(self) -> WorkflowError:
         return WorkflowError(
@@ -101,6 +113,7 @@ class WorkflowException(RuntimeError):
             ),
             traceback=format_exception(self),
             error_class=self.error_class,
+            name=self.name,
         )
 
     @classmethod
@@ -176,8 +189,11 @@ class NodeException(WorkflowException):
         node: "Node",
         level: StakeholderLevel,
         error_class: ErrorClass | None = None,
+        name: str | None = None,
     ):
-        super().__init__(message, level=level, node_id=node.id, error_class=error_class)
+        super().__init__(
+            message, level=level, node_id=node.id, error_class=error_class, name=name
+        )
         self.node = node
 
     @classmethod
@@ -279,6 +295,31 @@ class ShouldRetry(NodeException):
     ``result_error_from_exception`` does. A raise site that genuinely does
     not know why the attempt failed, only that it is worth retrying, should
     say so plainly rather than carry ``None`` into that policy check.
+
+    This default is deliberately kept out of the retryable set
+    ``{timeout, unreachable, rate_limit}`` that #205's boundary-level
+    ``attempt(retries=n, retry_on=...)`` policy defaults to. It would be
+    tempting to close that gap by adding ``systemic`` to that default
+    instead, so a bare ``raise ShouldRetry(...)`` is retryable "out of the
+    box." Don't: ``systemic`` is also what every catch-all exception
+    handler in the engine stamps on an arbitrary, unclassified failure
+    (``Node.__call__``, the two execution algorithms' top-level handlers).
+    Once a ``ShouldRetry`` exhausts its own node-level courtesy retries (see
+    ``RetryTracker``, which retries it unconditionally regardless of
+    ``error_class``) or a plain failure reaches a boundary directly, only
+    ``error_class`` survives into the materialized ``Result`` that
+    ``attempt``'s policy reads — the fact that it started life as a
+    ``ShouldRetry`` does not. Defaulting ``retry_on`` to include
+    ``systemic`` would therefore also make that boundary retry deterministic
+    bugs (a ``TypeError`` from a broken node body, say) by default, which is
+    exactly what a transient-only default exists to rule out. A node author
+    who wants a specific ``ShouldRetry`` site to participate in that policy
+    with the default ``retry_on`` should raise it with an explicit, accurate
+    ``error_class`` (``timeout``, ``unreachable``, or ``rate_limit``) when
+    the cause is actually known. An author who wants unclassified failures
+    to retry at a particular boundary can opt that one boundary in by
+    passing ``retry_on=["systemic", ...]`` explicitly; that is a visible,
+    per-boundary choice rather than a silent global default.
     """
 
     def __init__(
@@ -289,8 +330,11 @@ class ShouldRetry(NodeException):
         level: StakeholderLevel,
         backoff: timedelta = timedelta(seconds=1),
         error_class: ErrorClass = ErrorClass.SYSTEMIC,
+        name: str | None = None,
     ):
-        super().__init__(message, node=node, level=level, error_class=error_class)
+        super().__init__(
+            message, node=node, level=level, error_class=error_class, name=name
+        )
         self.backoff = backoff
 
 

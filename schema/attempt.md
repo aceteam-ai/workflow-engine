@@ -44,7 +44,32 @@ does) gives a workflow of type `A -> Result[B]`.
 `retry_on` selects the `error_class` values that permit a retry and defaults to
 `timeout`, `unreachable`, and `rate_limit`. Empty `retry_on` disables retry.
 Validation, permission, and unknown systemic failures are returned immediately
-unless explicitly selected. For example:
+unless explicitly selected.
+
+`retry_on` matches the materialized `ResultError.error_class`, not the exception's
+name, message, or Python type. Host nodes performing network/provider work must
+set `error_class` at the raise site (or the host must classify it in its existing
+error hook). This engine's built-in run paths do not currently emit the three
+default retry classes. A bare `TimeoutError`, for example, remains an unclassified
+`systemic` failure and **will not be retried by default**. Merely setting
+`retries=2` does not classify host failures.
+
+An exhausted `ShouldRetry` follows the same rule: its default class is `systemic`,
+so the default boundary policy returns it after the executor's courtesy budget
+is exhausted. Set the appropriate transient class on the `ShouldRetry` at the
+host raise site to make a subsequent boundary retry eligible. Courtesy retries
+remain independent and still run even when the boundary class does not match.
+Explicitly adding `systemic` to `retry_on` also matches unknown failures and should
+be an intentional author choice; it is not added to the default policy.
+
+`NodeTypeInfo.declared_errors` documents expected names and classes but is optional
+and non-exhaustive. Declarations neither set an exception's runtime class nor
+prove that other classes are impossible, including in dynamically expanded or
+host-dispatched work. Validation therefore does not reject a retry policy merely
+because no declaration matches it. Hosts can inspect the materialized error and
+boundary events to diagnose a policy that does not match actual failures.
+
+For example:
 
 ```python
 attempted = await engine.build_single_node_workflow(
@@ -183,7 +208,7 @@ failing exception:
 | `ResultError` field | source |
 | --- | --- |
 | `node_id` | the failing member's own flat id |
-| `name` | the first concrete `WorkflowException` subclass name in the cause chain, skipping generic `WorkflowException` and `NodeException` wrappers; otherwise the root cause's class name |
+| `name` | the author-chosen `name` set at a raise site (the first one found walking the `__cause__` chain outward-in, starting at the failing exception itself), if any; otherwise the root cause's class name |
 | `message` | the exception's own message if it is already `USER` level; otherwise `"An internal error occurred"` |
 | `error_class` | the exception's own `error_class` if set, otherwise `"systemic"` |
 

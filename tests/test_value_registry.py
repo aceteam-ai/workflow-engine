@@ -406,8 +406,8 @@ class TestValueRegistryExtend:
 class TestValueRegistryLoadValue:
     """Tests for ValueRegistry.load_value() method."""
 
-    def test_load_value_with_matching_title(self):
-        """Test loading a value type from schema with matching title (backwards compat)."""
+    def test_load_value_ignores_matching_title(self):
+        """Titles are presentation metadata, never registry identity."""
         from workflow_engine.core.values.schema import IntegerValueSchema
 
         registry = ValueRegistry.builder(lazy=True)
@@ -416,7 +416,7 @@ class TestValueRegistryLoadValue:
         schema = IntegerValueSchema(type="integer", title="SampleValueA")
         loaded_value = registry.load_value(schema)
 
-        assert loaded_value is SampleValueA
+        assert loaded_value is None
 
     def test_load_value_with_matching_value_type(self):
         """Test loading a value type from schema with matching x-value-type (preferred)."""
@@ -480,8 +480,8 @@ class TestValueRegistryLoadValue:
         from workflow_engine.core.values import IntegerValue
         from workflow_engine.core.values.schema import IntegerValueSchema
 
-        # Create a schema with a title that matches a built-in type
-        schema = IntegerValueSchema(type="integer", title="IntegerValue")
+        # Create a schema identifying a built-in type explicitly.
+        schema = IntegerValueSchema(type="integer", value_type="IntegerValue")
 
         # to_value_cls should use the default registry to load the value
         value_cls = schema.to_value_cls()

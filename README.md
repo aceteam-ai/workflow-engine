@@ -97,6 +97,10 @@ The workflow engine supports automatic type casting between Value types. The gra
 
 ![Value Typecasting Graph](docs/typecast_graph.svg)
 
+Registered concrete types only; arrows indicate possible casts. Generic types
+(`Result`, `SequenceValue`, `StringMapValue`, `DataValue`, `ModelValue`) follow
+the [parameter-dependent rules](docs/values.md#generic-cast-rules).
+
 Value types serialize to JSON Schema for validation and type resolution. See [Values](docs/values.md#value-schemas-and-type-resolution) for how the schema system works and limitations around deeply nested generics.
 
 ## Architecture
