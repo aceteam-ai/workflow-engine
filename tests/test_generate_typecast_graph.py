@@ -10,6 +10,8 @@ import sys
 from pathlib import Path
 from types import ModuleType
 
+import pytest
+
 from workflow_engine.core.values.json import JSONValue
 from workflow_engine.core.values.primitives import StringValue
 from workflow_engine.core.values.result import Result
@@ -141,13 +143,12 @@ def test_result_declines_casting_to_string_or_json():
 
 
 def test_missing_dot_fails_with_installation_instruction(monkeypatch):
-    import pytest
-
     monkeypatch.setattr(generator.shutil, "which", lambda name: None)
     with pytest.raises(RuntimeError, match="Install Graphviz"):
         generator.render_graph(generator.build_typecast_graph({}))
 
 
+@pytest.mark.graphviz
 def test_committed_svg_is_current_and_missing_nodes_are_rejected(tmp_path):
     """Run in a clean process so test-only Value registrations cannot leak in."""
     import subprocess

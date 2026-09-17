@@ -13,6 +13,7 @@ from workflow_engine import (
     DataMapping,
     DataValue,
     Empty,
+    ErrorClass,
     ExecutionAlgorithm,
     ExecutionContext,
     FloatValue,
@@ -30,6 +31,7 @@ from workflow_engine import (
     WorkflowExecutionResultStatus,
 )
 from workflow_engine.contexts import InMemoryExecutionContext
+from workflow_engine.core.stakeholder import StakeholderLevel
 from workflow_engine.core.values import get_data_dict
 from workflow_engine.nodes import (
     AddNode,
@@ -393,10 +395,15 @@ async def test_groupby_roundtrip_order(engine, items, expected):
 
 
 @pytest.mark.parametrize(
-    "cls,field,decisions",
-    [(SelectSequenceNode, "decisions", [True]), (GroupSequenceNode, "keys", ["a"])],
+    "cls,field,decisions,message",
+    [
+        (SelectSequenceNode, "decisions", [True], "exactly one decision"),
+        (GroupSequenceNode, "keys", ["a"], "exactly one group key"),
+    ],
 )
-async def test_combine_requires_positional_alignment(engine, cls, field, decisions):
+async def test_combine_requires_positional_alignment(
+    engine, cls, field, decisions, message
+):
     result = await engine.execute_node(
         context=InMemoryExecutionContext(),
         node=cls,
@@ -404,6 +411,10 @@ async def test_combine_requires_positional_alignment(engine, cls, field, decisio
         input={"sequence": [1, 2], field: decisions},
     )
     assert result.status is WorkflowExecutionResultStatus.ERROR
+    error = result.errors.node_errors["node"][0]
+    assert error.level is StakeholderLevel.USER
+    assert error.error_class is ErrorClass.VALIDATION
+    assert message in error.message
 
 
 async def test_group_entries_traverse_composition(engine):

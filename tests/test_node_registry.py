@@ -677,7 +677,7 @@ class TestNodeRegistryLoad:
 
 @pytest.mark.unit
 @pytest.mark.parametrize(
-    "operation", ["get", "items", "load", "build", "register", "unregister"]
+    "operation", ["get", "items", "load", "build", "register", "unregister", "pop"]
 )
 def test_lazy_freeze_serializes_readers_and_mutations(monkeypatch, operation):
     """Pause the first freeze and force another caller to contend, without sleeps."""
@@ -731,6 +731,8 @@ def test_lazy_freeze_serializes_readers_and_mutations(monkeypatch, operation):
             return registry.build()
         if operation == "register":
             return registry.register(SampleNodeC, name="TestC")
+        if operation == "pop":
+            return registry._pop("TestA")
         return registry.unregister("TestA")
 
     with ThreadPoolExecutor(max_workers=2) as pool:
@@ -743,7 +745,7 @@ def test_lazy_freeze_serializes_readers_and_mutations(monkeypatch, operation):
         finally:
             finish_freeze.set()
         assert first.result(timeout=5) is SampleNodeA
-        if operation in {"register", "unregister"}:
+        if operation in {"register", "unregister", "pop"}:
             with pytest.raises(ValueError, match="frozen"):
                 second.result(timeout=5)
         else:
