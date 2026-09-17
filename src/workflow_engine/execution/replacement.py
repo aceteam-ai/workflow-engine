@@ -11,7 +11,13 @@ from pydantic import Field, model_validator
 
 from ..core.boundary import ErrorBoundaryNode
 from ..core.context import ExecutionContext
-from ..core.error import NodeException, NodeReplacementException, WorkflowException
+from ..core.error import (
+    NodeException,
+    NodeReplacementException,
+    ShouldRetry,
+    ShouldYield,
+    WorkflowException,
+)
 from ..core.node import Node
 from ..core.replacement import (
     NodeReplacement,
@@ -74,6 +80,11 @@ class PendingReplacement:
     input_type: type[Data]
     output_type: type[Data]
     child_output_type: type[Data]
+
+
+@dataclass(frozen=True)
+class ResumeReplacement:
+    """Resume caller completion without dispatching either node body."""
 
 
 def check_contract(
@@ -139,6 +150,7 @@ class ReplacementTracker:
         self.frames: dict[str, PendingReplacement] = {}
         self.waiting: dict[str, str] = {}
         self.occupied: set[str] = set()
+        self.completion_sources: dict[str, str] = {}
 
     async def install(
         self,
@@ -305,6 +317,10 @@ class ReplacementTracker:
         outputs: MutableMapping[str, DataMapping],
         context: ExecutionContext,
         boundaries: BoundaryTracker,
+        *,
+        retry_tracker: RetryTracker,
+        pending_retry: MutableMapping[str, DataMapping],
+        node_yields: MutableMapping[str, str],
     ) -> tuple[set[str], list[WorkflowException]]:
         """Unwind each completion iteratively; intermediate logical slots stay visible."""
         completed = set(completed)
@@ -318,6 +334,14 @@ class ReplacementTracker:
             pending = self.frames[parent_id]
             if pending.frame.status != "pending" or boundaries.is_blocked(parent_id):
                 continue
+            if parent_id in node_yields:
+                continue
+            if not retry_tracker.get_state(parent_id).is_ready():
+                self.completion_sources[parent_id] = child_id
+                pending_retry[parent_id] = pending.input
+                continue
+            control: ShouldRetry | ShouldYield | None = None
+            output: DataMapping | None = None
             try:
                 child_output = await adapt_data(
                     outputs[child_id],
@@ -341,6 +365,8 @@ class ReplacementTracker:
                 output = await adapt_data(
                     output, pending.output_type, node=pending.node, context=context
                 )
+            except ShouldYield as signal:
+                control = signal
             except Exception as exc:
                 try:
                     output = await recover(
@@ -351,9 +377,42 @@ class ReplacementTracker:
                         pending.input,
                         exc,
                     )
+                except (ShouldRetry, ShouldYield) as signal:
+                    control = signal
                 except WorkflowException as failure:
                     failures.append(failure)
                     continue
+            if control is not None:
+                self.completion_sources[parent_id] = child_id
+                if isinstance(control, ShouldYield):
+                    node_yields[parent_id] = control.message
+                    await context.on_node_yield(
+                        node=pending.node,
+                        input_type=pending.input_type,
+                        output_type=pending.output_type,
+                        input=pending.input,
+                        exception=control,
+                    )
+                else:
+                    budget = pending.node.max_retries
+                    if budget is None:
+                        budget = pending.node.TYPE_INFO.max_retries
+                    if not retry_tracker.should_retry(parent_id, budget):
+                        failures.append(control)
+                        continue
+                    retry_tracker.record_retry(parent_id, control)
+                    await self.record_retry(parent_id, retry_tracker, context)
+                    pending_retry[parent_id] = pending.input
+                    await context.on_node_retry(
+                        node=pending.node,
+                        input_type=pending.input_type,
+                        output_type=pending.output_type,
+                        input=pending.input,
+                        exception=control,
+                        attempt=retry_tracker.get_state(parent_id).attempt,
+                    )
+                continue
+            assert output is not None
             frame = pending.frame.model_copy(
                 update={
                     "status": "completed",
@@ -366,6 +425,7 @@ class ReplacementTracker:
             await self._checkpoint(parent_id, frame, context)
             outputs[parent_id] = output
             del self.waiting[child_id]
+            self.completion_sources.pop(parent_id, None)
             queue.append(parent_id)
             completed.add(parent_id)
         return completed, failures
@@ -445,7 +505,13 @@ class ReplacementTracker:
                     boundaries, workflow, context, boundary, outputs
                 )
                 completed_slots, adaptation_errors = await self.complete(
-                    [output_id], outputs, context, boundaries
+                    [output_id],
+                    outputs,
+                    context,
+                    boundaries,
+                    retry_tracker=retry_tracker,
+                    pending_retry=pending_retry,
+                    node_yields=node_yields,
                 )
                 completed.update(completed_slots)
                 progress = True
@@ -474,7 +540,8 @@ class ReplacementTracker:
         for parent_id, pending in list(self.frames.items()):
             frame = pending.frame
             if frame.status == "pending" and (
-                node_id == frame.replacement_id
+                node_id == parent_id
+                or node_id == frame.replacement_id
                 or node_id.startswith(frame.replacement_id + "/")
                 or node_id.startswith(frame.logical_node_id + "/replacement_")
             ):

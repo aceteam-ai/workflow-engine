@@ -29,7 +29,7 @@ from .boundary import (
     handle_failure,
 )
 from .rate_limit import RateLimitRegistry
-from .replacement import ReplacementGraph, ReplacementTracker
+from .replacement import ReplacementGraph, ReplacementTracker, ResumeReplacement
 from .retry import RetryTracker
 
 
@@ -44,7 +44,13 @@ class NodeResult(NamedTuple):
     """Result of a single node execution."""
 
     node_id: str
-    result: DataMapping | ValidatedWorkflow | NodeReplacement | WorkflowException
+    result: (
+        DataMapping
+        | ValidatedWorkflow
+        | NodeReplacement
+        | ResumeReplacement
+        | WorkflowException
+    )
     input: DataMapping  # Original input to the node
     should_retry: ShouldRetry | None = None  # Set if this is a retryable failure
     should_yield: ShouldYield | None = None  # Set if the node yielded
@@ -308,7 +314,11 @@ class ParallelExecutionAlgorithm(ExecutionAlgorithm):
                                 failed_nodes.add(node_id)
                                 continue
 
-                        if isinstance(node_result.result, ValidatedWorkflow):
+                        if isinstance(node_result.result, ResumeReplacement):
+                            completed_this_batch.add(
+                                replacements.completion_sources[node_id]
+                            )
+                        elif isinstance(node_result.result, ValidatedWorkflow):
                             if isinstance(node, ErrorBoundaryNode):
                                 tracker.register(
                                     node_id=node_id,
@@ -353,7 +363,13 @@ class ParallelExecutionAlgorithm(ExecutionAlgorithm):
                         completed_this_batch,
                         adaptation_errors,
                     ) = await replacements.complete(
-                        completed_this_batch, node_outputs, context, tracker
+                        completed_this_batch,
+                        node_outputs,
+                        context,
+                        tracker,
+                        retry_tracker=retry_tracker,
+                        pending_retry=pending_retry,
+                        node_yields=node_yields,
                     )
                     for failure in adaptation_errors:
                         assert failure.node_id is not None
@@ -564,6 +580,12 @@ class ParallelExecutionAlgorithm(ExecutionAlgorithm):
     ) -> NodeResult:
         """Execute a single node with rate limiting and retry support."""
         node = workflow.nodes_by_id[node_id]
+
+        if (
+            isinstance(workflow, ReplacementGraph)
+            and node_id in workflow.replacement_slots
+        ):
+            return NodeResult(node_id, ResumeReplacement(), input=node_input)
 
         # Acquire rate limiter if configured for this node type
         limiter = self.rate_limits.get_limiter(node.type)

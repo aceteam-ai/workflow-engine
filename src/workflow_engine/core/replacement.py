@@ -116,7 +116,7 @@ async def adapt_data(
     values: DataMapping, target: type[Data], *, node: Node, context: ExecutionContext
 ) -> DataMapping:
     """Project, cast and instantiate a contract, retaining concrete Value validation."""
-    from .error import NodeReplacementException
+    from .error import NodeReplacementException, ShouldRetry, ShouldYield
     from .values import get_data_dict, get_data_fields
 
     try:
@@ -130,6 +130,8 @@ async def adapt_data(
                     else await value.cast_to(value_type, context=context)
                 )
         return get_data_dict(target.model_validate(projected))
+    except (ShouldRetry, ShouldYield):
+        raise
     except Exception as exc:
         raise NodeReplacementException(
             f"Replacement value adaptation to {target.__name__} failed: {exc}",

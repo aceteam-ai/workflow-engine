@@ -75,6 +75,15 @@ boundary fails, its pending callers cannot publish successful outputs. Attempt
 retry consent also applies to newly revealed replacement nodes: a metered target
 cannot bypass `allow_metered` by being absent from the authored graph.
 
+A control signal from the caller's deferred output adaptation or finish hook
+belongs to that caller. `ShouldYield` reports its logical ID and keeps the frame
+pending. `ShouldRetry` uses the caller's remaining retry budget and resumes only
+its adaptation and finish hook after backoff; neither the selector nor the child
+body runs again. That retry state is checkpointed with the frame. On a new
+execution pass, hosts replay the relation and cache completed child outputs as
+usual. Exhausted completion retries remain attributable to the caller and flow
+through its enclosing Attempt boundary.
+
 Both algorithms accept `max_replacement_hops=256`. It must be positive. Hops are
 iterative, and the scheduler regains control between admissions. There is no
 same-worker or thread-local execution guarantee.

@@ -26,7 +26,7 @@ from .boundary import (
     handle_failure,
 )
 from .rate_limit import RateLimitRegistry
-from .replacement import ReplacementGraph, ReplacementTracker
+from .replacement import ReplacementGraph, ReplacementTracker, ResumeReplacement
 from .retry import RetryTracker
 
 
@@ -122,7 +122,11 @@ class TopologicalExecutionAlgorithm(ExecutionAlgorithm):
                     output_type = workflow.node_output_types[node_id]
 
                     # Acquire rate limiter if configured for this node type
-                    limiter = self.rate_limits.get_limiter(node.type)
+                    limiter = (
+                        None
+                        if node_id in replacements.completion_sources
+                        else self.rate_limits.get_limiter(node.type)
+                    )
                     if limiter is not None:
                         await limiter.acquire()
 
@@ -131,15 +135,30 @@ class TopologicalExecutionAlgorithm(ExecutionAlgorithm):
                     completed = {node_id}
                     failure: WorkflowException | None = None
                     try:
-                        node_result = await node(
-                            context=context,
-                            input_type=input_type,
-                            output_type=output_type,
-                            input=node_input,
-                            allow_replacement=True,
-                        )
+                        if node_id in replacements.completion_sources:
+                            node_result = ResumeReplacement()
+                        else:
+                            node_result = await node(
+                                context=context,
+                                input_type=input_type,
+                                output_type=output_type,
+                                input=node_input,
+                                allow_replacement=True,
+                            )
 
-                        if isinstance(node_result, NodeReplacement):
+                        if isinstance(node_result, ResumeReplacement):
+                            completed, adaptation_errors = await replacements.complete(
+                                [replacements.completion_sources[node_id]],
+                                node_outputs,
+                                context,
+                                tracker,
+                                retry_tracker=retry_tracker,
+                                pending_retry=pending_retry,
+                                node_yields=node_yields,
+                            )
+                            if adaptation_errors:
+                                failure = adaptation_errors[0]
+                        elif isinstance(node_result, NodeReplacement):
                             (
                                 workflow,
                                 replacement_ready,
@@ -162,10 +181,16 @@ class TopologicalExecutionAlgorithm(ExecutionAlgorithm):
                                     completed,
                                     adaptation_errors,
                                 ) = await replacements.complete(
-                                    [node_id], node_outputs, context, tracker
+                                    [node_id],
+                                    node_outputs,
+                                    context,
+                                    tracker,
+                                    retry_tracker=retry_tracker,
+                                    pending_retry=pending_retry,
+                                    node_yields=node_yields,
                                 )
                                 if adaptation_errors:
-                                    raise adaptation_errors[0]
+                                    failure = adaptation_errors[0]
                         elif isinstance(node_result, ValidatedWorkflow):
                             if isinstance(node, ErrorBoundaryNode):
                                 tracker.register(
@@ -182,10 +207,16 @@ class TopologicalExecutionAlgorithm(ExecutionAlgorithm):
                         else:
                             node_outputs[node.id] = node_result
                             completed, adaptation_errors = await replacements.complete(
-                                [node_id], node_outputs, context, tracker
+                                [node_id],
+                                node_outputs,
+                                context,
+                                tracker,
+                                retry_tracker=retry_tracker,
+                                pending_retry=pending_retry,
+                                node_yields=node_yields,
                             )
                             if adaptation_errors:
-                                raise adaptation_errors[0]
+                                failure = adaptation_errors[0]
 
                     except ShouldYield as e:
                         node_yields[node_id] = e.message
