@@ -17,6 +17,7 @@ from .attempt import (
     AttemptNode,
     OkNode,
 )
+from .attempt_retry import AttemptRetryNode
 from .comparison import (
     AndNode,
     EqualNode,
@@ -96,6 +97,7 @@ __all__ = [
     "AndNode",
     "AppendToFileNode",
     "AttemptNode",
+    "AttemptRetryNode",
     "ChunkSequenceNode",
     "ConditionalInput",
     "ConstantBooleanNode",

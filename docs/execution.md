@@ -87,6 +87,13 @@ algorithm = ParallelExecutionAlgorithm(max_retries=5)
 
 The retry system uses exponential backoff based on the `backoff` value in `ShouldRetry`. The `RetryTracker` manages retry state across all nodes during execution.
 
+`Attempt` also accepts `retries`, a separate budget for rerunning its entire inner
+workflow after a selected error class. It defaults to zero and requires
+`allow_metered=True` for declared metered work. Each boundary try has distinct
+node IDs and its own courtesy budget; its `on_boundary_retry` hook records the
+additional dispatch authorization. See [Attempt retries](../schema/attempt.md#boundary-retries-attempt-110).
+
+
 ## Rate Limiting
 
 Rate limiting controls how frequently nodes of a given type can execute. This is useful for nodes that call external APIs with rate limits.

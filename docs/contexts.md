@@ -129,6 +129,12 @@ class MyContext(ExecutionContext):
         what the node is waiting for."""
         pass
 
+    async def on_boundary_retry(self, *, node, boundary_id, error, attempt, max_retries, allow_metered) -> None:
+        """Called before a boundary schedules an additional inner-workflow run.
+        attempt is one-based; max_retries and allow_metered record authorization.
+        Use (run_id, boundary_id, attempt) to deduplicate replayed ledger events."""
+        pass
+
     async def on_node_retry(self, *, node, input_type, output_type, input, exception, attempt) -> None:
         """Called when a node is scheduled for retry after raising ShouldRetry.
         attempt is 1 for the first retry, 2 for the second, etc."""
