@@ -95,3 +95,57 @@ the context supplies an explicit one. Conflicting legacy and context overrides
 are rejected. The old `execution.rate_limit.RateLimitConfig` import remains an
 alias of the validated core model. New integrations should configure their
 context directly.
+
+## Durable local coordination
+
+`SQLiteLimitCoordinator` persists quota state in an operator-selected local file:
+
+```python
+from workflow_engine.limits import SQLiteLimitCoordinator
+
+async with SQLiteLimitCoordinator("/var/lib/my-host/limits.db") as coordinator:
+    context = InMemoryExecutionContext(limit_coordinator=coordinator)
+    await engine.execute(context=context, workflow=workflow, input=input_data)
+```
+
+Create the parent directory first and share the path among local worker
+processes. Contexts in a process should generally share one coordinator object.
+The implementation uses a bounded one-thread I/O executor for short SQLite
+transactions. Database connections close after each transaction; a queued node
+holds no connection or I/O thread while awaiting capacity. Same-object release
+notifications wake waiters immediately. Independent coordinators/processes use
+an asynchronous refresh timer (default 100 ms) to discover remote changes and
+recover lost notifications. No thread busy-waits or remains open in a transaction.
+
+The store has one versioned `wengine_limit_state` row containing policy revisions,
+request timestamps, pending tickets, active leases, the fencing generation, and
+a nondecreasing clock floor. Each update runs under `BEGIN IMMEDIATE` and commits
+atomically. This initial representation favors a small auditable transaction
+boundary; transaction work grows with retained admission state. Hosts should
+measure their expected fan-out and database contention before adopting it for
+large installations. A shared/network filesystem is not supported as a
+cross-machine coordinator; distributed hosts implement the same coordinator
+protocol against their own atomic storage service.
+
+Leases expire after 30 seconds by default. Contexts renew active leases every
+third of that duration. Wait tickets have a bounded lifetime and are refreshed
+while their owner waits, so a crashed waiter does not block the queue forever.
+A coordinator restart preserves charged rate history. Expired leases release
+concurrency capacity and a later grant receives a larger fencing generation.
+The durable clock floor prevents a clock rollback from refunding requests.
+The refresh interval must be positive and at most one third of the lease duration.
+
+Storage failures, incompatible schema versions, conflicting policies, and lease
+loss fail closed. If renewal fails, the context cancels local execution and
+reports an operator error. Remote operations may outlive that cancellation or
+lease expiry: hard remote concurrency requires the provider to enforce the lease
+identity/fencing generation or a host to reconcile the outstanding operation.
+This backend does not claim exactly-once remote execution. Closing the shared
+coordinator is the host's responsibility after its contexts have settled.
+
+For recovery, retain the database together with the host run ledger; do not clear
+it to work around a policy mismatch or temporary outage, since that would erase
+rate history. Resume with the same pool keys and effective configuration. The
+first implementation rejects mixed live policy revisions; coordinated policy
+migration and a normalized high-volume storage layout are separate host/backend
+work, not implicit behavior of `acquire`.
