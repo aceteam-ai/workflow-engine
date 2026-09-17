@@ -242,7 +242,7 @@ class TestOnNodeStart:
             input_type: Type[Data],
             output_type: Type[Data],
             input: DataMapping,
-        ) -> DataMapping | Workflow | None:
+        ) -> DataMapping | Workflow | Node | None:
             assert isinstance(node, Node)
             assert input_type is not None
             assert output_type is not None
@@ -286,7 +286,7 @@ class TestOnNodeStart:
             input_type: Type[Data],
             output_type: Type[Data],
             input: DataMapping,
-        ) -> DataMapping | Workflow | None:
+        ) -> DataMapping | Workflow | Node | None:
             assert isinstance(node, Node)
             assert input_type is not None
             assert output_type is not None
@@ -351,7 +351,7 @@ class TestOnNodeStart:
             input_type: Type[Data],
             output_type: Type[Data],
             input: DataMapping,
-        ) -> DataMapping | Workflow | None:
+        ) -> DataMapping | Workflow | Node | None:
             if node.id == "expanding":
                 return replacement_workflow
             return await original_on_node_start(
@@ -798,7 +798,7 @@ class TestOnWorkflowStart:
             input_type: Type[Data],
             output_type: Type[Data],
             input: DataMapping,
-        ) -> DataMapping | Workflow | None:
+        ) -> DataMapping | Workflow | Node | None:
             node_start_ids.append(node.id)
             return await original_on_node_start(
                 node=node,

@@ -326,7 +326,7 @@ class RecordingContext(InMemoryExecutionContext):
         input_type: Type[Data],
         output_type: Type[Data],
         input: DataMapping,
-    ) -> DataMapping | Workflow | None:
+    ) -> DataMapping | Workflow | Node | None:
         self.started.append(node.id)
         self.sequence.append(f"start:{node.id}")
         return await super().on_node_start(

@@ -129,6 +129,15 @@ class AttemptNode(ErrorBoundaryNode, Node[Data, Data, AttemptParams]):
         return self._workflow
 
     @override
+    async def validate_replacement(
+        self, *, delegator: Node, replacement: Node, context: ValidationContext
+    ) -> None:
+        if self.params.retries.root and not self.params.allow_metered.root:
+            from .attempt_retry import validate_unmetered_value
+
+            await validate_unmetered_value(delegator, replacement, context)
+
+    @override
     async def dynamic_input_type(self, context: ValidationContext) -> Type[Data]:
         w = await self.workflow(context)
         return w.input_type

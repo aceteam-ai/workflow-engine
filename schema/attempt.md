@@ -288,3 +288,13 @@ until it produces a Result. Continuation parameters encode the already-consumed
 budget and never reset it. Hook delivery may repeat during replay, so a durable
 ledger should upsert `(run_id, boundary_id, attempt)`. Restarting with no retained
 context is a new execution, as for any other workflow.
+
+## Replacement validation errors
+
+`NodeReplacementException` is the stable engine-owned name for incompatible
+direct delegation, invalid replacement value adaptation, stale replacement
+checkpoints, ID collisions, self replacement, and exhausted replacement hop
+budgets. Its `error_class` is `validation`; details are builder-visible and the
+normal boundary redaction rule applies. Actual child errors keep the child's
+name, class, and normalized flat node ID. See
+[replacement semantics](../docs/node-replacement.md).

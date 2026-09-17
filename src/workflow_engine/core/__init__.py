@@ -13,6 +13,7 @@ from .engine import WorkflowEngine
 from .error import (
     NodeException,
     NodeExpansionException,
+    NodeReplacementException,
     ShouldRetry,
     ShouldYield,
     WorkflowError,
@@ -56,6 +57,7 @@ from .node import (
     NodeTypeInfo,
     Params,
 )
+from .replacement import ReplacementFrame
 from .resources import (
     ResourceCheck,
     ResourceRequest,
@@ -147,6 +149,7 @@ __all__ = [
     "NodeException",
     "NodeExpansionException",
     "NodeRegistry",
+    "NodeReplacementException",
     "NodeTypeInfo",
     "NodesConfig",
     "NullValue",
@@ -155,6 +158,7 @@ __all__ = [
     "Params",
     "PropagatedResultError",
     "RateLimitConfig",
+    "ReplacementFrame",
     "ResolvedWorkflow",
     "ResourceCheck",
     "ResourceRequest",
