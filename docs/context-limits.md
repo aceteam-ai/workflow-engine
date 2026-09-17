@@ -61,8 +61,11 @@ executor's shared worker capacity.
 `ParallelExecutionAlgorithm.max_concurrency` participates as another pool in
 the same atomic admission bundle. Tasks awaiting initial admission do not occupy
 that capacity. They suspend their coroutine rather than occupying a worker
-thread. Once admitted, a node retains its whole-node quota across its execution,
-including narrower region waits. A failed Attempt cancels queued members and
+thread. Entering a narrower region temporarily returns only scheduler capacity;
+the region and worker capacity are then admitted together. On region exit the
+worker capacity transfers back to the parent lease atomically. The node retains
+its whole-node provider quota and rate history throughout. A failed Attempt
+cancels queued members and
 drains admitted members, retaining the existing boundary semantics.
 
 The context distinguishes admission from the existing cache/start hook:

@@ -18,7 +18,13 @@ from typing import Self
 
 from overrides import override
 
-from ..core.limits import InMemoryLimitCoordinator, LimitError, T, _State
+from ..core.limits import (
+    InMemoryLimitCoordinator,
+    LimitError,
+    T,
+    _complete_cleanup,
+    _State,
+)
 
 
 class SQLiteLimitCoordinator(InMemoryLimitCoordinator):
@@ -107,7 +113,7 @@ class SQLiteLimitCoordinator(InMemoryLimitCoordinator):
             # Wait for its outcome so acquire's cancellation cleanup can remove
             # a grant that raced with task cancellation.
             try:
-                await future
+                await _complete_cleanup(future)
             except Exception:
                 pass
             raise
