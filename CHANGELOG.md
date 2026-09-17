@@ -15,8 +15,6 @@ This project uses [PEP 440](https://peps.python.org/pep-0440/) versioning with r
 
 - **`ErrorNode`'s wire `name` is now the author's `error_name`, not a generic wrapper class name** (`nodes/error.py`): `error_name` is a `StringValue` parameter chosen at graph-authoring time, so it is passed through the `name=` channel above rather than folded into `message`. Inside an `attempt`, the materialized `err.name` moves from `"WorkflowException"` to the author's string; `message` is now the author's own `info` text, no longer prefixed with `error_name`. An empty `error_name` still materializes a normal err arm (`name` falls back to `"WorkflowException"`), not an operator error (#248).
 
-### Changed
-
 - Every `Value` subclass now publishes `x-value-type` through its JSON schema hook, including nested definitions and Float values (#224).
 
 ### Fixed
@@ -25,7 +23,9 @@ This project uses [PEP 440](https://peps.python.org/pep-0440/) versioning with r
 
 ### Breaking changes
 
-- Removed the legacy `title` fallback for registered Value identity (#224). Titles are display metadata. Regenerate stored schemas that relied on a title to recover a custom type before upgrading; keep their recursive `$defs` and new `x-value-type` markers.
+- Record schemas now require an explicit `"default"` on every property omitted from `"required"`, including nullable properties (#224). Hand-authored `ValueSchema` JSON that previously relied on an implicit null default now raises `ValueError: Non-required properties need an explicit default`, including schemas passed to `wengine workflow edit add-field`. Add `"default": null` when null is the intended default, supply another valid default, or mark the property required.
+- Removed the legacy `title` fallback for registered Value identity (#224). Titles are display metadata, including inside nested `$defs`. Regenerate stored schemas that relied on a title to recover a custom type before upgrading; preserve their recursive references and explicit `x-value-type` markers.
+- `WorkflowEngine.execute()` now raises `ValueError` during validation for unwired required input ports, including unreachable nodes and the output node (#95). It no longer schedules an incomplete graph and returns a failed `WorkflowExecutionResult` for a later cast error. Callers that execute stored, possibly incomplete graphs must catch this validation exception or connect every required port before execution.
 
 ## [2.0.0rc16] - 2026-09-09
 
