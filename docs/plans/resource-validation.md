@@ -1,6 +1,6 @@
 # Resource validation without execution (#98)
 
-Status: proposed design for [#98](https://github.com/aceteam-ai/workflow-engine/issues/98), ready for review before implementation dispatch. The resource names and provider examples below are illustrative; the engine does not own an agent database. This document changes no runtime behavior.
+Status: engine v1 implemented for [#98](https://github.com/aceteam-ai/workflow-engine/issues/98). See the [usage guide](../resource-validation.md). Host provider rollout and portable-schema generator integration remain separate. The resource names and provider examples below are illustrative; the engine does not own an agent database.
 
 ## Decision and scope
 
@@ -124,4 +124,4 @@ Required tests:
 - No resource declarations passes without a provider; incomplete coverage never computes `valid=true`; resource IDs and backend exceptions do not leak through diagnostic serialization.
 - Existing graph validation/execution tests and context-subclass typing fixtures remain unchanged; Ruff, format, Pyright, and full pytest pass at implementation time.
 
-The review decision is whether this raw-document and coverage contract is the right initial boundary. Once accepted, implementation can proceed in the three slices above without choosing host-specific resource models.
+Engine v1 implements the raw-document boundary and bounded provider checks described above, adding a total-visit limit to bound repeated IDs and diagnostic storage. The standalone report schema is available through `ResourceValidationReport.model_json_schema()`; export into #206 awaits that generator on main. Real provider integration and replacement of host editor checks remain host-owned rollout work.

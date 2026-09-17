@@ -198,6 +198,11 @@ async def test_unfold_exhausted_budget_is_an_error_without_extra_page(engine, bu
     )
     assert result.status is WorkflowExecutionResultStatus.ERROR
     assert "sequence" not in result.output
+    error_id = "node" + "/next" * budget
+    error = result.errors.node_errors[error_id][0]
+    assert error.level is StakeholderLevel.USER
+    assert error.error_class is ErrorClass.VALIDATION
+    assert "maximum iteration count" in error.message
     assert [seed for _, seed in UnfoldProbeNode.calls] == list(range(budget))
 
 

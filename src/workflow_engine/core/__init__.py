@@ -56,6 +56,15 @@ from .node import (
     NodeTypeInfo,
     Params,
 )
+from .resources import (
+    ResourceCheck,
+    ResourceRequest,
+    ResourceResolver,
+    ResourceValidationIssue,
+    ResourceValidationOptions,
+    ResourceValidationReport,
+    validate_resources,
+)
 from .stakeholder import StakeholderLevel
 from .values import (
     JSON,
@@ -147,6 +156,12 @@ __all__ = [
     "PropagatedResultError",
     "RateLimitConfig",
     "ResolvedWorkflow",
+    "ResourceCheck",
+    "ResourceRequest",
+    "ResourceResolver",
+    "ResourceValidationIssue",
+    "ResourceValidationOptions",
+    "ResourceValidationReport",
     "Result",
     "ResultError",
     "RoundingMode",
@@ -177,4 +192,5 @@ __all__ = [
     "WorkflowValue",
     "migration_registry",
     "migration_runner",
+    "validate_resources",
 ]
