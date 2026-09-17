@@ -160,6 +160,25 @@ class _State(BaseModel):
 T = TypeVar("T")
 
 
+async def _complete_cleanup(operation: Awaitable[T]) -> T:
+    """Finish cleanup before propagating repeated cancellation to the caller.
+
+    Shield alone keeps the cleanup task alive but lets its caller leave early,
+    which can retire a worker pool before its pending lease release finishes.
+    """
+    cleanup = asyncio.ensure_future(operation)
+    interrupted = False
+    while not cleanup.done():
+        try:
+            await asyncio.shield(cleanup)
+        except asyncio.CancelledError:
+            interrupted = True
+    result = cleanup.result()
+    if interrupted:
+        raise asyncio.CancelledError
+    return result
+
+
 class InMemoryLimitCoordinator:
     """Thread-safe state with loop-local notifications; no restart durability."""
 
@@ -199,21 +218,26 @@ class InMemoryLimitCoordinator:
                     "An invocation changed its admission bundle."
                 )
             return lease
-        for request in requests:
-            pool = state.pools.get(request.pool)
-            if pool is None:
-                state.pools[request.pool] = _Pool(
-                    config=request.config, revision=request.revision
-                )
-            elif pool.config != request.config or pool.revision != request.revision:
-                raise LimitError.for_operator(
-                    f"Conflicting limit policies for pool '{request.pool}'."
-                )
         ticket = state.waiting.get(owner)
         if ticket is not None and ticket.requests != requests:
             raise LimitError.for_operator(
                 "An invocation changed its queued admission bundle."
             )
+        # Validate the complete bundle before installing any new policy. A
+        # rejected request must not latch an ungranted pool's revision/config.
+        for request in requests:
+            pool = state.pools.get(request.pool)
+            if pool is not None and (
+                pool.config != request.config or pool.revision != request.revision
+            ):
+                raise LimitError.for_operator(
+                    f"Conflicting limit policies for pool '{request.pool}'."
+                )
+        for request in requests:
+            if request.pool not in state.pools:
+                state.pools[request.pool] = _Pool(
+                    config=request.config, revision=request.revision
+                )
         state.waiting[owner] = _Ticket(
             requests=requests,
             expires_at=(now + 2 * self.lease_duration) if self.lease_duration else None,
@@ -318,7 +342,7 @@ class InMemoryLimitCoordinator:
                 except TimeoutError:
                     pass
         except BaseException:
-            await asyncio.shield(self.cancel_wait(invocation_id))
+            await _complete_cleanup(self.cancel_wait(invocation_id))
             raise
         finally:
             with self._listeners_lock:

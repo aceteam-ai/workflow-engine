@@ -20,6 +20,7 @@ from .limits import (
     LimitRequest,
     LimitWaitInfo,
     RateLimitConfig,
+    _complete_cleanup,
 )
 
 if TYPE_CHECKING:
@@ -48,6 +49,7 @@ class _Invocation:
 class _Held:
     task: asyncio.Task
     lease: LimitLease
+    capacity_pool: str | None = None
 
 
 class ContextAdmission:
@@ -99,7 +101,7 @@ class ContextAdmission:
         finally:
             self.run.reset(token)
             if capacity is not None:
-                await asyncio.shield(coordinator.retire_pool(capacity.pool))
+                await _complete_cleanup(coordinator.retire_pool(capacity.pool))
 
     @asynccontextmanager
     async def limit(self, node: Node, region: str, *, whole_node: bool = False):
@@ -148,7 +150,7 @@ class ContextAdmission:
                 r.pool
                 for entry in held
                 for r in entry.lease.requests
-                if not r.pool.startswith("execution:")
+                if r.pool != entry.capacity_pool
             ]
             if keys and request.pool <= max(keys):
                 raise LimitError.for_builder(
@@ -205,7 +207,12 @@ class ContextAdmission:
                 if run.blocked(node.id):
                     raise asyncio.CancelledError
                 run.admitted.add(node.id)
-            held_token = self.held.set((*held, _Held(task, lease)))
+            capacity_pool = (
+                run.capacity.pool
+                if whole_node and run is not None and run.capacity is not None
+                else None
+            )
+            held_token = self.held.set((*held, _Held(task, lease, capacity_pool)))
             if lease.expires_at is not None:
                 renewal = asyncio.create_task(renew())
             if whole_node:
@@ -224,16 +231,22 @@ class ContextAdmission:
                 ) from lost[0]
             raise
         finally:
-            if renewal is not None:
-                renewal.cancel()
-                await asyncio.gather(renewal, return_exceptions=True)
+            # ContextVar tokens belong to this task. Reset them synchronously;
+            # asynchronous cleanup runs shielded from repeated cancellation.
             if held_token is not None:
                 self.held.reset(held_token)
             if token is not None:
                 self.invocation.reset(token)
-            if lease is not None:
-                await asyncio.shield(coordinator.release(lease))
-                if not whole_node:
-                    await self.context.on_limit_released(
-                        node=node, region=region, lease=lease
-                    )
+
+            async def cleanup() -> None:
+                if renewal is not None:
+                    renewal.cancel()
+                    await asyncio.gather(renewal, return_exceptions=True)
+                if lease is not None:
+                    await coordinator.release(lease)
+                    if not whole_node:
+                        await self.context.on_limit_released(
+                            node=node, region=region, lease=lease
+                        )
+
+            await _complete_cleanup(cleanup())
