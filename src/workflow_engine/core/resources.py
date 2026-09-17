@@ -7,7 +7,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Annotated, Any, Literal, Protocol, get_args
 
-from pydantic import BaseModel, ConfigDict, Field, StrictInt, StrictStr, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, StrictInt, StrictStr
 
 from ..utils.model import ImmutableBaseModel
 from .values import Value
@@ -104,6 +104,10 @@ _SCHEMA_CHILDREN = (
     "contains",
     "patternProperties",
     "dependentSchemas",
+    "unevaluatedProperties",
+    "unevaluatedItems",
+    "propertyNames",
+    "contentSchema",
 )
 _CONSTRAINTS = {
     "title",
@@ -130,6 +134,10 @@ _UNSUPPORTED = {
     "contains",
     "patternProperties",
     "dependentSchemas",
+    "unevaluatedProperties",
+    "unevaluatedItems",
+    "propertyNames",
+    "contentSchema",
 }
 
 
@@ -204,17 +212,21 @@ def _relevant(
             "validation_limit", "Resource schema inspection limit exceeded."
         )
     seen.add(id(schema))
+    if "x-resource-type" in schema:
+        return True
     if schema.get("x-value-type") == "ValueSchemaValue":
         return False  # A schema parameter describes data; it is not that data.
-    if "x-resource-type" in schema or schema.get("x-value-type") == "WorkflowValue":
+    if schema.get("x-value-type") == "WorkflowValue":
         return True
     try:
         resolved, scopes = _resolve(schema, scopes)
     except _SchemaError:
         return True
+    if "x-resource-type" in resolved:
+        return True
     if resolved.get("x-value-type") == "ValueSchemaValue":
         return False
-    if "x-resource-type" in resolved or resolved.get("x-value-type") == "WorkflowValue":
+    if resolved.get("x-value-type") == "WorkflowValue":
         return True
     for key in _SCHEMA_CHILDREN:
         child = resolved.get(key)
@@ -230,6 +242,46 @@ def _relevant(
             children = (child,)
         if any(_relevant(item, scopes, seen, depth + 1) for item in children):
             return True
+    return False
+
+
+def _omission_needs_inspection(
+    schema: Mapping[str, Any],
+    scopes: tuple[Mapping[str, Any], ...],
+    override: Any = None,
+    depth: int = 0,
+    seen: set[tuple[int, bool]] | None = None,
+) -> bool:
+    """Look through root composition before omitting an optional parameter.
+
+    Child record fields do not make an absent optional parent required. Root
+    branch defaults and resource-required overrides, however, affect this very
+    parameter and must be resolved before deciding to omit it.
+    """
+    if seen is None:
+        seen = set()
+    key = (id(schema), override is False)
+    if key in seen:
+        return False
+    if depth > 64 or len(seen) >= 10_000:
+        raise _SchemaError("validation_limit", "Resource union nesting limit exceeded.")
+    seen.add(key)
+    schema, scopes = _resolve(schema, scopes)
+    if "default" in schema:
+        return True
+    if override is None:
+        override = schema.get("x-resource-required")
+    if override is not None and override is not False:
+        return True
+    for keyword in ("anyOf", "oneOf", "allOf"):
+        branches = schema.get(keyword, [])
+        if not isinstance(branches, list):
+            return True  # Normalization reports the malformed declaration.
+        for branch in branches:
+            if not isinstance(branch, Mapping) or _omission_needs_inspection(
+                branch, scopes, override, depth + 1, seen
+            ):
+                return True
     return False
 
 
@@ -439,6 +491,8 @@ class _Preflight:
                             "Conflicting resource declarations.",
                         )
                     schema.setdefault(key, item)
+        if value is _MISSING and "default" in schema:
+            value = schema["default"]
         for keyword in ("anyOf", "oneOf"):
             if keyword not in schema:
                 continue
@@ -511,6 +565,7 @@ class _Preflight:
                 and (value is None or value is _MISSING)
                 and "default" not in raw
                 and not factory
+                and not _omission_needs_inspection(raw, scopes)
             ):
                 return
             schema, scopes = self.normalize(raw, value, scopes)
@@ -525,6 +580,17 @@ class _Preflight:
                 location,
                 "unsupported_resource_schema",
                 "Expected a nonempty resource type.",
+            )
+            return
+        if resource_type is not None and schema.get("x-value-type") in {
+            "WorkflowValue",
+            "ValueSchemaValue",
+        }:
+            self.issue(
+                location,
+                "unsupported_resource_schema",
+                "Resource declarations require a string identifier schema.",
+                resource_type=resource_type,
             )
             return
         override = schema.get("x-resource-required", required)
@@ -596,17 +662,34 @@ class _Preflight:
         if "properties" in schema or isinstance(
             schema.get("additionalProperties"), Mapping
         ):
-            if (
-                not isinstance(value, Mapping)
-                or not isinstance(properties, Mapping)
-                or not all(isinstance(k, str) for k in value)
-            ):
+            if not isinstance(value, Mapping) or not isinstance(properties, Mapping):
                 self.issue(
                     location,
                     "unsupported_resource_schema",
                     "Expected an object containing resource parameters.",
                 )
                 return
+            # Bound raw key inspection and sorting, not only subsequent values.
+            if len(value) > self.options.max_visits - self.visits:
+                self.issue(
+                    location,
+                    "validation_limit",
+                    "Resource mapping inspection limit exceeded.",
+                )
+                self.stopped = True
+                return
+            data_keys: set[str] = set()
+            for key in value:
+                if not self.visit(location, depth):
+                    return
+                if not isinstance(key, str):
+                    self.issue(
+                        location,
+                        "unsupported_resource_schema",
+                        "Expected string resource parameter keys.",
+                    )
+                    return
+                data_keys.add(key)
             fields = _model_fields(annotation)
             required_fields = schema.get("required", [])
             for name, child in sorted(properties.items()):
@@ -633,7 +716,7 @@ class _Preflight:
             additional = schema.get("additionalProperties")
             if isinstance(additional, Mapping):
                 args = get_args(_root_annotation(annotation))
-                for name in sorted(value.keys() - properties.keys()):
+                for name in sorted(data_keys - properties.keys()):
                     self.walk(
                         additional,
                         value[name],
@@ -723,9 +806,11 @@ class _Preflight:
                 code = "resource_unavailable"
             else:
                 try:
-                    if not isinstance(response, Mapping) or set(response) != {
-                        r.request_id for r in requests
-                    }:
+                    if (
+                        not isinstance(response, Mapping)
+                        or len(response) != len(requests)
+                        or set(response) != {r.request_id for r in requests}
+                    ):
                         raise ValueError("Mismatched response IDs")
                     checks = {
                         key: ResourceCheck.model_validate(
@@ -735,7 +820,9 @@ class _Preflight:
                         )
                         for key, value in response.items()
                     }
-                except (ValueError, TypeError, ValidationError):
+                except Exception:
+                    # A Mapping may read lazily; contain access failures too,
+                    # without exposing backend exception text.
                     code = "provider_protocol_error"
         for request in requests:
             if code is not None:

@@ -670,3 +670,179 @@ async def test_union_properties_named_like_keywords_preserve_ambiguity(monkeypat
         document(node({"choice": {"default": "a"}})), context(FakeResolver())
     )
     assert not report.complete and report.issues[0].code == "ambiguous_resource_schema"
+
+
+async def test_union_branch_resource_required_override_is_not_skipped(monkeypatch):
+    declare(
+        monkeypatch,
+        record(
+            {
+                "agent": {
+                    "anyOf": [
+                        resource(**{"x-resource-required": True}),
+                        {"type": "null"},
+                    ]
+                }
+            },
+            required=[],
+        ),
+    )
+    report = await validate_resources(document(node({})), context())
+    assert not report.valid
+    assert [issue.code for issue in report.issues] == ["missing_resource"]
+
+
+async def test_union_literal_default_selects_tagged_branch_before_traversal(
+    monkeypatch,
+):
+    union = {
+        "oneOf": [
+            record({"kind": {"const": "agent", "type": "string"}, "id": resource()}),
+            record(
+                {"kind": {"const": "doc", "type": "string"}, "id": resource("document")}
+            ),
+        ],
+        "discriminator": {"propertyName": "kind"},
+        "default": {"kind": "agent", "id": "a"},
+    }
+    declare(monkeypatch, record({"selected": union}))
+    resolver = FakeResolver()
+    report = await validate_resources(document(node({})), context(resolver))
+    assert report.valid and report.checked_references == 1
+    assert resolver.calls[0][0].resource_type == "agent"
+
+
+async def test_nullable_branch_literal_default_is_inspected(monkeypatch):
+    declare(
+        monkeypatch,
+        record(
+            {"agent": {"anyOf": [resource(default="gone"), {"type": "null"}]}},
+            required=[],
+        ),
+    )
+    report = await validate_resources(
+        document(node({})), context(FakeResolver({"gone": "missing"}))
+    )
+    assert report.checked_references == 1
+    assert [issue.code for issue in report.issues] == ["missing_resource"]
+
+
+@pytest.mark.parametrize(
+    "keyword",
+    ["unevaluatedProperties", "unevaluatedItems", "propertyNames", "contentSchema"],
+)
+async def test_unsupported_resource_applicators_never_report_complete(
+    monkeypatch, keyword
+):
+    declare(monkeypatch, record({"r": {"type": "object", keyword: resource()}}))
+    report = await validate_resources(
+        document(node({"r": {"a": "id"}})), context(FakeResolver())
+    )
+    assert not report.complete and not report.valid
+    assert report.issues[0].code == "unsupported_resource_schema"
+
+
+async def test_map_key_inspection_honors_total_visit_budget(monkeypatch):
+    from collections.abc import Mapping
+
+    class LargeMap(Mapping):
+        inspected = 0
+
+        def __len__(self):
+            return 1_000
+
+        def __getitem__(self, key):
+            return "id"
+
+        def __iter__(self):
+            for i in range(len(self)):
+                self.inspected += 1
+                yield f"key-{i}"
+
+    values = LargeMap()
+    declare(
+        monkeypatch,
+        record({"ids": {"type": "object", "additionalProperties": resource()}}),
+    )
+    report = await validate_resources(
+        document(node({"ids": values})),
+        context(FakeResolver()),
+        options=ResourceValidationOptions(max_visits=8),
+    )
+    assert not report.complete
+    assert values.inspected <= 8
+
+
+async def test_lazy_malformed_provider_mapping_does_not_escape_or_leak(monkeypatch):
+    from collections.abc import Mapping
+
+    class BrokenResponse(Mapping):
+        def __len__(self):
+            return 1
+
+        def __getitem__(self, key):
+            raise RuntimeError("secret connection credentials")
+
+        def __iter__(self):
+            return iter(["0"])
+
+    class Resolver:
+        async def check_resources(self, requests):
+            return BrokenResponse()
+
+    declare(monkeypatch, record({"agent": resource()}))
+    report = await validate_resources(
+        document(node({"agent": "a"})), context(Resolver())
+    )
+    assert not report.complete
+    assert report.issues[0].code == "provider_protocol_error"
+    assert "secret" not in report.model_dump_json()
+
+
+@pytest.mark.parametrize("identity", ["ValueSchemaValue", "WorkflowValue"])
+async def test_metadata_identity_does_not_hide_explicit_invalid_resource_declaration(
+    monkeypatch, identity
+):
+    declare(
+        monkeypatch,
+        record({"r": {"x-value-type": identity, "x-resource-type": "agent"}}),
+    )
+    report = await validate_resources(
+        document(node({"r": document()})), context(FakeResolver())
+    )
+    assert not report.complete and not report.valid
+    assert report.issues[0].code == "unsupported_resource_schema"
+
+
+async def test_optional_shared_union_inspection_does_not_expand_exponentially(
+    monkeypatch,
+):
+    from workflow_engine.core import resources
+
+    definitions = {"end": resource()}
+    previous = "end"
+    for i in range(30):
+        name = f"Level{i}"
+        definitions[name] = {
+            "anyOf": [{"$ref": f"#/$defs/{previous}"}, {"$ref": f"#/$defs/{previous}"}]
+        }
+        previous = name
+    declare(
+        monkeypatch,
+        record(
+            {"optional": {"$ref": f"#/$defs/{previous}"}},
+            required=[],
+            **{"$defs": definitions},
+        ),
+    )
+    resolve = resources._resolve
+    calls = 0
+
+    def bounded_resolve(schema, scopes):
+        nonlocal calls
+        calls += 1
+        assert calls < 200, "Shared branch resolution exceeded linear inspection"
+        return resolve(schema, scopes)
+
+    monkeypatch.setattr(resources, "_resolve", bounded_resolve)
+    assert (await validate_resources(document(node({})), context())).valid
