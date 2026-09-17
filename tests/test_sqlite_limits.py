@@ -147,6 +147,8 @@ async def test_cancel_racing_with_database_grant_releases_committed_lease(tmp_pa
         )
         assert await asyncio.to_thread(committed.wait, 5)
         pending.cancel()
+        await asyncio.sleep(0)
+        pending.cancel()
         finish.set()
         with pytest.raises(asyncio.CancelledError):
             await pending

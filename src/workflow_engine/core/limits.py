@@ -105,6 +105,12 @@ class LimitCoordinator(Protocol):
 
     async def retire_pool(self, pool: str) -> None: ...
 
+    async def detach_pool(self, lease: LimitLease, pool: str) -> LimitLease: ...
+
+    async def transfer_pool(
+        self, source: LimitLease, target: LimitLease, pool: str
+    ) -> LimitLease: ...
+
 
 class _Pool(BaseModel):
     config: RateLimitConfig
@@ -413,3 +419,75 @@ class InMemoryLimitCoordinator:
             state.pools.pop(pool, None)
 
         await self._mutate(retire)
+
+    async def detach_pool(self, lease: LimitLease, pool: str) -> LimitLease:
+        """Suspend concurrency-only scheduler capacity while retaining other quotas."""
+
+        def detach(state: _State, now: float) -> LimitLease:
+            current = state.leases.get(lease.invocation_id)
+            if current is None or current.id != lease.id:
+                raise LimitError.for_operator(
+                    "Cannot suspend capacity from a lost lease."
+                )
+            request = next((r for r in current.requests if r.pool == pool), None)
+            if request is None or request.config.requests_per_window is not None:
+                raise LimitError.for_operator(
+                    "Only held concurrency-only capacity may be suspended."
+                )
+            current = current.model_copy(
+                update={
+                    "requests": tuple(r for r in current.requests if r.pool != pool)
+                }
+            )
+            state.leases[lease.invocation_id] = current
+            return current
+
+        current = await self._mutate(detach)
+        self.notify_waiters()
+        return current
+
+    async def transfer_pool(
+        self, source: LimitLease, target: LimitLease, pool: str
+    ) -> LimitLease:
+        """Return scheduler capacity to an existing parent lease without a gap."""
+
+        def transfer(state: _State, now: float) -> LimitLease:
+            current_source = state.leases.get(source.invocation_id)
+            current_target = state.leases.get(target.invocation_id)
+            if (
+                current_source is None
+                or current_source.id != source.id
+                or current_target is None
+                or current_target.id != target.id
+            ):
+                raise LimitError.for_operator(
+                    "Cannot transfer capacity through a lost lease."
+                )
+            request = next((r for r in current_source.requests if r.pool == pool), None)
+            if (
+                request is None
+                or request.config.requests_per_window is not None
+                or any(r.pool == pool for r in current_target.requests)
+            ):
+                raise LimitError.for_operator("Invalid scheduler-capacity transfer.")
+            current_source = current_source.model_copy(
+                update={
+                    "requests": tuple(
+                        r for r in current_source.requests if r.pool != pool
+                    )
+                }
+            )
+            current_target = current_target.model_copy(
+                update={
+                    "requests": tuple(
+                        sorted(
+                            (*current_target.requests, request), key=lambda r: r.pool
+                        )
+                    )
+                }
+            )
+            state.leases[source.invocation_id] = current_source
+            state.leases[target.invocation_id] = current_target
+            return current_target
+
+        return await self._mutate(transfer)

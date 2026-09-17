@@ -183,9 +183,11 @@ class ContextAdmission:
                 )
 
         lease: LimitLease | None = None
+        acquired_region = False
         held_token = None
         renewal: asyncio.Task | None = None
         lost: list[Exception] = []
+        capacity_owner: _Held | None = None
 
         async def renew() -> None:
             assert coordinator.lease_duration is not None and lease is not None
@@ -200,16 +202,36 @@ class ContextAdmission:
                 task.cancel()
 
         try:
+            if not whole_node and run is not None and run.capacity is not None:
+                owner = next(
+                    (
+                        entry
+                        for entry in reversed(held)
+                        if any(
+                            r.pool == run.capacity.pool for r in entry.lease.requests
+                        )
+                    ),
+                    None,
+                )
+                if owner is not None:
+                    owner.lease = await coordinator.detach_pool(
+                        owner.lease, run.capacity.pool
+                    )
+                    capacity_owner = owner
+                    requests.append(run.capacity)
             lease = await coordinator.acquire(
                 tuple(requests), invocation_id=invocation_id, on_wait=on_wait
             )
+            acquired_region = not whole_node
             if whole_node and run is not None:
                 if run.blocked(node.id):
                     raise asyncio.CancelledError
                 run.admitted.add(node.id)
             capacity_pool = (
                 run.capacity.pool
-                if whole_node and run is not None and run.capacity is not None
+                if (whole_node or capacity_owner is not None)
+                and run is not None
+                and run.capacity is not None
                 else None
             )
             held_token = self.held.set((*held, _Held(task, lease, capacity_pool)))
@@ -230,6 +252,20 @@ class ContextAdmission:
                     "Admission lease renewal failed; execution stopped."
                 ) from lost[0]
             raise
+        except Exception:
+            if (
+                lease is None
+                and capacity_owner is not None
+                and run is not None
+                and run.capacity is not None
+            ):
+                # A caught region error returns to executing node code. Restore
+                # its worker first, but keep this acquisition cancellable: cleanup
+                # must never wait indefinitely for another worker grant.
+                lease = await coordinator.acquire(
+                    (run.capacity,), invocation_id=f"{invocation_id}/restore-worker"
+                )
+            raise
         finally:
             # ContextVar tokens belong to this task. Reset them synchronously;
             # asynchronous cleanup runs shielded from repeated cancellation.
@@ -242,11 +278,22 @@ class ContextAdmission:
                 if renewal is not None:
                     renewal.cancel()
                     await asyncio.gather(renewal, return_exceptions=True)
-                if lease is not None:
-                    await coordinator.release(lease)
-                    if not whole_node:
-                        await self.context.on_limit_released(
-                            node=node, region=region, lease=lease
+                try:
+                    if (
+                        lease is not None
+                        and capacity_owner is not None
+                        and run is not None
+                        and run.capacity is not None
+                    ):
+                        capacity_owner.lease = await coordinator.transfer_pool(
+                            lease, capacity_owner.lease, run.capacity.pool
                         )
+                finally:
+                    if lease is not None:
+                        await coordinator.release(lease)
+                        if acquired_region:
+                            await self.context.on_limit_released(
+                                node=node, region=region, lease=lease
+                            )
 
             await _complete_cleanup(cleanup())
