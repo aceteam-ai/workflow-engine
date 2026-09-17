@@ -42,6 +42,7 @@ from ..utils.semver import (
 )
 from .error import ErrorClass, NodeException, ShouldYield, WorkflowException
 from .hints import Hints
+from .limits import RateLimitConfig
 from .values import (
     Data,
     DataMapping,
@@ -161,6 +162,8 @@ class NodeTypeInfo(ImmutableBaseModel):
         description="Maximum number of retry attempts for this node type. "
         "None means use the execution algorithm's default.",
     )
+    execution_limits: RateLimitConfig | None = None
+    limit_regions: Mapping[str, RateLimitConfig] = Field(default_factory=dict)
     metered: bool = Field(
         default=False,
         description="Whether this node may perform work that incurs a charge. "
@@ -194,6 +197,8 @@ class NodeTypeInfo(ImmutableBaseModel):
         max_retries: int | None = None,
         declared_errors: Sequence[DeclaredError] = (),
         metered: bool = False,
+        execution_limits: RateLimitConfig | None = None,
+        limit_regions: Mapping[str, RateLimitConfig] | None = None,
     ) -> Self:
         return cls(
             display_name=display_name,
@@ -203,6 +208,8 @@ class NodeTypeInfo(ImmutableBaseModel):
             max_retries=max_retries,
             declared_errors=declared_errors,
             metered=metered,
+            execution_limits=execution_limits,
+            limit_regions=limit_regions or {},
         )
 
 
@@ -591,12 +598,13 @@ class Node(ImmutableBaseModel, Generic[Input_contra, Output, Params_co]):
                 )  # lazy to avoid circular import
 
                 if output is None:
-                    output = await self.run(
-                        context=context,
-                        input_type=input_type,
-                        output_type=output_type,
-                        input=input_obj,
-                    )
+                    async with context.admit_node(self):
+                        output = await self.run(
+                            context=context,
+                            input_type=input_type,
+                            output_type=output_type,
+                            input=input_obj,
+                        )
                     if not isinstance(output, Workflow):
                         output = get_data_dict(output)
 

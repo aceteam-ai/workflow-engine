@@ -27,6 +27,17 @@ from .execution import (
 )
 from .hints import Hints
 from .io import InputNode, OutputNode
+from .limits import (
+    InMemoryLimitCoordinator,
+    LimitCoordinator,
+    LimitError,
+    LimitLease,
+    LimitPolicy,
+    LimitRequest,
+    LimitSnapshot,
+    LimitWaitInfo,
+    RateLimitConfig,
+)
 from .migration import (
     Migration,
     MigrationError,
@@ -106,9 +117,17 @@ __all__ = [
     "FileValue",
     "FloatValue",
     "Hints",
+    "InMemoryLimitCoordinator",
     "InputNode",
     "IntegerValue",
     "JSONValue",
+    "LimitCoordinator",
+    "LimitError",
+    "LimitLease",
+    "LimitPolicy",
+    "LimitRequest",
+    "LimitSnapshot",
+    "LimitWaitInfo",
     "Migration",
     "MigrationError",
     "MigrationNotFoundError",
@@ -126,6 +145,7 @@ __all__ = [
     "OutputNode",
     "Params",
     "PropagatedResultError",
+    "RateLimitConfig",
     "ResolvedWorkflow",
     "Result",
     "ResultError",

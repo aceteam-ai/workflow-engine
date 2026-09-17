@@ -98,10 +98,22 @@ class ParallelExecutionAlgorithm(ExecutionAlgorithm):
         workflow: ValidatedWorkflow,
         input: DataMapping,
     ) -> WorkflowExecutionResult:
-        # Initialize semaphore if max_concurrency is set
-        semaphore: asyncio.Semaphore | None = None
-        if self.max_concurrency is not None:
-            semaphore = asyncio.Semaphore(self.max_concurrency)
+        async with context.execution_scope(
+            legacy=self.rate_limits.configs(),
+            legacy_coordinator=self.rate_limits.coordinator,
+            max_concurrency=self.max_concurrency,
+        ):
+            return await self._execute(context=context, workflow=workflow, input=input)
+
+    async def _execute(
+        self,
+        *,
+        context: ExecutionContext,
+        workflow: ValidatedWorkflow,
+        input: DataMapping,
+    ) -> WorkflowExecutionResult:
+        admission = context._admission.run.get()
+        assert admission is not None
 
         # Call workflow start hook
         result = await context.on_workflow_start(workflow=workflow, input=input)
@@ -114,6 +126,7 @@ class ParallelExecutionAlgorithm(ExecutionAlgorithm):
         errors = WorkflowErrorsBuilder()
         retry_tracker = RetryTracker(default_max_retries=self.max_retries)
         tracker = BoundaryTracker()
+        admission.blocked = tracker.is_blocked
 
         # Track nodes that are waiting for retry (node_id -> input)
         pending_retry: dict[str, DataMapping] = {}
@@ -131,7 +144,6 @@ class ParallelExecutionAlgorithm(ExecutionAlgorithm):
                             workflow,
                             node_id,
                             node_input,
-                            semaphore,
                             retry_tracker,
                         )
                     )
@@ -150,7 +162,6 @@ class ParallelExecutionAlgorithm(ExecutionAlgorithm):
                                     workflow,
                                     node_id,
                                     node_input,
-                                    semaphore,
                                     retry_tracker,
                                 )
                             )
@@ -181,6 +192,10 @@ class ParallelExecutionAlgorithm(ExecutionAlgorithm):
 
                         try:
                             node_result = task.result()
+                        except asyncio.CancelledError:
+                            if tracker.is_blocked(node_id):
+                                continue
+                            raise
                         except WorkflowException as e:
                             if await handle_failure(
                                 tracker,
@@ -303,6 +318,18 @@ class ParallelExecutionAlgorithm(ExecutionAlgorithm):
                             node_outputs[node_id] = node_result.result
                             completed_this_batch.add(node_id)
 
+                    queued = [
+                        task
+                        for task, node_id in running_tasks.items()
+                        if tracker.is_blocked(node_id)
+                        and node_id not in admission.admitted
+                    ]
+                    for task in queued:
+                        running_tasks.pop(task)
+                        task.cancel()
+                    if queued:
+                        await asyncio.gather(*queued, return_exceptions=True)
+
                     # Process expansions sequentially (workflow is immutable)
                     expanded = len(expansions_pending) > 0
                     for node_id, subgraph in expansions_pending:
@@ -376,7 +403,6 @@ class ParallelExecutionAlgorithm(ExecutionAlgorithm):
                                 workflow,
                                 node_id,
                                 node_input,
-                                semaphore,
                                 retry_tracker,
                             )
                         )
@@ -463,6 +489,8 @@ class ParallelExecutionAlgorithm(ExecutionAlgorithm):
                 output=output,
             )
             return result
+        finally:
+            await self._cancel_all(running_tasks)
 
     async def _cancel_all(
         self,
@@ -472,7 +500,7 @@ class ParallelExecutionAlgorithm(ExecutionAlgorithm):
         for task in running_tasks:
             task.cancel()
         if len(running_tasks) > 0:
-            await asyncio.wait(running_tasks.keys(), return_when=asyncio.ALL_COMPLETED)
+            await asyncio.gather(*running_tasks, return_exceptions=True)
 
     async def _execute_node(
         self,
@@ -480,33 +508,21 @@ class ParallelExecutionAlgorithm(ExecutionAlgorithm):
         workflow: ValidatedWorkflow,
         node_id: str,
         node_input: DataMapping,
-        semaphore: asyncio.Semaphore | None,
         retry_tracker: RetryTracker,
     ) -> NodeResult:
         """Execute a single node with rate limiting and retry support."""
         node = workflow.nodes_by_id[node_id]
-
-        # Acquire rate limiter if configured for this node type
-        limiter = self.rate_limits.get_limiter(node.type)
-        if limiter is not None:
-            await limiter.acquire()
+        admission = context._admission.run.get()
+        assert admission is not None
+        admission.admitted.discard(node_id)
 
         try:
-            if semaphore is not None:
-                async with semaphore:
-                    result = await node(
-                        context=context,
-                        input_type=workflow.node_input_types[node_id],
-                        output_type=workflow.node_output_types[node_id],
-                        input=node_input,
-                    )
-            else:
-                result = await node(
-                    context=context,
-                    input_type=workflow.node_input_types[node_id],
-                    output_type=workflow.node_output_types[node_id],
-                    input=node_input,
-                )
+            result = await node(
+                context=context,
+                input_type=workflow.node_input_types[node_id],
+                output_type=workflow.node_output_types[node_id],
+                input=node_input,
+            )
 
             return NodeResult(node_id, result, input=node_input)
 
@@ -531,10 +547,6 @@ class ParallelExecutionAlgorithm(ExecutionAlgorithm):
                     f"Unhandled exception in node {node_id}: {e}",
                     node=node,
                 ) from e
-
-        finally:
-            if limiter is not None:
-                limiter.release()
 
 
 __all__ = [
