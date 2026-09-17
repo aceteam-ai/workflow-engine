@@ -186,13 +186,11 @@ async def test_flatten_rejects_scalar_sequence_at_graph_validation(engine):
         await engine.validate(graph)
 
 
-async def test_entries_sorted_and_empty(engine):
-    for mapping in [{}, {"z": 1, "a": 2, "m": 3}]:
-        assert await run_roundtrip(
-            engine, EntriesNode, element_params(), {"mapping": mapping}
-        ) == {
-            "sequence": [{"key": key, "value": mapping[key]} for key in sorted(mapping)]
-        }
+@pytest.mark.parametrize("mapping", [{}, {"only": 7}, {"z": 1, "a": 2, "m": 3}])
+async def test_entries_roundtrip_sorted_single_group_and_empty(engine, mapping):
+    assert await run_roundtrip(
+        engine, EntriesNode, element_params(), {"mapping": mapping}
+    ) == {"sequence": [{"key": key, "value": mapping[key]} for key in sorted(mapping)]}
 
 
 async def test_zip_preserves_result_positions(engine):
