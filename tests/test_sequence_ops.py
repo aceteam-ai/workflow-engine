@@ -22,6 +22,7 @@ from workflow_engine import (
     WorkflowExecutionResultStatus,
 )
 from workflow_engine.contexts import InMemoryExecutionContext
+from workflow_engine.core.stakeholder import StakeholderLevel
 from workflow_engine.core.values import ErrorClassValue
 from workflow_engine.nodes import (
     AttemptNode,
@@ -125,6 +126,39 @@ async def test_zip_rejects_unequal_lengths(engine):
         input={"first": [1], "second": []},
     )
     assert result.status is WorkflowExecutionResultStatus.ERROR
+    error = result.errors.node_errors["node"][0]
+    assert error.level is StakeholderLevel.USER
+    assert error.error_class is ErrorClass.VALIDATION
+    assert "Zip requires equal lengths, got 1 and 0" in error.message
+
+
+@pytest.mark.parametrize(
+    "items,decisions,expected",
+    [([], [], []), ([4, 1, 4, 2], [False, True, True, False], [1, 4])],
+)
+async def test_select_sequence_roundtrip(engine, items, decisions, expected):
+    assert await run_roundtrip(
+        engine,
+        SelectSequenceNode,
+        element_params(),
+        {"sequence": items, "decisions": decisions},
+    ) == {"sequence": expected}
+
+
+@pytest.mark.parametrize(
+    "items,keys,expected",
+    [
+        ([], [], {}),
+        ([3, 1, 4, 2], ["z", "", "z", ""], {"z": [3, 4], "": [1, 2]}),
+    ],
+)
+async def test_group_sequence_roundtrip(engine, items, keys, expected):
+    assert await run_roundtrip(
+        engine,
+        GroupSequenceNode,
+        element_params(),
+        {"sequence": items, "keys": keys},
+    ) == {"mapping": expected}
 
 
 async def test_chunk_rejects_nonpositive_size(engine):
