@@ -19,6 +19,7 @@ from ..core import (
     WorkflowException,
     WorkflowExecutionResult,
 )
+from ..core.limits import LimitCoordinator, LimitPolicy
 from ..core.values import dump_data_mapping, get_data_dict, serialize_data_mapping
 
 F = TypeVar("F", bound=FileValue)
@@ -34,6 +35,8 @@ class LocalContext(ExecutionContext):
         *,
         run_id: str | None = None,
         base_dir: str = "./local",
+        limit_coordinator: LimitCoordinator | None = None,
+        limit_policy: LimitPolicy | None = None,
     ):
         if run_id is None:
             run_dir: str | None = None
@@ -43,7 +46,11 @@ class LocalContext(ExecutionContext):
         else:
             run_dir = os.path.join(base_dir, run_id)
         os.makedirs(run_dir, exist_ok=True)
-        super().__init__()
+        super().__init__(
+            run_id=run_id,
+            limit_coordinator=limit_coordinator,
+            limit_policy=limit_policy,
+        )
         self.run_id = run_id
         self.run_dir = run_dir
 
