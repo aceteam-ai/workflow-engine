@@ -13,6 +13,7 @@ from .engine import WorkflowEngine
 from .error import (
     NodeException,
     NodeExpansionException,
+    NodeReplacementException,
     ShouldRetry,
     ShouldYield,
     WorkflowError,
@@ -45,6 +46,7 @@ from .node import (
     NodeTypeInfo,
     Params,
 )
+from .replacement import ReplacementFrame
 from .stakeholder import StakeholderLevel
 from .values import (
     JSON,
@@ -119,6 +121,7 @@ __all__ = [
     "NodeException",
     "NodeExpansionException",
     "NodeRegistry",
+    "NodeReplacementException",
     "NodeTypeInfo",
     "NodesConfig",
     "NullValue",
@@ -126,6 +129,7 @@ __all__ = [
     "OutputNode",
     "Params",
     "PropagatedResultError",
+    "ReplacementFrame",
     "ResolvedWorkflow",
     "Result",
     "ResultError",

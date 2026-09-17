@@ -14,8 +14,13 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from enum import StrEnum
+from typing import TYPE_CHECKING
 
 from .values import Data, DataMapping, ResultError
+
+if TYPE_CHECKING:
+    from .context import ValidationContext
+    from .node import Node
 
 
 class ErrorBoundaryNode(ABC):
@@ -29,6 +34,12 @@ class ErrorBoundaryNode(ABC):
     fails, the boundary's own output is replaced with the result of
     ``materialize_error`` instead of the failure propagating to the run.
     """
+
+    async def validate_replacement(
+        self, *, delegator: Node, replacement: Node, context: ValidationContext
+    ) -> None:
+        """Validate newly revealed work against this boundary's admission contract."""
+        pass
 
     @abstractmethod
     def materialize_error(

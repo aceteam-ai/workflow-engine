@@ -10,6 +10,7 @@ from .boundary import CancelReason
 from .error import ShouldRetry, ShouldYield, WorkflowErrors, WorkflowException
 from .execution import WorkflowExecutionResult
 from .node import Node, NodeRegistry
+from .replacement import ReplacementFrame
 from .values import Data, DataMapping, FileValue, ResultError, ValueRegistry
 from .workflow import ValidatedWorkflow, Workflow
 
@@ -119,7 +120,7 @@ class ExecutionContext(ABC, EnforceOverrides):
         input_type: type[Data],
         output_type: type[Data],
         input: DataMapping,
-    ) -> DataMapping | Workflow | None:
+    ) -> DataMapping | Workflow | Node | None:
         """
         A hook that is called when a node starts execution.
 
@@ -127,6 +128,37 @@ class ExecutionContext(ABC, EnforceOverrides):
         output to skip node execution.
         """
         return None
+
+    async def on_node_replace(
+        self,
+        *,
+        node: Node,
+        replacement: Node,
+        input: DataMapping,
+        replacement_info: ReplacementFrame,
+    ) -> None:
+        """Record validated delegation before child dispatch; failure prevents dispatch."""
+        pass
+
+    async def get_node_replacement_frame(
+        self, *, node_id: str
+    ) -> ReplacementFrame | None:
+        """Return a saved relation when on_node_start replays a replacement Node."""
+        return None
+
+    async def on_node_replacement_checkpoint(self, *, frame: ReplacementFrame) -> None:
+        """Persist changed retry/completion state; core supplies no durable store."""
+        pass
+
+    async def on_node_replacement_failed(
+        self,
+        *,
+        node: Node,
+        replacement_info: ReplacementFrame,
+        exception: WorkflowException,
+    ) -> None:
+        """Observe delegated failure without rerunning a caller's error recovery hook."""
+        pass
 
     async def on_node_error(
         self,

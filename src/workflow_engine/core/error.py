@@ -257,6 +257,19 @@ class NodeException(WorkflowException):
         )
 
 
+class NodeReplacementException(NodeException):
+    """A delegating node returned an incompatible or unsafe replacement."""
+
+    def __init__(self, message: str, *, node: "Node"):
+        super().__init__(
+            message,
+            node=node,
+            level=StakeholderLevel.BUILDER,
+            error_class=ErrorClass.VALIDATION,
+            name="NodeReplacementException",
+        )
+
+
 class NodeExpansionException(NodeException):
     """
     An error that occurred while expanding a node into a workflow.
@@ -502,6 +515,7 @@ __all__ = [
     "LegacyWorkflowErrors",
     "NodeException",
     "NodeExpansionException",
+    "NodeReplacementException",
     "ShouldRetry",
     "ShouldYield",
     "WorkflowError",

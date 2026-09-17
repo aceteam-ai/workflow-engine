@@ -35,6 +35,13 @@ async def validate_unmetered_workflow(
     owner: Node, workflow: ValidatedWorkflow, context: ValidationContext
 ) -> None:
     """Inspect functional params recursively, never hints or host annotations."""
+    await validate_unmetered_value(owner, workflow, context)
+
+
+async def validate_unmetered_value(
+    owner: Node, value: object, context: ValidationContext
+) -> None:
+    """Apply existing metering consent to authored graphs and revealed replacements."""
     visited: set[int] = set()
 
     async def visit(value: object) -> None:
@@ -45,14 +52,16 @@ async def validate_unmetered_workflow(
             await visit(await value.root.validate(context))
         elif isinstance(value, Workflow):
             for node in value.nodes:
-                if node.TYPE_INFO.metered:
-                    raise NodeException.for_builder(
-                        f"Attempt node '{owner.id}' retries metered node '{node.id}'; "
-                        "set allow_metered to true to authorize additional charges.",
-                        node=owner,
-                        error_class=ErrorClass.VALIDATION,
-                    )
-                await visit(node.params)
+                await visit(node)
+        elif isinstance(value, Node):
+            if value.TYPE_INFO.metered:
+                raise NodeException.for_builder(
+                    f"Attempt node '{owner.id}' retries metered node '{value.id}'; "
+                    "set allow_metered to true to authorize additional charges.",
+                    node=owner,
+                    error_class=ErrorClass.VALIDATION,
+                )
+            await visit(value.params)
         elif isinstance(value, BaseModel):
             for name in type(value).model_fields:
                 await visit(getattr(value, name))
@@ -65,7 +74,7 @@ async def validate_unmetered_workflow(
             for item in value:
                 await visit(item)
 
-    await visit(workflow)
+    await visit(value)
 
 
 class AttemptRetryParams(AttemptParams):

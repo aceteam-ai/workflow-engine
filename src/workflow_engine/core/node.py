@@ -40,7 +40,13 @@ from ..utils.semver import (
     SEMANTIC_VERSION_PATTERN,
     parse_semantic_version,
 )
-from .error import ErrorClass, NodeException, ShouldYield, WorkflowException
+from .error import (
+    ErrorClass,
+    NodeException,
+    NodeReplacementException,
+    ShouldYield,
+    WorkflowException,
+)
 from .hints import Hints
 from .values import (
     Data,
@@ -55,6 +61,7 @@ from .values.data import Input_contra, Output, get_data_dict, get_data_schema
 if TYPE_CHECKING:
     from .context import ExecutionContext, ValidationContext
     from .io import InputNode, OutputNode
+    from .replacement import NodeReplacement
     from .workflow import ValidatedWorkflow, Workflow
 
 logger = logging.getLogger(__name__)
@@ -545,7 +552,7 @@ class Node(ImmutableBaseModel, Generic[Input_contra, Output, Params_co]):
         input_type: type[Input_contra],
         output_type: type[Output],
         input: Input_contra,
-    ) -> "Output | Workflow":
+    ) -> "Output | Workflow | Node":
         """
         Computes the node's outputs based on its inputs.
         Subclasses must implement this method, but it is not marked as abstract
@@ -561,7 +568,8 @@ class Node(ImmutableBaseModel, Generic[Input_contra, Output, Params_co]):
         input_type: type[Input_contra],
         output_type: type[Output],
         input: DataMapping,
-    ) -> "DataMapping | ValidatedWorkflow":
+        allow_replacement: bool = False,
+    ) -> "DataMapping | ValidatedWorkflow | NodeReplacement":
         """
         Executes the node.
         """
@@ -590,6 +598,7 @@ class Node(ImmutableBaseModel, Generic[Input_contra, Output, Params_co]):
                     Workflow,
                 )  # lazy to avoid circular import
 
+                cached_output = isinstance(output, Mapping)
                 if output is None:
                     output = await self.run(
                         context=context,
@@ -597,9 +606,22 @@ class Node(ImmutableBaseModel, Generic[Input_contra, Output, Params_co]):
                         output_type=output_type,
                         input=input_obj,
                     )
-                    if not isinstance(output, Workflow):
+                    if not isinstance(output, (Workflow, Node)):
                         output = get_data_dict(output)
 
+                if isinstance(output, Node):
+                    from .replacement import NodeReplacement
+
+                    if not allow_replacement:
+                        raise NodeReplacementException(
+                            "This execution algorithm does not support Node replacement outcomes.",
+                            node=self,
+                        )
+                    if output is self:
+                        raise NodeReplacementException(
+                            "A node cannot replace itself with self.", node=self
+                        )
+                    return NodeReplacement(replacement=output, input=casted_input)
                 if isinstance(output, Workflow):
                     if not isinstance(output, ValidatedWorkflow):
                         workflow = await output.validate(context.validation_context)
@@ -616,6 +638,12 @@ class Node(ImmutableBaseModel, Generic[Input_contra, Output, Params_co]):
                     # output should be the output of this node, and we should call
                     # context.on_node_finish.
                 else:
+                    from .replacement import adapt_data
+
+                    if cached_output:
+                        output = await adapt_data(
+                            output, output_type, node=self, context=context
+                        )
                     output = await context.on_node_finish(
                         node=self,
                         input_type=input_type,
@@ -623,6 +651,10 @@ class Node(ImmutableBaseModel, Generic[Input_contra, Output, Params_co]):
                         input=casted_input,
                         output=output,
                     )
+                    if cached_output:
+                        output = await adapt_data(
+                            output, output_type, node=self, context=context
+                        )
                 logger.info("Finished node %s", self.id)
                 return output
             except ShouldYield:

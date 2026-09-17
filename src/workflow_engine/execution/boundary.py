@@ -105,6 +105,10 @@ class BoundaryTracker:
             output_node_id=f"{node_id}/{subgraph.output_node.id}",
         )
 
+    def enclosing(self, node_id: str) -> Iterator[Boundary]:
+        """All enclosing boundaries, including outer retry consent scopes."""
+        return (b for b in self._boundaries.values() if _is_member_id(b.id, node_id))
+
     def innermost(self, node_id: str) -> Boundary | None:
         """The most deeply nested registered boundary enclosing node_id, if any."""
         best: Boundary | None = None

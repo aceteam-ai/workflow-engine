@@ -21,14 +21,15 @@ from ..core import (
     WorkflowExecutionResult,
 )
 from ..core.boundary import ErrorBoundaryNode
+from ..core.replacement import NodeReplacement
 from .boundary import (
     BoundaryTracker,
     abandon_retry_if_blocked,
     flush_cancellations,
     handle_failure,
-    materialize,
 )
 from .rate_limit import RateLimitRegistry
+from .replacement import ReplacementGraph, ReplacementTracker
 from .retry import RetryTracker
 
 
@@ -43,10 +44,11 @@ class NodeResult(NamedTuple):
     """Result of a single node execution."""
 
     node_id: str
-    result: DataMapping | ValidatedWorkflow | WorkflowException
+    result: DataMapping | ValidatedWorkflow | NodeReplacement | WorkflowException
     input: DataMapping  # Original input to the node
     should_retry: ShouldRetry | None = None  # Set if this is a retryable failure
     should_yield: ShouldYield | None = None  # Set if the node yielded
+    cancelled: bool = False  # Replacement blocked before quota admission
 
 
 class ParallelExecutionAlgorithm(ExecutionAlgorithm):
@@ -76,7 +78,11 @@ class ParallelExecutionAlgorithm(ExecutionAlgorithm):
         max_concurrency: int | None = None,
         max_retries: int = 3,
         rate_limits: RateLimitRegistry | None = None,
+        max_replacement_hops: int = 256,
     ):
+        if max_replacement_hops < 1:
+            raise ValueError("max_replacement_hops must be positive")
+        self.max_replacement_hops = max_replacement_hops
         self.error_handling = error_handling
         self.max_concurrency = max_concurrency
         self.max_retries = max_retries
@@ -114,6 +120,10 @@ class ParallelExecutionAlgorithm(ExecutionAlgorithm):
         errors = WorkflowErrorsBuilder()
         retry_tracker = RetryTracker(default_max_retries=self.max_retries)
         tracker = BoundaryTracker()
+        replacements = ReplacementTracker(self.max_replacement_hops)
+        workflow = ReplacementGraph.model_validate(
+            {key: getattr(workflow, key) for key in ValidatedWorkflow.model_fields}
+        )
 
         # Track nodes that are waiting for retry (node_id -> input)
         pending_retry: dict[str, DataMapping] = {}
@@ -133,6 +143,7 @@ class ParallelExecutionAlgorithm(ExecutionAlgorithm):
                             node_input,
                             semaphore,
                             retry_tracker,
+                            tracker,
                         )
                     )
                     running_tasks[task] = node_id
@@ -152,6 +163,7 @@ class ParallelExecutionAlgorithm(ExecutionAlgorithm):
                                     node_input,
                                     semaphore,
                                     retry_tracker,
+                                    tracker,
                                 )
                             )
                             running_tasks[task] = node_id
@@ -174,6 +186,7 @@ class ParallelExecutionAlgorithm(ExecutionAlgorithm):
                     # Process completed tasks
                     expansions_pending: list[tuple[str, ValidatedWorkflow]] = []
                     completed_this_batch: set[str] = set()
+                    replaced_batch = False
 
                     for task in done:
                         node_id = running_tasks.pop(task)
@@ -181,17 +194,36 @@ class ParallelExecutionAlgorithm(ExecutionAlgorithm):
 
                         try:
                             node_result = task.result()
+                            if node_result.cancelled:
+                                continue
+                            if isinstance(node_result.result, NodeReplacement):
+                                if tracker.is_blocked(node_id):
+                                    continue
+                                workflow, _, recovered = await replacements.install(
+                                    workflow,
+                                    node,
+                                    node_result.result,
+                                    context,
+                                    retry_tracker,
+                                    tracker,
+                                )
+                                if recovered is None:
+                                    replaced_batch = True
+                                    continue
+                                node_result = node_result._replace(result=recovered)
                         except WorkflowException as e:
-                            if await handle_failure(
+                            contained = await handle_failure(
                                 tracker,
                                 workflow,
                                 context,
-                                node_id,
+                                e.node_id or node_id,
                                 e,
                                 ready_nodes=None,
                                 pending_retry=pending_retry,
                                 retry_tracker=retry_tracker,
-                            ):
+                            )
+                            await replacements.failed(e, tracker, context)
+                            if contained:
                                 continue
                             if self.error_handling == ErrorHandlingMode.FAIL_FAST:
                                 await self._cancel_all(running_tasks)
@@ -234,6 +266,9 @@ class ParallelExecutionAlgorithm(ExecutionAlgorithm):
 
                             if retry_tracker.should_retry(node_id, node_max_retries):
                                 retry_tracker.record_retry(node_id, should_retry_error)
+                                await replacements.record_retry(
+                                    node_id, retry_tracker, context
+                                )
                                 pending_retry[node_id] = node_input
 
                                 # Call the on_node_retry hook
@@ -250,7 +285,7 @@ class ParallelExecutionAlgorithm(ExecutionAlgorithm):
 
                             # Max retries exceeded - contain in a boundary if
                             # any, otherwise treat as a run-level failure.
-                            if await handle_failure(
+                            contained = await handle_failure(
                                 tracker,
                                 workflow,
                                 context,
@@ -259,7 +294,11 @@ class ParallelExecutionAlgorithm(ExecutionAlgorithm):
                                 ready_nodes=None,
                                 pending_retry=pending_retry,
                                 retry_tracker=retry_tracker,
-                            ):
+                            )
+                            await replacements.failed(
+                                should_retry_error, tracker, context
+                            )
+                            if contained:
                                 continue
                             if self.error_handling == ErrorHandlingMode.FAIL_FAST:
                                 await self._cancel_all(running_tasks)
@@ -300,13 +339,41 @@ class ParallelExecutionAlgorithm(ExecutionAlgorithm):
                             errors.add(node_result.result)
                             failed_nodes.add(node_id)
                         else:
+                            assert isinstance(node_result.result, Mapping)
                             node_outputs[node_id] = node_result.result
                             completed_this_batch.add(node_id)
 
                     # Process expansions sequentially (workflow is immutable)
-                    expanded = len(expansions_pending) > 0
+                    expanded = len(expansions_pending) > 0 or replaced_batch
                     for node_id, subgraph in expansions_pending:
                         workflow = workflow.expand_node(node_id, subgraph)
+                        replacements.expanded(node_id, subgraph)
+
+                    (
+                        completed_this_batch,
+                        adaptation_errors,
+                    ) = await replacements.complete(
+                        completed_this_batch, node_outputs, context, tracker
+                    )
+                    for failure in adaptation_errors:
+                        assert failure.node_id is not None
+                        contained = await handle_failure(
+                            tracker,
+                            workflow,
+                            context,
+                            failure.node_id,
+                            failure,
+                            ready_nodes=None,
+                            pending_retry=pending_retry,
+                            retry_tracker=retry_tracker,
+                        )
+                        await replacements.failed(failure, tracker, context)
+                        if not contained:
+                            if self.error_handling == ErrorHandlingMode.FAIL_FAST:
+                                await self._cancel_all(running_tasks)
+                                raise failure
+                            errors.add(failure)
+                            failed_nodes.add(failure.node_id)
 
                     in_flight = set(running_tasks.values())
                     pending_set = set(pending_retry.keys())
@@ -331,45 +398,53 @@ class ParallelExecutionAlgorithm(ExecutionAlgorithm):
                             if not tracker.is_blocked(nid)
                         }
 
-                    # A boundary can become materializable here either
-                    # because it just failed above, or because this batch's
-                    # completions were the last thing it was waiting on to
-                    # drain (a member finishing or yielding).
-                    node_yields_set = set(node_yields)
-                    for b in tracker.pending():
-                        if tracker.can_materialize(
-                            b, in_flight=in_flight, node_yields=node_yields_set
-                        ):
-                            await flush_cancellations(
-                                tracker,
-                                workflow,
-                                context,
-                                b,
-                                node_outputs=node_outputs,
-                                in_flight=in_flight,
-                                node_yields=node_yields_set,
-                            )
-                            out_id = await materialize(
-                                tracker, workflow, context, b, node_outputs
-                            )
-                            newly_ready = workflow.get_ready_successors(
-                                [out_id],
+                    (
+                        completed_boundaries,
+                        adaptation_errors,
+                    ) = await replacements.materialize_pending(
+                        workflow,
+                        context,
+                        tracker,
+                        node_outputs,
+                        in_flight=in_flight,
+                        node_yields=node_yields,
+                        ready_nodes=None,
+                        pending_retry=pending_retry,
+                        retry_tracker=retry_tracker,
+                    )
+                    for failure in adaptation_errors:
+                        if self.error_handling == ErrorHandlingMode.FAIL_FAST:
+                            await self._cancel_all(running_tasks)
+                            raise failure
+                        errors.add(failure)
+                        if failure.node_id is not None:
+                            failed_nodes.add(failure.node_id)
+                    ready_nodes.update(
+                        {
+                            nid: inp
+                            for nid, inp in workflow.get_ready_successors(
+                                completed_boundaries,
                                 node_outputs,
                                 skip=set(node_outputs)
                                 | set(ready_nodes)
                                 | in_flight
-                                | pending_set
-                                | node_yields_set,
-                            )
-                            ready_nodes.update(
-                                {
-                                    nid: inp
-                                    for nid, inp in newly_ready.items()
-                                    if not tracker.is_blocked(nid)
-                                }
-                            )
+                                | set(pending_retry)
+                                | set(node_yields)
+                                | failed_nodes,
+                            ).items()
+                            if not tracker.is_blocked(nid)
+                        }
+                    )
+                    ready_nodes = {
+                        nid: inp
+                        for nid, inp in ready_nodes.items()
+                        if not tracker.is_blocked(nid)
+                    }
 
                     for node_id, node_input in ready_nodes.items():
+                        if not retry_tracker.get_state(node_id).is_ready():
+                            pending_retry[node_id] = node_input
+                            continue
                         task = asyncio.create_task(
                             self._execute_node(
                                 context,
@@ -378,6 +453,7 @@ class ParallelExecutionAlgorithm(ExecutionAlgorithm):
                                 node_input,
                                 semaphore,
                                 retry_tracker,
+                                tracker,
                             )
                         )
                         running_tasks[task] = node_id
@@ -463,6 +539,8 @@ class ParallelExecutionAlgorithm(ExecutionAlgorithm):
                 output=output,
             )
             return result
+        finally:
+            await self._cancel_all(running_tasks)
 
     async def _cancel_all(
         self,
@@ -482,6 +560,7 @@ class ParallelExecutionAlgorithm(ExecutionAlgorithm):
         node_input: DataMapping,
         semaphore: asyncio.Semaphore | None,
         retry_tracker: RetryTracker,
+        boundaries: BoundaryTracker,
     ) -> NodeResult:
         """Execute a single node with rate limiting and retry support."""
         node = workflow.nodes_by_id[node_id]
@@ -491,21 +570,36 @@ class ParallelExecutionAlgorithm(ExecutionAlgorithm):
         if limiter is not None:
             await limiter.acquire()
 
+        def replacement_blocked() -> bool:
+            return (
+                isinstance(workflow, ReplacementGraph)
+                and node_id in workflow.seeded_inputs
+                and boundaries.is_blocked(node_id)
+            )
+
         try:
             if semaphore is not None:
                 async with semaphore:
+                    if replacement_blocked():
+                        return NodeResult(
+                            node_id, node_input, node_input, cancelled=True
+                        )
                     result = await node(
                         context=context,
                         input_type=workflow.node_input_types[node_id],
                         output_type=workflow.node_output_types[node_id],
                         input=node_input,
+                        allow_replacement=True,
                     )
             else:
+                if replacement_blocked():
+                    return NodeResult(node_id, node_input, node_input, cancelled=True)
                 result = await node(
                     context=context,
                     input_type=workflow.node_input_types[node_id],
                     output_type=workflow.node_output_types[node_id],
                     input=node_input,
+                    allow_replacement=True,
                 )
 
             return NodeResult(node_id, result, input=node_input)
