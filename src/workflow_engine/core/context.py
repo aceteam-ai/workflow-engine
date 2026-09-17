@@ -1,4 +1,5 @@
 # workflow_engine/core/context.py
+import uuid
 from abc import ABC, abstractmethod
 from collections.abc import Mapping
 from typing import TypeVar
@@ -6,9 +7,17 @@ from typing import TypeVar
 from overrides import EnforceOverrides
 
 from ..utils.env import get_env as _resolve_env_var
+from .admission import ContextAdmission
 from .boundary import CancelReason
 from .error import ShouldRetry, ShouldYield, WorkflowErrors, WorkflowException
 from .execution import WorkflowExecutionResult
+from .limits import (
+    LimitCoordinator,
+    LimitLease,
+    LimitPolicy,
+    LimitWaitInfo,
+    RateLimitConfig,
+)
 from .node import Node, NodeRegistry
 from .replacement import ReplacementFrame
 from .resources import ResourceResolver
@@ -67,10 +76,89 @@ class ExecutionContext(ABC, EnforceOverrides):
     validate sub-workflows that are emitted by nodes.
     """
 
-    def __init__(self, *, validation_context: ValidationContext | None = None):
+    def __init__(
+        self,
+        *,
+        validation_context: ValidationContext | None = None,
+        limit_coordinator: LimitCoordinator | None = None,
+        limit_policy: LimitPolicy | None = None,
+        run_id: str | None = None,
+    ):
         if validation_context is None:
             validation_context = ValidationContext()
         self.validation_context = validation_context
+        self._admission = ContextAdmission(
+            self,
+            coordinator=limit_coordinator,
+            policy=limit_policy,
+            run_id=run_id or uuid.uuid4().hex,
+        )
+
+    def execution_scope(
+        self,
+        *,
+        max_concurrency: int | None = None,
+        legacy: Mapping[str, RateLimitConfig] | None = None,
+        legacy_coordinator: LimitCoordinator | None = None,
+    ):
+        """Create isolated admission bookkeeping for one algorithm invocation."""
+        return self._admission.execution_scope(
+            max_concurrency=max_concurrency,
+            legacy=legacy,
+            legacy_coordinator=legacy_coordinator,
+        )
+
+    def admit_node(self, node: Node):
+        return self._admission.limit(node, "execution", whole_node=True)
+
+    def limit(self, *, node: Node, region: str):
+        """Limit a declared region inside a node with an async context manager."""
+        return self._admission.limit(node, region)
+
+    async def on_node_waiting_for_limit(
+        self,
+        *,
+        node: Node,
+        invocation_id: str,
+        wait_info: LimitWaitInfo,
+    ) -> None:
+        pass
+
+    async def on_node_admitted(
+        self,
+        *,
+        node: Node,
+        invocation_id: str,
+        lease: LimitLease,
+    ) -> None:
+        pass
+
+    async def on_limit_wait(
+        self,
+        *,
+        node: Node,
+        region: str,
+        wait_info: LimitWaitInfo,
+    ) -> None:
+        pass
+
+    async def on_limit_acquired(
+        self,
+        *,
+        node: Node,
+        region: str,
+        lease: LimitLease,
+    ) -> None:
+        pass
+
+    async def on_limit_released(
+        self,
+        *,
+        node: Node,
+        region: str,
+        lease: LimitLease,
+    ) -> None:
+        pass
 
     async def get_env(self, key: str, default: str | None = None) -> str:
         """

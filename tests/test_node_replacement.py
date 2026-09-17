@@ -150,8 +150,8 @@ class ReplacementLeafNode(Node[ReplacementData, ReplacementData, DelegationParam
 
 
 class ReplacementContext(InMemoryExecutionContext):
-    def __init__(self, frames=None, cache=None):
-        super().__init__()
+    def __init__(self, frames=None, cache=None, **kwargs):
+        super().__init__(**kwargs)
         self.frames = {} if frames is None else frames
         self.cache = {} if cache is None else cache
         self.events = []

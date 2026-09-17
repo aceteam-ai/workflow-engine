@@ -24,10 +24,13 @@ from workflow_engine import (
     DataMapping,
     Empty,
     ErrorClass,
+    InMemoryLimitCoordinator,
     IntegerValue,
+    LimitPolicy,
     Node,
     NodeException,
     NodeTypeInfo,
+    RateLimitConfig,
     Result,
     StringValue,
     WorkflowEngine,
@@ -55,6 +58,7 @@ def reset_probes():
     BlockingReplacementNode.release = asyncio.Event()
     BlockingReplacementNode.cancelled = asyncio.Event()
     MeteredReplacementNode.calls = []
+    QueuedReplacementNode.calls = []
 
 
 async def attempted_target(engine):
@@ -191,6 +195,43 @@ async def blocking_parent(engine):
     return parent
 
 
+class QueuedReplacementNode(Node[ReplacementData, ReplacementData, Empty]):
+    """A replacement whose own type carries a real, exhaustible admission pool."""
+
+    TYPE_INFO: ClassVar[NodeTypeInfo] = NodeTypeInfo.from_parameter_type(
+        display_name="Queued replacement",
+        version="1.0.0",
+        parameter_type=Empty,
+        execution_limits=RateLimitConfig(max_concurrency=1),
+    )
+    calls: ClassVar[list[str]] = []
+
+    @classmethod
+    @override
+    def static_input_type(cls) -> type[ReplacementData]:
+        return ReplacementData
+
+    @classmethod
+    @override
+    def static_output_type(cls) -> type[ReplacementData]:
+        return ReplacementData
+
+    @override
+    async def run(self, *, context, input_type, output_type, input) -> ReplacementData:
+        # Reaching the body at all means admission was granted; the test
+        # holds the sole slot externally, so this must never run.
+        self.calls.append(self.id)
+        return input
+
+
+async def queued_replacement_parent(engine):
+    child = engine.create_node(QueuedReplacementNode, id="blocking")
+    parent = contract_node(
+        engine, IntegerRecord, IntegerRecord, target=child, id="delegate"
+    )
+    return parent
+
+
 async def test_failed_boundary_drains_child_without_publishing_pending_caller():
     engine = WorkflowEngine(execution_algorithm=ParallelExecutionAlgorithm())
     parent = await blocking_parent(engine)
@@ -296,30 +337,28 @@ async def test_replacement_does_not_bypass_boundary_metered_retry_consent(
         ]
 
 
-async def test_failed_boundary_blocks_replacement_waiting_for_quota(monkeypatch):
-    algorithm = ParallelExecutionAlgorithm(max_concurrency=1)
+async def test_failed_boundary_blocks_replacement_waiting_for_quota():
+    """A replacement that is still queued for admission when its boundary
+    fails must be cancelled without ever running its body or leaking the
+    lease it was waiting on. Admission is context-owned (see #272), so the
+    queue is a real coordinator pool held externally, not a mocked limiter.
+    """
+    coordinator = InMemoryLimitCoordinator()
+    algorithm = ParallelExecutionAlgorithm()
     engine = WorkflowEngine(execution_algorithm=algorithm)
 
-    class DeferredQuota:
-        async def acquire(self):
-            await BlockingReplacementNode.release.wait()
-
-        def release(self):
-            pass
-
-    quota = DeferredQuota()
-    monkeypatch.setattr(
-        algorithm.rate_limits,
-        "get_limiter",
-        lambda name: quota if name == "BlockingReplacement" else None,
+    request = LimitPolicy().resolve(
+        QueuedReplacementNode,
+        "execution",
+        QueuedReplacementNode.TYPE_INFO.execution_limits,
     )
+    assert request is not None
+    held = await coordinator.acquire((request,), invocation_id="external")
 
     class QueuedContext(ReplacementContext):
-        cancelled_ids: list[str]
-
-        def __init__(self):
-            super().__init__()
-            self.cancelled_ids = []
+        def __init__(self, **kwargs):
+            super().__init__(**kwargs)
+            self.cancelled_ids: list[str] = []
 
         @override
         async def on_node_replace(
@@ -334,42 +373,13 @@ async def test_failed_boundary_blocks_replacement_waiting_for_quota(monkeypatch)
             BlockingReplacementNode.started.set()
 
         @override
-        async def on_node_replacement_failed(
-            self, *, node, replacement_info, exception
-        ) -> None:
-            await super().on_node_replacement_failed(
-                node=node, replacement_info=replacement_info, exception=exception
-            )
-            BlockingReplacementNode.release.set()
-
-        @override
         async def on_node_cancelled(
             self, *, node, input_type, output_type, input, boundary_id, reason, cause
         ) -> None:
             self.cancelled_ids.append(node.id)
 
-    parent = await blocking_parent(engine)
+    parent = await queued_replacement_parent(engine)
     boom = engine.create_node(FailAfterAdmissionNode, id="boom")
-
-    # The independent failure waits for the replacement event. It must not hold
-    # the single execution slot before the delegator can run.
-    class FailureQuota:
-        async def acquire(self):
-            await BlockingReplacementNode.started.wait()
-
-        def release(self):
-            pass
-
-    failure_quota = FailureQuota()
-    monkeypatch.setattr(
-        algorithm.rate_limits,
-        "get_limiter",
-        lambda name: quota
-        if name == "BlockingReplacement"
-        else failure_quota
-        if name == "FailAfterAdmission"
-        else None,
-    )
     graph = workflow(
         engine,
         {"value": IntegerValue},
@@ -380,16 +390,22 @@ async def test_failed_boundary_blocks_replacement_waiting_for_quota(monkeypatch)
             edge("delegate", "value", "output", "value"),
         ],
     )
-    context = QueuedContext()
-    result = await asyncio.wait_for(
-        engine.execute_node(
-            context=context,
-            node=AttemptNode,
-            params={"workflow": graph},
-            input={"value": 7},
-        ),
-        timeout=5,
-    )
-    assert result.status is WorkflowExecutionResultStatus.SUCCESS, result.errors
-    assert ("start", "node/delegate/replacement_0") not in context.events
-    assert context.cancelled_ids.count("node/delegate/replacement_0") == 1
+    context = QueuedContext(limit_coordinator=coordinator)
+    try:
+        result = await asyncio.wait_for(
+            engine.execute_node(
+                context=context,
+                node=AttemptNode,
+                params={"workflow": graph},
+                input={"value": 7},
+            ),
+            timeout=5,
+        )
+        assert result.status is WorkflowExecutionResultStatus.SUCCESS, result.errors
+        assert context.cancelled_ids.count("node/delegate/replacement_0") == 1
+        # The queued admission attempt must never reach the node body: no
+        # quota was consumed and abandoned, only ever waited-on-then-dropped.
+        assert QueuedReplacementNode.calls == []
+        assert (await coordinator.inspect()).waiting == ()
+    finally:
+        await coordinator.release(held)

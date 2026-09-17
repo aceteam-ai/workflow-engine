@@ -74,6 +74,19 @@ class TopologicalExecutionAlgorithm(ExecutionAlgorithm):
         workflow: ValidatedWorkflow,
         input: DataMapping,
     ) -> WorkflowExecutionResult:
+        async with context.execution_scope(
+            legacy=self.rate_limits.configs(),
+            legacy_coordinator=self.rate_limits.coordinator,
+        ):
+            return await self._execute(context=context, workflow=workflow, input=input)
+
+    async def _execute(
+        self,
+        *,
+        context: ExecutionContext,
+        workflow: ValidatedWorkflow,
+        input: DataMapping,
+    ) -> WorkflowExecutionResult:
         result = await context.on_workflow_start(workflow=workflow, input=input)
         if result is not None:
             return result
@@ -120,15 +133,6 @@ class TopologicalExecutionAlgorithm(ExecutionAlgorithm):
                     node = workflow.nodes_by_id[node_id]
                     input_type = workflow.node_input_types[node_id]
                     output_type = workflow.node_output_types[node_id]
-
-                    # Acquire rate limiter if configured for this node type
-                    limiter = (
-                        None
-                        if node_id in replacements.completion_sources
-                        else self.rate_limits.get_limiter(node.type)
-                    )
-                    if limiter is not None:
-                        await limiter.acquire()
 
                     expanded = False
                     replaced = False
@@ -264,10 +268,6 @@ class TopologicalExecutionAlgorithm(ExecutionAlgorithm):
 
                     except WorkflowException as e:
                         failure = e
-
-                    finally:
-                        if limiter is not None:
-                            limiter.release()
 
                     if failure is not None:
                         contained = await handle_failure(

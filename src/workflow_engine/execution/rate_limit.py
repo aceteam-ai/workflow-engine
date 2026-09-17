@@ -7,22 +7,8 @@ Supports both concurrency limits and request rate limits per node type.
 
 import asyncio
 import time
-from datetime import timedelta
 
-from ..utils.model import ImmutableBaseModel
-
-
-class RateLimitConfig(ImmutableBaseModel):
-    """Configuration for rate limiting a node type."""
-
-    max_concurrency: int | None = None
-    """Maximum concurrent executions of this node type. None = unlimited."""
-
-    requests_per_window: int | None = None
-    """Maximum requests within the time window. None = unlimited."""
-
-    window_duration: timedelta = timedelta(seconds=60)
-    """Time window for rate limiting (default: 60 seconds)."""
+from ..core.limits import InMemoryLimitCoordinator, RateLimitConfig
 
 
 class RateLimiter:
@@ -98,6 +84,7 @@ class RateLimitRegistry:
     """Registry of rate limiters by node type."""
 
     def __init__(self) -> None:
+        self.coordinator = InMemoryLimitCoordinator()
         self._configs: dict[str, RateLimitConfig] = {}
         self._limiters: dict[str, RateLimiter] = {}
 
@@ -109,6 +96,9 @@ class RateLimitRegistry:
     def get_limiter(self, node_type: str) -> RateLimiter | None:
         """Get the rate limiter for a node type, or None if not configured."""
         return self._limiters.get(node_type)
+
+    def configs(self) -> dict[str, RateLimitConfig]:
+        return dict(self._configs)
 
     def get_config(self, node_type: str) -> RateLimitConfig | None:
         """Get the rate limit config for a node type, or None if not configured."""
