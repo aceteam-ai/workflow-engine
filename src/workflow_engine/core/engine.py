@@ -10,6 +10,11 @@ from .edge import Edge
 from .execution import ExecutionAlgorithm, WorkflowExecutionResult
 from .io import InputNode, OutputNode
 from .node import Node, NodeRegistry, Params
+from .resources import (
+    ResourceValidationOptions,
+    ResourceValidationReport,
+    validate_resources,
+)
 from .values import Data, ValueRegistry, ValueType, get_data_dict, get_data_fields
 from .workflow import ResolvedWorkflow, ValidatedWorkflow, Workflow
 
@@ -128,6 +133,18 @@ class WorkflowEngine:
         the "Output" node type.
         """
         return self.node_registry.create_output_node(**fields)
+
+    async def validate_resources(
+        self,
+        workflow: Workflow | Mapping[str, Any],
+        *,
+        context: ValidationContext | None = None,
+        options: ResourceValidationOptions | None = None,
+    ) -> ResourceValidationReport:
+        """Preflight declared resources using the supplied context or this engine's."""
+        if context is None:
+            context = await self._get_validation_context()
+        return await validate_resources(workflow, context, options=options)
 
     async def resolve(self, workflow: Workflow) -> ResolvedWorkflow:
         """Resolve an editable draft without requiring every input to be wired."""
