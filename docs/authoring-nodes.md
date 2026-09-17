@@ -204,3 +204,11 @@ All nodes use [semantic versioning](https://semver.org/):
 
 When you make a breaking change, write a migration — see
 [MIGRATIONS.md](MIGRATIONS.md).
+
+## Delegating to one node
+
+Return a `Node` from `run()` to select another implementation with compatible
+input/output field names. The built-in schedulers assign a stable
+`<caller>/replacement_N` ID and preserve the caller's output contract. See
+[returning a replacement node](node-replacement.md) for contract checks, lifecycle
+hooks, bounded chains, and durable host replay.

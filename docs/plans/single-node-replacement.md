@@ -1,6 +1,6 @@
 # Single-node replacement (#174)
 
-Status: proposed design; this document does not change runtime behavior.
+Status: implemented by the built-in executors. See [the runtime and host guide](../node-replacement.md). This document records the design contract; durable storage and same-worker execution remain host/future work.
 
 ## Problem and decision
 
