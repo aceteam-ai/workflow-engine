@@ -45,6 +45,12 @@ from .core import (
     Params,
     ReplacementFrame,
     ResolvedWorkflow,
+    ResourceCheck,
+    ResourceRequest,
+    ResourceResolver,
+    ResourceValidationIssue,
+    ResourceValidationOptions,
+    ResourceValidationReport,
     Result,
     ResultError,
     SequenceValue,
@@ -71,6 +77,7 @@ from .core import (
     WorkflowExecutionResultStatus,
     WorkflowValue,
     migration_registry,
+    validate_resources,
 )
 
 __all__ = [
@@ -116,6 +123,12 @@ __all__ = [
     "Params",
     "ReplacementFrame",
     "ResolvedWorkflow",
+    "ResourceCheck",
+    "ResourceRequest",
+    "ResourceResolver",
+    "ResourceValidationIssue",
+    "ResourceValidationOptions",
+    "ResourceValidationReport",
     "Result",
     "ResultError",
     "SequenceValue",
@@ -143,4 +156,5 @@ __all__ = [
     "WorkflowValue",
     "__version__",
     "migration_registry",
+    "validate_resources",
 ]

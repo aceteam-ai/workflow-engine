@@ -2,8 +2,15 @@
 
 import pytest
 
+from tests.test_sequence_algebra import CacheContext, FoldProbeNode, list_step
 from tests.test_sequence_ops import edge, run_roundtrip, workflow
-from workflow_engine import ExecutionAlgorithm, FloatValue, Workflow, WorkflowEngine
+from workflow_engine import (
+    ExecutionAlgorithm,
+    FloatValue,
+    Workflow,
+    WorkflowEngine,
+    WorkflowExecutionResultStatus,
+)
 from workflow_engine.nodes import AddNode, ForEachNode
 
 pytestmark = pytest.mark.integration
@@ -86,3 +93,43 @@ def test_broadcast_default_survives_parameter_schema_reconstruction():
     )
     rebuilt = defaults.build_data_cls()
     assert get_data_dict(rebuilt())["constant_inputs"].model_dump(mode="json") == []
+
+
+async def test_broadcast_replays_completed_items_with_stable_expansion(
+    engine, monkeypatch
+):
+    monkeypatch.setattr(FoldProbeNode, "calls", [])
+    monkeypatch.setattr(FoldProbeNode, "yield_item", 3)
+    monkeypatch.setattr(FoldProbeNode, "fail_item", None)
+    graph = await engine.build_single_node_workflow(
+        ForEachNode,
+        params={"workflow": list_step(engine), "constant_inputs": ["acc"]},
+    )
+    inputs = {"sequence": [1, 2, 3, 4], "acc": [99]}
+    context = CacheContext()
+    first = await engine.execute(context=context, workflow=graph, input=inputs)
+    assert first.status is WorkflowExecutionResultStatus.YIELDED
+    completed = {
+        node_id: item
+        for node_id, item in FoldProbeNode.calls
+        if node_id in context.cache
+    }
+    assert "node/element_0/append" in completed
+
+    resumed = CacheContext(dict(context.cache))
+    result = await engine.execute(
+        context=resumed,
+        workflow=Workflow.model_validate_json(graph.model_dump_json()),
+        input=inputs,
+    )
+    assert result.status is WorkflowExecutionResultStatus.SUCCESS, result.errors
+    assert result.output["sequence"].model_dump() == [
+        [99, 1],
+        [99, 2],
+        [99, 3],
+        [99, 4],
+    ]
+    assert context.expansions["node"] == resumed.expansions["node"]
+    assert completed.keys() <= set(resumed.replayed)
+    for item in completed.values():
+        assert [value for _, value in FoldProbeNode.calls].count(item) == 1

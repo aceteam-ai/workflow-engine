@@ -11,6 +11,7 @@ from .error import ShouldRetry, ShouldYield, WorkflowErrors, WorkflowException
 from .execution import WorkflowExecutionResult
 from .node import Node, NodeRegistry
 from .replacement import ReplacementFrame
+from .resources import ResourceResolver
 from .values import Data, DataMapping, FileValue, ResultError, ValueRegistry
 from .workflow import ValidatedWorkflow, Workflow
 
@@ -30,9 +31,11 @@ class ValidationContext:
         *,
         node_registry: NodeRegistry = NodeRegistry.DEFAULT,
         value_registry: ValueRegistry = ValueRegistry.DEFAULT,
+        resource_resolver: ResourceResolver | None = None,
     ):
         self.node_registry = node_registry
         self.value_registry = value_registry
+        self.resource_resolver = resource_resolver
 
     async def get_env(self, key: str, default: str | None = None) -> str:
         """

@@ -66,7 +66,13 @@ Each takes `params.workflow`. For fold, the accumulator field must be named
 `acc`, its input and output schemas must match, and the step must return only
 that field. Other input fields form the item, using the traversal single-field
 collapse rule. The input seed is returned unchanged on an empty sequence.
-A fold never assumes associativity or evaluates a combining tree.
+A fold never assumes associativity or evaluates a combining tree. A step failure
+uses the ordinary failure channel; without an accumulator output, later steps
+cannot run.
+There is no `on_error` parameter or implicit partial-accumulator result. The older
+proposal for `on_error: collect` is superseded by explicit `Result` values and
+`Attempt` boundaries. Catch a whole fold with `Attempt`, or encode a partial
+accumulator and failure as a step's explicit accumulator type.
 
 `Filter` and `GroupBy` require exactly one output field of the indicated type;
 the field name is arbitrary. Multi-field items remain records. The predicate

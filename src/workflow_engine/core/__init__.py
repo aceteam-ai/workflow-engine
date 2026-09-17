@@ -47,6 +47,15 @@ from .node import (
     Params,
 )
 from .replacement import ReplacementFrame
+from .resources import (
+    ResourceCheck,
+    ResourceRequest,
+    ResourceResolver,
+    ResourceValidationIssue,
+    ResourceValidationOptions,
+    ResourceValidationReport,
+    validate_resources,
+)
 from .stakeholder import StakeholderLevel
 from .values import (
     JSON,
@@ -131,6 +140,12 @@ __all__ = [
     "PropagatedResultError",
     "ReplacementFrame",
     "ResolvedWorkflow",
+    "ResourceCheck",
+    "ResourceRequest",
+    "ResourceResolver",
+    "ResourceValidationIssue",
+    "ResourceValidationOptions",
+    "ResourceValidationReport",
     "Result",
     "ResultError",
     "RoundingMode",
@@ -161,4 +176,5 @@ __all__ = [
     "WorkflowValue",
     "migration_registry",
     "migration_runner",
+    "validate_resources",
 ]
