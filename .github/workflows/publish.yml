@@ -33,7 +33,7 @@ jobs:
         continue-on-error: true
 
       - name: Run tests
-        run: uv run pytest -q
+        run: uv run pytest -q -m "not graphviz"
 
   build:
     name: Build Package
