@@ -1,6 +1,7 @@
 # workflow_engine/core/node.py
 from __future__ import annotations
 
+import asyncio
 import logging
 import warnings
 from abc import ABC, abstractmethod
@@ -607,13 +608,47 @@ class Node(ImmutableBaseModel, Generic[Input_contra, Output, Params_co]):
 
                 cached_output = isinstance(output, Mapping)
                 if output is None:
-                    async with context.admit_node(self):
-                        output = await self.run(
-                            context=context,
+                    try:
+                        async with context.admit_node(self):
+                            output = await self.run(
+                                context=context,
+                                input_type=input_type,
+                                output_type=output_type,
+                                input=input_obj,
+                            )
+                    except asyncio.CancelledError:
+                        # on_node_start already fired above. Admission (or the
+                        # run it guards) can be cancelled by a boundary that
+                        # gave up on queued work before a slot was granted, or
+                        # by fail-fast cancelling an admitted-but-still-running
+                        # node. Either way, a host that paired resource
+                        # acquisition in on_node_start with release in a
+                        # terminal hook must still see that terminal hook, or
+                        # the resource leaks every time this happens.
+                        #
+                        # on_node_error's normal contract lets a context
+                        # silence the error by returning a replacement output.
+                        # That does not apply here: swallowing the
+                        # cancellation would stop it from reaching the
+                        # boundary that issued it, which is worse than the
+                        # leak this exists to prevent. So the return value is
+                        # deliberately ignored and the CancelledError always
+                        # propagates.
+                        await context.on_node_error(
+                            node=self,
                             input_type=input_type,
                             output_type=output_type,
-                            input=input_obj,
+                            input=casted_input,
+                            exception=NodeException.for_operator(
+                                f"Node {self.id} was cancelled before it "
+                                "could finish (admission or execution was "
+                                "cancelled).",
+                                node=self,
+                                error_class=ErrorClass.SYSTEMIC,
+                                name="cancelled",
+                            ),
                         )
+                        raise
                     if not isinstance(output, (Workflow, Node)):
                         output = get_data_dict(output)
 

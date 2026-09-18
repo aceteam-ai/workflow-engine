@@ -282,6 +282,35 @@ class ResolvedWorkflow(Workflow):
 class ValidatedWorkflow(ResolvedWorkflow):
     """A complete typed graph ready for execution."""
 
+    # Pydantic's deprecated method has the same name.
+    @override
+    async def validate(  # pyright: ignore[reportIncompatibleMethodOverride]
+        self, context: "ValidationContext"
+    ) -> Self:
+        """Return this workflow unchanged: it is already validated.
+
+        `validate()` is otherwise expensive (`resolve()` plus a required-edge
+        check over every node), and `WorkflowEngine.execute` calls it on
+        every run regardless of whether the caller already validated. Making
+        it a no-op here is what makes that call idempotent, so a caller who
+        validates up front (to get a clean diagnostic before starting a run)
+        does not pay for it twice.
+
+        This ignores `context`. Validation is relative to a
+        `ValidationContext`'s node and value registries, so that is only
+        safe because a `ValidatedWorkflow` is, in practice, revalidated with
+        an equivalent context: `WorkflowEngine.validate` builds a fresh
+        `ValidationContext` instance from the engine's own `node_registry`
+        and `value_registry` on every call, so no caller going through the
+        engine ever actually validates the same workflow against two
+        *different* registries. A caller that does need to check this
+        workflow's original graph against a genuinely different registry
+        must keep the pre-validation `Workflow` around and validate that,
+        not this `ValidatedWorkflow`, since this method will not detect the
+        difference.
+        """
+        return self
+
     def get_node_input_if_ready(
         self,
         node_id: str,

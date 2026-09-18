@@ -1,6 +1,7 @@
 """Deterministic admission and scheduler regressions; no timing races."""
 
 import asyncio
+from contextlib import asynccontextmanager
 from datetime import timedelta
 from typing import ClassVar
 
@@ -9,6 +10,7 @@ from overrides import override
 from pydantic import ValidationError
 
 from workflow_engine import (
+    DataMapping,
     Empty,
     ErrorClass,
     ExecutionContext,
@@ -21,6 +23,7 @@ from workflow_engine import (
     RateLimitConfig,
     ShouldRetry,
     ShouldYield,
+    ValidatedWorkflow,
     Workflow,
     WorkflowEngine,
     WorkflowException,
@@ -216,9 +219,20 @@ class ProbeContext(InMemoryExecutionContext):
         self.mode = "ok"
         self.events = []
         self.cache = False
+        # Independent of `events` (which some tests assert is empty): every
+        # id for which on_node_start actually fired, and every terminal hook
+        # (on_node_finish / on_node_expand / on_node_error) that fired per
+        # node id, in call order. Used to assert the start/terminal pairing
+        # invariant without disturbing existing `events`-based assertions.
+        self.node_starts: list[str] = []
+        self.terminal_hooks: dict[str, list[str]] = {}
+
+    def _record_terminal(self, node_id: str, hook: str) -> None:
+        self.terminal_hooks.setdefault(node_id, []).append(hook)
 
     @override
     async def on_node_start(self, *, node, input_type, output_type, input):
+        self.node_starts.append(node.id)
         if self.cache:
             return {}
         return None
@@ -231,6 +245,27 @@ class ProbeContext(InMemoryExecutionContext):
     @override
     async def on_node_admitted(self, *, node, invocation_id, lease):
         self.events.append(("admitted", node.id))
+
+    @override
+    async def on_node_finish(
+        self, *, node, input_type, output_type, input, output
+    ) -> DataMapping:
+        self._record_terminal(node.id, "finish")
+        return output
+
+    @override
+    async def on_node_expand(
+        self, *, node, input_type, output_type, input, workflow
+    ) -> ValidatedWorkflow:
+        self._record_terminal(node.id, "expand")
+        return workflow
+
+    @override
+    async def on_node_error(
+        self, *, node, input_type, output_type, input, exception
+    ) -> WorkflowException:
+        self._record_terminal(node.id, "error")
+        return exception
 
 
 async def probe_workflow(engine, nodes):
@@ -373,6 +408,131 @@ async def test_boundary_cancels_queued_member_but_drains_admitted_members():
     assert "node/queued" not in context.calls
     assert (await coordinator.inspect()).waiting == ()
     await coordinator.release(held)
+
+
+async def test_cancelled_admission_still_reaches_exactly_one_terminal_hook():
+    """Issue #277: a node cancelled while queued for admission must still
+
+    reach a terminal hook, and cancellation must still propagate.
+
+    Set up a fan-out scope (an AttemptNode boundary) with a concurrency
+    limit of 1 that is already fully consumed externally, so two members
+    queue for admission (more than the limit allows). A third member fails,
+    which fails the boundary and cancels the two still-queued members.
+    Before the fix, those two members fire on_node_start but never reach any
+    terminal hook, which is exactly the leak a host keys resource release
+    off of.
+    """
+    coordinator = InMemoryLimitCoordinator()
+    engine = WorkflowEngine(execution_algorithm=ParallelExecutionAlgorithm())
+    context = ProbeContext(limit_coordinator=coordinator)
+    context.mode = "fail"
+    request = LimitPolicy().resolve(
+        LimitedProbeNode, "execution", LimitedProbeNode.TYPE_INFO.execution_limits
+    )
+    assert request is not None
+    # Consume the only slot externally so both LimitedProbeNode members
+    # below queue for admission instead of running.
+    held = await coordinator.acquire((request,), invocation_id="external")
+    inner = await probe_workflow(
+        engine,
+        [
+            engine.create_node(LimitedProbeNode, id="queued1"),
+            engine.create_node(LimitedProbeNode, id="queued2"),
+            engine.create_node(OtherLimitedProbeNode, id="failure"),
+        ],
+    )
+    result = await asyncio.wait_for(
+        engine.execute_node(
+            context=context, node=AttemptNode, params={"workflow": inner}, input={}
+        ),
+        2,
+    )
+    assert result.status is WorkflowExecutionResultStatus.SUCCESS
+
+    # Neither queued member ever actually ran.
+    assert "node/queued1" not in context.calls
+    assert "node/queued2" not in context.calls
+
+    # Every node that fired on_node_start (this includes the boundary's own
+    # nodes, keyed by their flat ids) must have reached exactly one terminal
+    # hook. Today's code leaves the cancelled queued members with zero.
+    assert context.node_starts, "sanity: on_node_start should have fired at all"
+    for node_id in context.node_starts:
+        hooks = context.terminal_hooks.get(node_id, [])
+        assert len(hooks) == 1, (
+            f"node {node_id!r} fired on_node_start but reached "
+            f"{len(hooks)} terminal hooks ({hooks!r}), expected exactly 1"
+        )
+
+    # The cancelled members specifically must have been terminated via
+    # on_node_error (the "normal" terminal hook for an in-flight node that
+    # gets cancelled), not silently dropped.
+    assert context.terminal_hooks.get("node/queued1") == ["error"]
+    assert context.terminal_hooks.get("node/queued2") == ["error"]
+
+    await coordinator.release(held)
+
+
+async def test_admission_cancellation_still_propagates_past_a_swallowing_hook():
+    """Issue #277: on_node_error's normal "silence the error by returning an
+
+    output" contract must not apply to a cancellation. If it did, a boundary
+    cancellation would just vanish into a fabricated successful output
+    instead of unwinding the cancelled task, which the issue calls out as
+    worse than the leak the fix addresses.
+
+    Drives ``Node.__call__`` directly (the same dispatch every execution
+    algorithm uses) against a context whose ``admit_node`` always cancels,
+    and whose ``on_node_error`` tries to swallow the error by returning a
+    replacement output. The call must still raise ``CancelledError``.
+    """
+
+    class CancelOnAdmitContext(InMemoryExecutionContext):
+        def __init__(self, **kwargs):
+            super().__init__(**kwargs)
+            self.node_starts: list[str] = []
+            self.terminal_hooks: dict[str, list[str]] = {}
+
+        @override
+        async def on_node_start(self, *, node, input_type, output_type, input):
+            self.node_starts.append(node.id)
+            return None
+
+        @override
+        def admit_node(self, node):
+            @asynccontextmanager
+            async def _cancel_immediately():
+                raise asyncio.CancelledError
+                yield  # pragma: no cover - unreachable, satisfies the CM protocol
+
+            return _cancel_immediately()
+
+        @override
+        async def on_node_finish(
+            self, *, node, input_type, output_type, input, output
+        ) -> DataMapping:
+            self.terminal_hooks.setdefault(node.id, []).append("finish")
+            return output
+
+        @override
+        async def on_node_error(
+            self, *, node, input_type, output_type, input, exception
+        ) -> WorkflowException | DataMapping:
+            self.terminal_hooks.setdefault(node.id, []).append("error")
+            # Try to silence the error by returning a replacement output.
+            # This must be ignored for a cancellation.
+            return {}
+
+    engine = WorkflowEngine()
+    context = CancelOnAdmitContext()
+    node = engine.create_node(LimitedProbeNode, id="n1")
+
+    with pytest.raises(asyncio.CancelledError):
+        await node(context=context, input_type=Empty, output_type=Empty, input={})
+
+    assert context.node_starts == ["n1"]
+    assert context.terminal_hooks == {"n1": ["error"]}
 
 
 async def test_region_reentry_shares_lease_and_undeclared_region_fails():

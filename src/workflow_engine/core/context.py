@@ -217,6 +217,19 @@ class ExecutionContext(ABC, EnforceOverrides):
 
         If the context already knows what the node's output will be, return that
         output to skip node execution.
+
+        Ordering guarantee: this fires before quota admission is attempted, so
+        it means "this node is about to be considered," not "this node has
+        been admitted and will run." A node can still be cancelled while
+        queued for admission (a boundary giving up on queued work) or while
+        running (fail-fast cancelling admitted work) after this hook returns.
+        In both cases the node is guaranteed to reach exactly one terminal
+        hook (``on_node_finish``, ``on_node_expand``, or ``on_node_error``),
+        so a host that acquires a resource here can safely release it in a
+        terminal hook without leaking on cancellation. A host that wants to
+        gate resource acquisition on the node actually running, rather than
+        merely being considered, should instead acquire inside
+        ``on_node_admitted``.
         """
         return None
 
@@ -264,6 +277,14 @@ class ExecutionContext(ABC, EnforceOverrides):
         A hook that is called when a node raises an error.
         The context can modify the error by returning a different exception, or
         it can silence the error by returning an output.
+
+        Exception: when ``exception`` wraps an ``asyncio.CancelledError`` (the
+        node was cancelled while queued for admission or while running), the
+        return value is ignored and the cancellation always propagates.
+        Silencing a cancellation would stop it from reaching the boundary
+        that issued it, so this hook can observe such a cancellation (to
+        release a resource acquired in ``on_node_start``, for instance) but
+        cannot absorb it.
         """
         return exception
 
