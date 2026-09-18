@@ -6,6 +6,16 @@ This project uses [PEP 440](https://peps.python.org/pep-0440/) versioning with r
 
 ## [Unreleased]
 
+## [2.0.0rc18] - 2026-09-18
+
+### Fixed
+
+- **Both schedulers now build their run-local graph by construction rather than by validation** (`execution/replacement.py`, `execution/topological.py`, `execution/parallel.py`, #282): each scheduler's `_execute` upgraded its incoming `ValidatedWorkflow` to a `ReplacementGraph` with `ReplacementGraph.model_validate(...)`, added in #276 and first released in 2.0.0rc17. That call does not reliably produce the class it is called on. Once an embedding application has defined its own node types, `model_validate` on `ReplacementGraph`, and equally on `ValidatedWorkflow` and `ResolvedWorkflow`, returns a plain `Workflow`, silently dropping the validated-only API the schedulers go on to call. The first symptom is an `AttributeError` for `get_initial_ready_nodes` during scheduling setup, which `_execute`'s own handler then converts into a second `AttributeError` for `get_output` on the partial-output path, so the reported crash names a method far from the actual defect. This fires on every execution, not only on error paths. `ReplacementGraph.from_validated()` now constructs the class directly, which always yields the intended type and skips re-validating a graph that is already validated.
+
+  The engine's own test suite cannot observe this: the downgrade does not occur until an embedding application defines node types, so all 1729 tests pass both with and without the fix. It was found by running a downstream application's suite against the engine, which is the only place it reproduces. The underlying reason `model_validate` returns a base class here is still open and is worth a separate investigation; constructing the class directly is correct regardless of that answer.
+
+- **`ExecutionAlgorithm.execute()` now enforces its `ValidatedWorkflow` signature at runtime** (`core/execution.py`, `execution/topological.py`, `execution/parallel.py`, #282): the signature was previously advisory only. A caller that invoked an algorithm's `execute()` directly with a plain `Workflow`, skipping `WorkflowEngine.validate()`, used to fall through into scheduler internals that assume validated-only fields, surfacing as an incidental `AttributeError` with no indication that the workflow itself was the problem. Both schedulers now call a shared `ExecutionAlgorithm.require_validated()` guard as the first thing their public `execute()` does, raising a `WorkflowException.for_engineer` that names the actual type received. This guard is a separate concern from the downgrade above and does not prevent it: the workflow arriving at `execute()` is a genuine `ValidatedWorkflow`, and the downgrade happens later, inside `_execute`.
+
 ## [2.0.0rc17] - 2026-09-17
 
 ### Added
