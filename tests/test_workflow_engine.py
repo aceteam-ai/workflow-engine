@@ -1,5 +1,6 @@
 """Tests for WorkflowEngine."""
 
+from collections.abc import Iterable
 from typing import Type
 
 import pytest
@@ -15,6 +16,7 @@ from workflow_engine import (
     NodeRegistry,
     NodeTypeInfo,
     OutputNode,
+    ValidatedWorkflow,
     ValueRegistry,
     Workflow,
     WorkflowEngine,
@@ -608,3 +610,80 @@ class TestWorkflowEngineExecution:
         )
 
         assert result.status is WorkflowExecutionResultStatus.SUCCESS
+
+
+class _CountingNodeRegistry(NodeRegistry):
+    """Wraps a real registry and counts `get()` calls.
+
+    `NodeRegistry.load()` (called once per node by `Workflow.resolve()`)
+    calls `get()` exactly once per node, so counting `get()` calls is a
+    direct tripwire for "resolve() ran again", without needing to know
+    anything about the node classes involved.
+    """
+
+    def __init__(self, inner: NodeRegistry):
+        self._inner = inner
+        self.get_calls = 0
+
+    @override
+    def get(self, name: str) -> type[Node] | None:
+        self.get_calls += 1
+        return self._inner.get(name)
+
+    @override
+    def items(self) -> "Iterable[tuple[str, type[Node]]]":
+        return self._inner.items()
+
+
+def _build_single_node_workflow(engine: WorkflowEngine) -> Workflow:
+    return Workflow(
+        input_node=engine.create_input_node(),
+        output_node=engine.create_output_node(),
+        inner_nodes=[engine.create_node(SampleAddNode, id="node1")],
+        edges=[],
+    )
+
+
+class TestValidatedWorkflowValidateIsIdempotent:
+    """Issue #278: validating an already-validated workflow must be a no-op."""
+
+    async def test_second_validate_call_does_no_registry_work(self):
+        registry = _CountingNodeRegistry(_build_registry(SampleAddNode))
+        engine = WorkflowEngine(node_registry=registry)
+        workflow = _build_single_node_workflow(engine)
+
+        validated = await engine.validate(workflow)
+        assert isinstance(validated, ValidatedWorkflow)
+        calls_after_first_validate = registry.get_calls
+        assert calls_after_first_validate > 0, (
+            "sanity: the first validate() should have touched the registry"
+        )
+
+        revalidated = await engine.validate(validated)
+
+        # ValidatedWorkflow.validate() returns itself: no resolve(), no
+        # required-edge check, no registry lookups.
+        assert revalidated is validated
+        assert registry.get_calls == calls_after_first_validate
+
+    async def test_execute_on_a_validated_workflow_performs_exactly_one_validation_pass(
+        self,
+    ):
+        registry = _CountingNodeRegistry(_build_registry(SampleAddNode))
+        engine = WorkflowEngine(node_registry=registry)
+        workflow = _build_single_node_workflow(engine)
+
+        # One real validation pass, as a caller who validates up front to get
+        # a clean diagnostic before starting a run would do.
+        validated = await engine.validate(workflow)
+        calls_after_explicit_validate = registry.get_calls
+        assert calls_after_explicit_validate > 0
+
+        context = InMemoryExecutionContext()
+        result = await engine.execute(context=context, workflow=validated, input={})
+
+        assert result.status is WorkflowExecutionResultStatus.SUCCESS
+        # execute() calls self.validate(workflow) unconditionally. On an
+        # already-validated workflow that must cost zero additional registry
+        # lookups: one validation pass total across both calls, not two.
+        assert registry.get_calls == calls_after_explicit_validate
