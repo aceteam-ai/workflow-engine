@@ -107,7 +107,8 @@ async def test_execute_rejects_unvalidated_workflow(
     with pytest.raises(WorkflowException) as excinfo:
         await algorithm.execute(
             context=InMemoryExecutionContext(),
-            workflow=plain_workflow,
+            # Deliberately the wrong type: this is what the guard exists to catch.
+            workflow=plain_workflow,  # pyright: ignore[reportArgumentType]
             input={},
         )
 
