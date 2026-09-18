@@ -18,6 +18,7 @@ from workflow_engine import (
     WorkflowExecutionResultStatus,
 )
 from workflow_engine.contexts import InMemoryExecutionContext
+from workflow_engine.execution.replacement import ReplacementGraph
 from workflow_engine.nodes import ConstantStringNode, ErrorNode
 
 
@@ -113,3 +114,29 @@ async def test_execute_rejects_unvalidated_workflow(
     message = str(excinfo.value)
     assert "ValidatedWorkflow" in message
     assert "Workflow" in message
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_from_validated_returns_the_replacement_graph_type():
+    """
+    ``ReplacementGraph.from_validated`` must return a ``ReplacementGraph``.
+
+    This is a contract test, not a regression test for #282. The failure it
+    describes cannot be reproduced in this repository: the downgrade that
+    motivated ``from_validated`` only appears once an embedding application has
+    defined its own node types, and it was found by running a downstream
+    application's suite against the engine. The test is here so that a future
+    change back to ``model_validate`` has to argue with an explicit assertion
+    rather than silently reintroduce the bug.
+    """
+    engine = WorkflowEngine()
+    workflow = await engine.build_single_node_workflow(
+        ConstantStringNode, params={"value": StringValue("x")}
+    )
+    validated = await engine.validate(workflow)
+
+    graph = ReplacementGraph.from_validated(validated)
+
+    assert type(graph) is ReplacementGraph
+    assert graph.nodes == validated.nodes

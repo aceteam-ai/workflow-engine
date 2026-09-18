@@ -39,6 +39,22 @@ class ReplacementGraph(ValidatedWorkflow):
     replacement_slots: frozenset[str] = Field(default=frozenset(), exclude=True)
     seeded_inputs: Mapping[str, DataMapping] = Field(default_factory=dict, exclude=True)
 
+    @classmethod
+    def from_validated(cls, workflow: ValidatedWorkflow) -> Self:
+        """
+        Build a run-local graph from an already-validated workflow.
+
+        This constructs the class directly instead of going through
+        ``model_validate``. Validation via the class' own validator is not
+        reliable here: once an embedding application has defined its own node
+        types, ``model_validate`` on this class (and on its bases) can return a
+        plain ``Workflow``, which silently drops the validated-only API the
+        schedulers call. Construction always yields ``cls``.
+        """
+        return cls(
+            **{key: getattr(workflow, key) for key in ValidatedWorkflow.model_fields}
+        )
+
     @model_validator(mode="after")
     def _validate_no_id_prefix_collisions(self):
         ids = sorted(node.id for node in self.nodes)

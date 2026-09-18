@@ -97,9 +97,7 @@ class TopologicalExecutionAlgorithm(ExecutionAlgorithm):
         retry_tracker = RetryTracker(default_max_retries=self.max_retries)
         tracker = BoundaryTracker()
         replacements = ReplacementTracker(self.max_replacement_hops)
-        workflow = ReplacementGraph.model_validate(
-            {key: getattr(workflow, key) for key in ValidatedWorkflow.model_fields}
-        )
+        workflow = ReplacementGraph.from_validated(workflow)
 
         # Track nodes that are waiting for retry (node_id -> input)
         pending_retry: dict[str, DataMapping] = {}

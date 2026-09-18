@@ -141,9 +141,7 @@ class ParallelExecutionAlgorithm(ExecutionAlgorithm):
         tracker = BoundaryTracker()
         admission.blocked = tracker.is_blocked
         replacements = ReplacementTracker(self.max_replacement_hops)
-        workflow = ReplacementGraph.model_validate(
-            {key: getattr(workflow, key) for key in ValidatedWorkflow.model_fields}
-        )
+        workflow = ReplacementGraph.from_validated(workflow)
 
         # Track nodes that are waiting for retry (node_id -> input)
         pending_retry: dict[str, DataMapping] = {}
