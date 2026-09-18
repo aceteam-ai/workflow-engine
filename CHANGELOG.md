@@ -6,6 +6,10 @@ This project uses [PEP 440](https://peps.python.org/pep-0440/) versioning with r
 
 ## [Unreleased]
 
+### Fixed
+
+- **`ExecutionAlgorithm.execute()` now enforces its `ValidatedWorkflow` signature at runtime** (`core/execution.py`, `execution/topological.py`, `execution/parallel.py`, #282): the signature was previously advisory only. A caller that invoked an algorithm's `execute()` directly with a plain `Workflow` (skipping `WorkflowEngine.validate()`) used to fall through into scheduler internals that assume validated-only fields and methods, surfacing as an incidental `AttributeError` with no indication that the workflow itself was the problem. Before #276 that `AttributeError` fired inside the error-path partial-output handler (`workflow.get_output()`), replacing a legible workflow error with an unrelated crash at exactly the point a caller most needs the real diagnostic; #276's unrelated `ReplacementGraph` upgrade at the top of each scheduler's `_execute` moved the crash earlier, to an `AttributeError` on `node_input_types` during scheduling setup, but did not remove it. Both schedulers now call a shared `ExecutionAlgorithm.require_validated()` guard as the first thing their public `execute()` does, raising a `WorkflowException.for_engineer` that names the actual type it received. `WorkflowEngine.execute()` and `execute_node()` were already validating correctly on every path traced for this issue; no internal caller was found that leaks an unvalidated workflow past them.
+
 ## [2.0.0rc17] - 2026-09-17
 
 ### Added

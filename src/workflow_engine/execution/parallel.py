@@ -110,6 +110,7 @@ class ParallelExecutionAlgorithm(ExecutionAlgorithm):
         workflow: ValidatedWorkflow,
         input: DataMapping,
     ) -> WorkflowExecutionResult:
+        self.require_validated(workflow)
         async with context.execution_scope(
             legacy=self.rate_limits.configs(),
             legacy_coordinator=self.rate_limits.coordinator,

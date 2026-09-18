@@ -10,7 +10,7 @@ from overrides import EnforceOverrides
 from pydantic import Field
 
 from ..utils.model import ImmutableBaseModel
-from .error import WorkflowErrors
+from .error import WorkflowErrors, WorkflowException
 from .values import DataMapping
 from .workflow import ValidatedWorkflow
 
@@ -101,6 +101,31 @@ class ExecutionAlgorithm(ABC, EnforceOverrides):
         input: DataMapping,
     ) -> WorkflowExecutionResult:
         pass
+
+    @staticmethod
+    def require_validated(workflow: ValidatedWorkflow) -> None:
+        """
+        Enforce, at runtime, that ``workflow`` is actually a ``ValidatedWorkflow``.
+
+        ``execute()`` is typed to take a ``ValidatedWorkflow``, but a type
+        annotation is advisory: nothing stops a caller from passing a plain
+        ``Workflow`` that was never run through ``validate()``. Left
+        unchecked, that mistake is not caught here. It surfaces several
+        frames later, inside scheduler internals that assume
+        validated-only attributes and methods (``node_input_types``,
+        ``get_output``, ...), as an ``AttributeError`` that names the wrong
+        thing and gives no hint that the workflow itself was never
+        validated. Concrete schedulers must call this before doing anything
+        else in their public ``execute()``, so the diagnostic points at the
+        actual mistake instead of an incidental crash deep inside a retry
+        or error-recovery path.
+        """
+        if not isinstance(workflow, ValidatedWorkflow):
+            raise WorkflowException.for_engineer(
+                f"ExecutionAlgorithm.execute() requires a ValidatedWorkflow, "
+                f"got {type(workflow).__name__}. Call WorkflowEngine.validate() "
+                f"(or Workflow.validate()) before executing."
+            )
 
 
 __all__ = [
