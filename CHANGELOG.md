@@ -6,6 +6,8 @@ This project uses [PEP 440](https://peps.python.org/pep-0440/) versioning with r
 
 ## [Unreleased]
 
+## [2.0.0rc17] - 2026-09-17
+
 ### Added
 
 - Nodes and `on_node_start` may return a replacement `Node` when its input/output contracts are compatible (#174). Both schedulers preserve intermediate casts and caller completion, assign stable flat `replacement_N` IDs, honor child retries and existing Attempt boundaries, and enforce a configurable 256-hop default limit. `ReplacementFrame` and context hooks expose JSON checkpoint/replay state without introducing a durable store; see `docs/node-replacement.md`. Custom algorithms must opt into the new outcome protocol. Cached output overrides are checked against the node's output contract.
