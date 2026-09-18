@@ -6,6 +6,8 @@ This project uses [PEP 440](https://peps.python.org/pep-0440/) versioning with r
 
 ## [Unreleased]
 
+## [2.0.0rc18] - 2026-09-18
+
 ### Fixed
 
 - **Both schedulers now build their run-local graph by construction rather than by validation** (`execution/replacement.py`, `execution/topological.py`, `execution/parallel.py`, #282): each scheduler's `_execute` upgraded its incoming `ValidatedWorkflow` to a `ReplacementGraph` with `ReplacementGraph.model_validate(...)`, added in #276 and first released in 2.0.0rc17. That call does not reliably produce the class it is called on. Once an embedding application has defined its own node types, `model_validate` on `ReplacementGraph`, and equally on `ValidatedWorkflow` and `ResolvedWorkflow`, returns a plain `Workflow`, silently dropping the validated-only API the schedulers go on to call. The first symptom is an `AttributeError` for `get_initial_ready_nodes` during scheduling setup, which `_execute`'s own handler then converts into a second `AttributeError` for `get_output` on the partial-output path, so the reported crash names a method far from the actual defect. This fires on every execution, not only on error paths. `ReplacementGraph.from_validated()` now constructs the class directly, which always yields the intended type and skips re-validating a graph that is already validated.
