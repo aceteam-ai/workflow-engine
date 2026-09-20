@@ -202,19 +202,43 @@ class WorkflowEngine:
 
         When ``input_fields`` or ``output_fields`` are omitted, they are inferred
         from the node's resolved input and output types (including dynamic types
-        that depend on ``params``).
+        that depend on ``params``). Inferred sides with defaults retain a
+        reference to the inner node so those defaults can be resolved after
+        serialization. Loading such a workflow requires the original node type
+        in the engine's registry.
+        Explicit field mappings define required workflow ports.
         """
         inner_node = self.create_node(node, id=node_id, params=params)
         validation_context = await self._get_validation_context()
+        inferred_input = input_fields is None
+        inferred_output = output_fields is None
+        input_has_defaults = False
+        output_has_defaults = False
         if input_fields is None:
             input_type = await inner_node.input_type(validation_context)
+            input_has_defaults = any(
+                not field_info.is_required()
+                for _, field_info in get_data_fields(input_type).values()
+            )
             input_fields = _value_fields_from_data_type(input_type)
         if output_fields is None:
             output_type = await inner_node.output_type(validation_context)
+            output_has_defaults = any(
+                not field_info.is_required()
+                for _, field_info in get_data_fields(output_type).values()
+            )
             output_fields = _value_fields_from_data_type(output_type)
 
         input_node = self.create_input_node(**input_fields)
         output_node = self.create_output_node(**output_fields)
+        # Required-only sides keep the existing schema path, which accepts
+        # dynamically replaced nodes whose output Data classes differ by identity.
+        if inferred_input and input_has_defaults:
+            input_node = input_node.model_update(source_node_id=inner_node.id)
+            input_node._source_node = inner_node
+        if inferred_output and output_has_defaults:
+            output_node = output_node.model_update(source_node_id=inner_node.id)
+            output_node._source_node = inner_node
         edges = [
             Edge.from_nodes(
                 source=input_node,
