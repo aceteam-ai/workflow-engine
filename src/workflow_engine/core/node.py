@@ -412,6 +412,8 @@ class Node(ImmutableBaseModel, Generic[Input_contra, Output, Params_co]):
             data.pop("hints", None)
         if data.get("max_retries") is None:
             data.pop("max_retries", None)
+        if data.get("source_node_id") is None:
+            data.pop("source_node_id", None)
         return data
 
     # --------------------------------------------------------------------------
