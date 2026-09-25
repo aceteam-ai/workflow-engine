@@ -54,6 +54,15 @@ All public APIs should have type annotations. The codebase makes heavy use of ge
 ## Testing
 
 We use [pytest](https://docs.pytest.org/) with [pytest-asyncio](https://pytest-asyncio.readthedocs.io/) for async tests.
+Every test has a 180-second timeout through
+[pytest-timeout](https://github.com/pytest-dev/pytest-timeout). CI runs on
+Linux, so it uses that plugin's `signal` method: the suite has no custom
+main-thread signal handlers, and this method raises in the test runner so
+pytest can unwind fixtures. This is preferable here to the thread watchdog,
+which can forcefully end the runner and leave its child processes behind.
+
+The configured method requires POSIX signals. On Windows, override it locally
+with `uv run pytest --timeout-method=thread`.
 
 ```bash
 # Run all tests
