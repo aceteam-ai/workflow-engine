@@ -6,7 +6,7 @@ from pathlib import Path
 
 
 def test_project_timeout_settings_are_loaded() -> None:
-    """Load the committed config explicitly, not an ambient local pytest.ini."""
+    """Default pytest discovery loads the project-wide timeout settings."""
     project_root = Path(__file__).resolve().parents[1]
     completed = subprocess.run(
         [
@@ -14,8 +14,6 @@ def test_project_timeout_settings_are_loaded() -> None:
             "-m",
             "pytest",
             "--collect-only",
-            "-c",
-            str(project_root / "pyproject.toml"),
             "tests/test_pytest_timeout.py",
         ],
         capture_output=True,
@@ -27,7 +25,7 @@ def test_project_timeout_settings_are_loaded() -> None:
 
     assert completed.returncode == 0
     output = completed.stdout + completed.stderr
-    assert "configfile: pyproject.toml" in output
+    assert "configfile: pytest.ini" in output
     assert "timeout: 180.0s" in output
     assert "timeout method: signal" in output
 
