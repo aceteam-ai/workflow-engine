@@ -157,3 +157,5 @@ known-first-party = ["workflow_engine"]
 # signal method raises in the test runner, allowing pytest fixtures to unwind;
 # the thread method may instead terminate the runner and strand its children.
 addopts = "--timeout=180 --timeout-method=signal"
+# Existing tests use unmarked async functions and fixtures.
+asyncio_mode = "auto"

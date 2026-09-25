@@ -5,18 +5,43 @@ import sys
 from pathlib import Path
 
 
+def test_project_timeout_settings_are_loaded() -> None:
+    """Load the committed config explicitly, not an ambient local pytest.ini."""
+    project_root = Path(__file__).resolve().parents[1]
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "pytest",
+            "--collect-only",
+            "-c",
+            str(project_root / "pyproject.toml"),
+            "tests/test_pytest_timeout.py",
+        ],
+        capture_output=True,
+        check=False,
+        cwd=project_root,
+        text=True,
+        timeout=10,
+    )
+
+    assert completed.returncode == 0
+    output = completed.stdout + completed.stderr
+    assert "configfile: pyproject.toml" in output
+    assert "timeout: 180.0s" in output
+    assert "timeout method: signal" in output
+
+
 def test_timeout_plugin_interrupts_a_hanging_test(tmp_path: Path) -> None:
-    """Run the hang in an isolated pytest process so this suite cannot wedge."""
+    """A global timeout setting interrupts a hang in an isolated pytest process."""
     hanging_test = tmp_path / "test_hanging.py"
     hanging_test.write_text(
-        "import time\n"
-        "\n"
-        "import pytest\n"
-        "\n"
-        "\n"
-        "@pytest.mark.timeout(0.2)\n"
-        "def test_hangs_forever():\n"
-        "    time.sleep(60)\n"
+        "import time\n\ndef test_hangs_forever():\n    time.sleep(60)\n"
+    )
+
+    timeout_config = tmp_path / "pytest.ini"
+    timeout_config.write_text(
+        "[pytest]\naddopts = --timeout=0.2 --timeout-method=signal\n"
     )
 
     project_root = Path(__file__).resolve().parents[1]
@@ -27,7 +52,7 @@ def test_timeout_plugin_interrupts_a_hanging_test(tmp_path: Path) -> None:
             "pytest",
             "-q",
             "-c",
-            str(project_root / "pyproject.toml"),
+            str(timeout_config),
             str(hanging_test),
         ],
         capture_output=True,
