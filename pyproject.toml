@@ -133,6 +133,7 @@ dev = [
     "pytest>=8.3.5",
     "pytest-asyncio>=0.26.0",
     "pytest-mock>=3.14.0",
+    "pytest-timeout>=2.4.0",
     "python-dotenv>=1.1.0",
     "ruff>=0.11.8",
     "twine>=6.0.0",
@@ -150,3 +151,9 @@ extend-select = ["I", "RUF"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["workflow_engine"]
+
+[tool.pytest.ini_options]
+# CI runs on Linux and the suite has no main-thread signal handlers.  The
+# signal method raises in the test runner, allowing pytest fixtures to unwind;
+# the thread method may instead terminate the runner and strand its children.
+addopts = "--timeout=180 --timeout-method=signal"
