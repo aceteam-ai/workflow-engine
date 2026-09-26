@@ -53,9 +53,9 @@ from .limits import RateLimitConfig
 from .values import (
     Data,
     DataMapping,
+    FieldDeclaration,
     Value,
     ValueSchema,
-    ValueType,
     get_data_fields,
 )
 from .values.data import Input_contra, Output, get_data_dict, get_data_schema
@@ -67,6 +67,12 @@ if TYPE_CHECKING:
     from .workflow import ValidatedWorkflow, Workflow
 
 logger = logging.getLogger(__name__)
+
+
+def _model_field_or_extra(model: BaseModel, name: str) -> Any:
+    if name in type(model).model_fields:
+        return getattr(model, name)
+    return (model.model_extra or {})[name]
 
 
 def _without_nested_workflow_hints(value: Any) -> Any:
@@ -87,13 +93,32 @@ def _without_nested_workflow_hints(value: Any) -> Any:
                     for key, v in value.model_extra.items()
                 }
             )
-        return value.model_copy(update=fields)
+        # Only pass the entries that actually changed: model_copy marks every
+        # updated key as explicitly set, and schema models treat an explicitly
+        # set field (such as a ``default`` of None) as meaningful.
+        changed = {
+            name: new
+            for name, new in fields.items()
+            if new is not _model_field_or_extra(value, name)
+        }
+        return value.model_copy(update=changed) if changed else value
+    # Containers are rebuilt only when an element changed, so the identity
+    # check above can tell untouched fields apart from rewritten ones.
     if isinstance(value, Mapping):
-        return {key: _without_nested_workflow_hints(v) for key, v in value.items()}
+        items = {key: _without_nested_workflow_hints(v) for key, v in value.items()}
+        if all(items[key] is v for key, v in value.items()):
+            return value
+        return items
     if isinstance(value, tuple):
-        return tuple(_without_nested_workflow_hints(v) for v in value)
+        elements = tuple(_without_nested_workflow_hints(v) for v in value)
+        if all(new is old for new, old in zip(elements, value)):
+            return value
+        return elements
     if isinstance(value, list):
-        return [_without_nested_workflow_hints(v) for v in value]
+        elements = [_without_nested_workflow_hints(v) for v in value]
+        if all(new is old for new, old in zip(elements, value)):
+            return value
+        return elements
     return value
 
 
@@ -951,11 +976,15 @@ class NodeRegistry(ABC):
 
     def create_input_node(
         self,
-        **fields: ValueType,
+        **fields: FieldDeclaration,
     ) -> InputNode:
         """
         Create a new input node instance, using whatever has been registered as
         the "Input" node type.
+
+        Each field is a bare ``ValueType`` (required) or a
+        ``(ValueType, FieldInfo)`` pair, whose default, if any, makes the
+        field optional.
         """
         from .io import InputNode, SchemaParams
 
@@ -967,11 +996,15 @@ class NodeRegistry(ABC):
 
     def create_output_node(
         self,
-        **fields: ValueType,
+        **fields: FieldDeclaration,
     ) -> OutputNode:
         """
         Create a new output node instance, using whatever has been registered as
         the "Output" node type.
+
+        Each field is a bare ``ValueType`` (required) or a
+        ``(ValueType, FieldInfo)`` pair, whose default, if any, makes the
+        field optional.
         """
         from .io import OutputNode, SchemaParams
 

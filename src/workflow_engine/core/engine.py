@@ -15,16 +15,24 @@ from .resources import (
     ResourceValidationReport,
     validate_resources,
 )
-from .values import Data, ValueRegistry, ValueType, get_data_dict, get_data_fields
+from .values import (
+    Data,
+    FieldDeclaration,
+    ValueRegistry,
+    get_data_dict,
+    get_data_fields,
+)
 from .workflow import ResolvedWorkflow, ValidatedWorkflow, Workflow
 
 N = TypeVar("N", bound=Node)
 
 
-def _value_fields_from_data_type(data_type: type[Data]) -> dict[str, ValueType]:
-    return {
-        name: value_type for name, (value_type, _) in get_data_fields(data_type).items()
-    }
+def _field_declarations_from_data_type(
+    data_type: type[Data],
+) -> dict[str, FieldDeclaration]:
+    # Keep each field's FieldInfo so declared defaults survive into the
+    # synthesized Input/Output node instead of every field becoming required.
+    return dict(get_data_fields(data_type))
 
 
 class WorkflowEngine:
@@ -116,7 +124,7 @@ class WorkflowEngine:
 
     def create_input_node(
         self,
-        **fields: ValueType,
+        **fields: FieldDeclaration,
     ) -> InputNode:
         """
         Create a new input node instance, using whatever has been registered as
@@ -126,7 +134,7 @@ class WorkflowEngine:
 
     def create_output_node(
         self,
-        **fields: ValueType,
+        **fields: FieldDeclaration,
     ) -> OutputNode:
         """
         Create a new output node instance, using whatever has been registered as
@@ -194,24 +202,30 @@ class WorkflowEngine:
         *,
         node_id: str = "node",
         params: Mapping[str, Any] | Params | None = None,
-        input_fields: Mapping[str, ValueType] | None = None,
-        output_fields: Mapping[str, ValueType] | None = None,
+        input_fields: Mapping[str, FieldDeclaration] | None = None,
+        output_fields: Mapping[str, FieldDeclaration] | None = None,
     ) -> Workflow:
         """
         Build a minimal workflow that wires one inner node between input and output.
 
         When ``input_fields`` or ``output_fields`` are omitted, they are inferred
         from the node's resolved input and output types (including dynamic types
-        that depend on ``params``).
+        that depend on ``params``). Inferred fields keep their declared defaults,
+        so a port with a ``default`` or ``default_factory`` is optional on the
+        synthesized Input node.
+
+        Explicit fields are ``FieldDeclaration`` values: a bare ``ValueType``
+        declares a required field, and a ``(ValueType, FieldInfo)`` pair whose
+        ``FieldInfo`` has a default declares an optional one.
         """
         inner_node = self.create_node(node, id=node_id, params=params)
         validation_context = await self._get_validation_context()
         if input_fields is None:
             input_type = await inner_node.input_type(validation_context)
-            input_fields = _value_fields_from_data_type(input_type)
+            input_fields = _field_declarations_from_data_type(input_type)
         if output_fields is None:
             output_type = await inner_node.output_type(validation_context)
-            output_fields = _value_fields_from_data_type(output_type)
+            output_fields = _field_declarations_from_data_type(output_type)
 
         input_node = self.create_input_node(**input_fields)
         output_node = self.create_output_node(**output_fields)
@@ -247,8 +261,8 @@ class WorkflowEngine:
         input: Mapping[str, Any],
         node_id: str = "node",
         params: Mapping[str, Any] | Params | None = None,
-        input_fields: Mapping[str, ValueType] | None = None,
-        output_fields: Mapping[str, ValueType] | None = None,
+        input_fields: Mapping[str, FieldDeclaration] | None = None,
+        output_fields: Mapping[str, FieldDeclaration] | None = None,
     ) -> WorkflowExecutionResult:
         """
         Run a single node through the full execution pipeline.

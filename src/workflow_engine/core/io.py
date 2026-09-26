@@ -7,8 +7,8 @@ from pydantic import Field, PrivateAttr
 from .node import Node, NodeTypeInfo, Params
 from .values import (
     Data,
+    FieldDeclaration,
     FieldSchemaMappingValue,
-    ValueType,
 )
 
 if TYPE_CHECKING:
@@ -23,7 +23,7 @@ class SchemaParams(Params):
     )
 
     @classmethod
-    def from_fields(cls, **fields: ValueType) -> Self:
+    def from_fields(cls, **fields: FieldDeclaration) -> Self:
         return cls(fields=FieldSchemaMappingValue.from_fields(**fields))
 
 

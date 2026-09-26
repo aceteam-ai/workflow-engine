@@ -6,6 +6,16 @@ This project uses [PEP 440](https://peps.python.org/pep-0440/) versioning with r
 
 ## [Unreleased]
 
+### Fixed
+
+- **`build_single_node_workflow` now keeps field defaults, so optional ports stay optional** (`core/engine.py`, `core/values/schema.py`, #285): the synthesized Input and Output nodes were built from bare value types, discarding each field's `FieldInfo`, and `FieldSchemaMappingValue.to_data_schema` listed every field as required. A node whose input declares a `default` or `default_factory` therefore rejected any single-node run (including `execute_node`) that omitted that port with `Field required`. This was masked before 2.0.0rc17 by the implicit null default on JSON typed properties. Inferred fields now carry their `FieldInfo`: a field with a default records it, as JSON, as an explicit `default` on its field schema, and `to_data_schema` marks only fields without an explicit default as required. Genuinely required ports are still rejected when omitted. A `default_factory` that takes the validated data has no single value to record, so such a field stays required.
+
+  `input_fields` and `output_fields` on `build_single_node_workflow` and `execute_node`, `create_input_node` and `create_output_node` on both `WorkflowEngine` and `NodeRegistry`, and `SchemaParams.from_fields` / `FieldSchemaMappingValue.from_fields` now accept a new exported `FieldDeclaration`: either a bare `ValueType` (required, exactly as before) or a `(ValueType, FieldInfo)` pair, the shape `get_data_fields` returns and `build_data_type` accepts. Existing callers passing bare value types are unaffected. Output ports are all wired to the inner node, so preserving their defaults changes only the advertised schema, not behavior.
+
+  Behavior change: a stored Input or Output field schema that carries an explicit `default` is now non-required, so an invalid default there fails when the node's data type is built, where it was previously logged and ignored.
+
+- **`Node.without_hints()` no longer marks every nested parameter field as explicitly set** (`core/node.py`): stripping hints rebuilt every parameter model with `model_copy(update=...)` over all of its fields, which recorded unset schema fields such as `default: None` as explicitly set. That changed the serialized form of Input and Output nodes and, with the fix above, would have made their fields optional. Only fields that actually changed are now passed to the copy.
+
 ## [2.0.0rc18] - 2026-09-18
 
 ### Fixed

@@ -381,3 +381,18 @@ def test_without_hints_walks_workflow_value_containers(engine: WorkflowEngine):
     assert all(node.hints == Hints() for node in nested.nodes)
     assert stripped.document == params.document
     assert inner.nodes_by_id["for_each"].hints.max_concurrency == 3
+
+
+@pytest.mark.unit
+def test_without_hints_preserves_which_schema_fields_were_set(engine: WorkflowEngine):
+    """
+    Stripping hints must not mark unset schema fields as explicitly set. An
+    explicitly set ``default`` of None makes an Input field optional, so a
+    copy that sets every field would change the workflow's input contract.
+    """
+    input_node = engine.create_input_node(sequence=SequenceValue[FloatValue])
+    stripped = input_node.without_hints()
+
+    schema = stripped.params.fields.root["sequence"].root
+    assert "default" not in schema.model_fields_set
+    assert stripped.model_dump(mode="json") == input_node.model_dump(mode="json")
