@@ -6,6 +6,8 @@ This project uses [PEP 440](https://peps.python.org/pep-0440/) versioning with r
 
 ## [Unreleased]
 
+## [2.0.0rc19] - 2026-09-26
+
 ### Fixed
 
 - **`build_single_node_workflow` now keeps field defaults, so optional ports stay optional** (`core/engine.py`, `core/values/schema.py`, #285): the synthesized Input and Output nodes were built from bare value types, discarding each field's `FieldInfo`, and `FieldSchemaMappingValue.to_data_schema` listed every field as required. A node whose input declares a `default` or `default_factory` therefore rejected any single-node run (including `execute_node`) that omitted that port with `Field required`. This was masked before 2.0.0rc17 by the implicit null default on JSON typed properties. Inferred fields now carry their `FieldInfo`: a field with a default records it, as JSON, as an explicit `default` on its field schema, and `to_data_schema` marks only fields without an explicit default as required. Genuinely required ports are still rejected when omitted. A `default_factory` that takes the validated data has no single value to record, so such a field stays required.
