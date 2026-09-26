@@ -36,6 +36,7 @@ from .rounding import (
     RoundingModeValue,
 )
 from .schema import (
+    FieldDeclaration,
     FieldSchemaMappingValue,
     ValueSchema,
     ValueSchemaValue,
@@ -64,6 +65,7 @@ __all__ = [
     "ErrorClassValue",
     "ExtractionResult",
     "ExtractionResultValue",
+    "FieldDeclaration",
     "FieldSchemaMappingValue",
     "File",
     "FileValue",

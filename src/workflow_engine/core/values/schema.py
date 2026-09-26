@@ -833,22 +833,69 @@ def validate_value_schema(schema: Any) -> ValueSchema:
         raise ValueError(f"Invalid value schema: {schema}") from e
 
 
+FieldDeclaration = ValueType | tuple[ValueType, FieldInfo]
+"""
+A field declaration for a synthesized Input or Output node.
+
+Either a bare ``ValueType``, which declares a required field, or a
+``(ValueType, FieldInfo)`` pair, the same shape returned by
+``get_data_fields`` and accepted by ``build_data_type``. In the pair form, a
+``FieldInfo`` carrying a ``default`` or ``default_factory`` declares an
+optional field whose default is recorded in the field's schema.
+"""
+
+
+def _field_declaration_to_schema(name: str, field: FieldDeclaration) -> ValueSchema:
+    if not isinstance(field, tuple):
+        return field.to_value_schema()
+    value_type, field_info = field
+    schema = value_type.to_value_schema()
+    if field_info.is_required():
+        return schema
+    if field_info.default_factory_takes_validated_data:
+        # A factory computed from the other fields has no single value to
+        # record as a schema default, so the field stays required.
+        logger.warning(
+            f"Field {name!r} has a default_factory that takes the validated "
+            "data; it cannot be recorded as a schema default, so the field is "
+            "declared required"
+        )
+        return schema
+    default = value_type.model_validate(
+        field_info.get_default(call_default_factory=True)
+    )
+    return schema.model_update(default=default.model_dump(mode="json"))
+
+
 class FieldSchemaMappingValue(StringMapValue[ValueSchemaValue]):
     def to_data_schema(self, title: str) -> DataValueSchema:
+        """
+        Build the Data schema for these fields. A field whose schema carries
+        an explicit ``default`` is optional; every other field is required.
+        """
         return DataValueSchema(
             type="object",
             title=title,
             properties={k: v.root for k, v in self.root.items()},
             additionalProperties=False,
-            required=list(self.root.keys()),
+            required=[
+                k
+                for k, v in self.root.items()
+                if "default" not in v.root.model_fields_set
+            ],
         )
 
     @classmethod
-    def from_fields(cls, **fields: ValueType) -> Self:
+    def from_fields(cls, **fields: FieldDeclaration) -> Self:
+        """
+        Build a field schema mapping from field declarations. See
+        ``FieldDeclaration``: a bare ``ValueType`` is required, and a
+        ``(ValueType, FieldInfo)`` pair with a default is optional.
+        """
         return cls(
             {
-                name: ValueSchemaValue(vtype.to_value_schema())
-                for name, vtype in fields.items()
+                name: ValueSchemaValue(_field_declaration_to_schema(name, field))
+                for name, field in fields.items()
             }
         )
 
@@ -857,6 +904,7 @@ __all__ = [
     "BooleanValueSchema",
     "DataValueSchema",
     "DateValueSchema",
+    "FieldDeclaration",
     "FieldSchemaMappingValue",
     "FloatValueSchema",
     "IntegerValueSchema",
