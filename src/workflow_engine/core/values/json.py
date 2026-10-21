@@ -2,7 +2,10 @@
 
 from collections.abc import Mapping, Sequence
 from decimal import Decimal
+from math import isfinite
 from typing import TYPE_CHECKING
+
+from pydantic import SerializationInfo, StrictBool, model_serializer
 
 from .mapping import StringMapValue
 from .primitives import BooleanValue, FloatValue, IntegerValue, NullValue
@@ -13,7 +16,9 @@ if TYPE_CHECKING:
     from ..context import ExecutionContext
 
 
-type JSON = Mapping[str, JSON] | Sequence[JSON] | None | bool | int | Decimal | str
+type JSON = (
+    Mapping[str, JSON] | Sequence[JSON] | None | StrictBool | Decimal | int | str
+)
 
 # Wider than JSON: accepts float literals at construction time (e.g. from
 # json.loads or Python code). Stored .root values remain JSON (Decimal, not float).
@@ -29,6 +34,22 @@ type JSONInput = (
 )
 
 
+def _serialize_json_numbers(value: JSON) -> JSONInput:
+    if isinstance(value, Decimal):
+        if value.is_finite():
+            number = float(value)
+            if isfinite(number) and Decimal(str(number)) == value:
+                return number
+        # Preserve the existing string representation if float would lose
+        # precision or overflow. JSONValue may contain arbitrary Decimals.
+        return str(value)
+    if isinstance(value, Mapping):
+        return {key: _serialize_json_numbers(item) for key, item in value.items()}
+    if isinstance(value, Sequence) and not isinstance(value, str):
+        return [_serialize_json_numbers(item) for item in value]
+    return value
+
+
 class JSONValue(Value[JSON]):
     # Pyright treats Value[JSON] as "constructor takes JSON only", but JSON
     # deliberately omits float (numbers round-trip as Decimal). Call sites still
@@ -38,6 +59,12 @@ class JSONValue(Value[JSON]):
     if TYPE_CHECKING:
 
         def __init__(self, root: JSONInput, /) -> None: ...
+
+    @model_serializer(mode="plain")
+    def serialize(self, info: SerializationInfo) -> JSONInput:
+        if info.mode == "json":
+            return _serialize_json_numbers(self.root)
+        return self.root
 
 
 @Value.register_cast_to(JSONValue)

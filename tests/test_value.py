@@ -1,3 +1,5 @@
+import json
+from collections.abc import Mapping, Sequence
 from decimal import Decimal
 from typing import Literal
 
@@ -654,6 +656,69 @@ async def test_json_value_type_checking_strictness(context):
     json_int = JSONValue(1)
     with pytest.raises(ValueError, match="Expected bool"):
         await json_int.cast_to(BooleanValue, context=context)
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ("number", "expected_type"),
+    [(0, int), (1, int), (0.0, Decimal), (1.0, Decimal)],
+)
+async def test_json_value_zero_and_one_remain_numbers(context, number, expected_type):
+    from workflow_engine.core import BooleanValue, FloatValue, JSONValue
+
+    value = JSONValue(number)
+    assert type(value.root) is expected_type
+    assert type(json.loads(value.model_dump_json())) is (
+        int if expected_type is int else float
+    )
+    assert type(JSONValue.model_validate_json(value.model_dump_json()).root) is (
+        expected_type
+    )
+    assert (await value.cast_to(FloatValue, context=context)).root == number
+    with pytest.raises(ValueError, match="Expected bool"):
+        await value.cast_to(BooleanValue, context=context)
+
+
+@pytest.mark.unit
+def test_json_value_nested_numbers_serialize_as_json_numbers():
+    from workflow_engine.core import JSONValue
+
+    payload = {
+        "rows": [
+            {"integer": 27197, "decimal": 27.4, "percent": 0.97},
+            {"integer": 0, "decimal": 0.0, "percent": 1.0},
+        ],
+        "enabled": True,
+        "label": "text",
+    }
+    value = JSONValue(payload)
+    root = value.root
+    assert isinstance(root, Mapping)
+    rows = root["rows"]
+    assert isinstance(rows, Sequence) and not isinstance(rows, str)
+    second_row = rows[1]
+    assert isinstance(second_row, Mapping)
+    assert type(second_row["integer"]) is int
+    assert type(second_row["decimal"]) is Decimal
+    assert type(root["enabled"]) is bool
+    assert value.model_dump(mode="json") == payload
+    assert json.loads(value.model_dump_json()) == payload
+
+
+@pytest.mark.unit
+def test_json_value_decimal_serialization_preserves_unrepresentable_precision():
+    from workflow_engine.core import JSONValue
+
+    precise = Decimal("0.123456789012345678901")
+    huge = Decimal("1e1000")
+    tiny = Decimal("1e-1000")
+    value = JSONValue({"precise": precise, "huge": huge, "tiny": tiny})
+
+    assert json.loads(value.model_dump_json()) == {
+        "precise": str(precise),
+        "huge": str(huge),
+        "tiny": str(tiny),
+    }
 
 
 @pytest.mark.unit
