@@ -177,7 +177,7 @@ class Value(ImmutableRootModel[T], Generic[T]):
     # these properties force us to implement __eq__ and __hash__ to ignore them
     _casters: ClassVar[dict[str, GenericCaster]] = {}
     _resolved_casters: ClassVar[dict[str, GenericCaster] | None] = None
-    _cast_cache: dict[ValueTypeKey, "Value"] = PrivateAttr(
+    _cast_cache: dict[ValueType, "Value"] = PrivateAttr(
         default_factory=dict,
     )
     _identity_caster: ClassVar[Caster[Self, Self]] = staticmethod(
@@ -316,7 +316,7 @@ class Value(ImmutableRootModel[T], Generic[T]):
         return md5(str(self).encode()).hexdigest()
 
     async def cast_to(self, t: type[V], *, context: "ExecutionContext") -> V:
-        key = get_value_type_key(t)
+        key = t
         if key in self._cast_cache:
             casted: V = self._cast_cache[key]  # type: ignore
             return casted

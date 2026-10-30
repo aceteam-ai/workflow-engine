@@ -10,10 +10,13 @@ import inspect
 import logging
 from collections.abc import Mapping, Sequence
 from contextvars import ContextVar
+from copy import deepcopy
 from decimal import Decimal
 from enum import Enum
 from functools import cached_property
+from threading import RLock
 from typing import Annotated, Any, ClassVar, Final, Literal, Self, TypeVar
+from weakref import WeakValueDictionary
 
 from overrides import override
 from pydantic import (
@@ -150,7 +153,29 @@ def _additional_constraint_validators(
     return validators
 
 
+_CONSTRAINED_CLASSES: WeakValueDictionary[
+    tuple[type, tuple[tuple[str, str], ...], str], type
+] = WeakValueDictionary()
+_CONSTRAINED_CLASSES_LOCK = RLock()
+
+
 def _build_constrained_cls(
+    base_cls: type,
+    field_map: dict[str, str],
+    extras: dict[str, Any],
+) -> type:
+    if not extras:
+        return base_cls
+    key = (base_cls, tuple(sorted(field_map.items())), json_digest(extras))
+    with _CONSTRAINED_CLASSES_LOCK:
+        cached = _CONSTRAINED_CLASSES.get(key)
+        if cached is None:
+            cached = _new_constrained_cls(base_cls, field_map, deepcopy(extras))
+            _CONSTRAINED_CLASSES[key] = cached
+        return cached
+
+
+def _new_constrained_cls(
     base_cls: type,
     field_map: dict[str, str],
     extras: dict[str, Any],
