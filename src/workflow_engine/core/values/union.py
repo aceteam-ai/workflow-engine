@@ -33,7 +33,7 @@ from pydantic.fields import FieldInfo
 from pydantic_core import core_schema
 
 from ...utils.asynchronous import is_coroutine
-from .value import Caster, Value, ValueType, get_value_type_key
+from .value import Caster, Value, ValueType
 
 if TYPE_CHECKING:
     from ..context import ExecutionContext
@@ -43,7 +43,7 @@ _T = TypeVar("_T", bound=Value)
 _V = TypeVar("_V", bound=Value)
 
 # Reuse identical unions built from schema round-trips or repeated subscripts.
-_UNION_TYPE_CACHE: dict[tuple[tuple[str, tuple], ...], type[Value]] = {}
+_UNION_TYPE_CACHE: dict[tuple[ValueType, ...], type[Value]] = {}
 
 
 def get_union_members(value_type: ValueType) -> tuple[ValueType, ...] | None:
@@ -62,7 +62,9 @@ def union_value_type(*members: ValueType) -> ValueType:
         if not issubclass(member, Value):
             raise TypeError(f"Union member {member!r} must be a Value type")
 
-    key = tuple(get_value_type_key(member) for member in members)
+    # Constrained subclasses retain their canonical name. Cache their actual
+    # classes so an earlier unconstrained union cannot replace their validators.
+    key = members
     cached = _UNION_TYPE_CACHE.get(key)
     if cached is not None:
         return cached
