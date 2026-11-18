@@ -5,8 +5,8 @@
     "id": "input",
     "params": {
       "fields": {
-        "text": {"title": "StringValue"},
-        "file": {"title": "TextFileValue"}
+        "text": {"x-value-type": "StringValue"},
+        "file": {"x-value-type": "TextFileValue"}
       }
     }
   },
@@ -26,7 +26,7 @@
     "id": "output",
     "params": {
       "fields": {
-        "file": {"title": "TextFileValue"}
+        "file": {"x-value-type": "TextFileValue"}
       }
     }
   },
