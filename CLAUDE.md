@@ -185,19 +185,19 @@ To cut a new release:
 
 1. **Update `CHANGELOG.md`** — study the commits since the last release tag (`git log <last-tag>..HEAD`), then add a new section at the top (after the header) with the new version, date, and a human-readable summary of what changed. Group entries under `### Added`, `### Changed`, and/or `### Fixed` as appropriate. Follow the existing format.
 
-2. **Run the release script** — must be on a clean, up-to-date `main` branch. The script bumps the version in `pyproject.toml`, `src/workflow_engine/__init__.py`, `plugins/wengine/.claude-plugin/plugin.json`, and the pinned version inside `plugins/wengine/skills/wengine/scripts/wengine.sh` (the wengine skill plugin and shim stay locked to the library version), then runs the full check suite (tests, ruff check, ruff format, pyright) before committing, tagging, pushing, and creating a GitHub release:
+2. **Prepare a version-bump PR** — run the non-interactive bump script after adding the changelog section. It updates `pyproject.toml`, `src/workflow_engine/__init__.py`, `plugins/wengine/.claude-plugin/plugin.json`, the pinned version in `plugins/wengine/skills/wengine/scripts/wengine.sh`, and `uv.lock`. It never commits, tags, pushes, or publishes:
 
    ```bash
-   ./release.sh --rc      # bump release candidate: 2.0.0rc4 -> 2.0.0rc5
-   ./release.sh           # bump patch: 2.0.0 -> 2.0.1
-   ./release.sh --minor   # bump minor: 2.0.0 -> 2.1.0
-   ./release.sh --major   # bump major: 2.0.0 -> 3.0.0
-   ./release.sh 2.0.0     # explicit version
+   scripts/bump-version.sh --rc      # bump release candidate: rc19 -> rc20
+   scripts/bump-version.sh --patch   # bump patch
+   scripts/bump-version.sh --minor   # bump minor
+   scripts/bump-version.sh --major   # bump major
+   scripts/bump-version.sh 2.0.0     # explicit version
    ```
 
-   The script prompts for confirmation before making any changes.
+   Review all resulting files, then open a PR against `main`. The PR review is the release gate.
 
-3. **PyPI publish** — triggered automatically by GitHub Actions when the tag is pushed. For a manual deploy (emergency or CI unavailable), use `./deploy.sh`.
+3. **CI publish** — after the version-bump PR merges, `publish.yml` checks all five version sites and the changelog, runs Python 3.12 and 3.13 lint, type checks, and tests, builds and inspects the wheel and sdist, and publishes to PyPI through OIDC with attestations. It creates the annotated tag and GitHub release only after publishing succeeds. A main merge without a version bump is a no-op. Run `publish.yml` manually from `main` to recover an interrupted release; an already-published version is never uploaded twice. `deploy.sh` is emergency-only when GitHub Actions is unavailable.
 
 ### Execution Flow
 
