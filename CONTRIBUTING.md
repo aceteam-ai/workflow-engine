@@ -107,6 +107,25 @@ schema, bump its version and add a migration — see
 4. Open a PR against `main`
 5. PRs require review before merging
 
+## Releases
+
+Releases start as reviewed pull requests. Add a `## [X]` section to
+`CHANGELOG.md`, then run `scripts/bump-version.sh X` (or `--rc`, `--patch`,
+`--minor`, or `--major`). The script updates the four source version sites and
+`uv.lock`; it does not commit, tag, push, or publish. Include all five version
+files and the changelog in the PR.
+
+When a version-bump PR merges into `main`, `.github/workflows/publish.yml`
+checks the version and changelog, runs Python 3.12 and 3.13 checks, builds the
+distributions, and publishes to PyPI with the `pypi` trusted publisher and
+attestations. It then creates the annotated tag and GitHub release. A main
+merge without a version bump does not publish. Rerun `publish.yml` from `main`
+with `workflow_dispatch` to recover an interrupted release. The workflow
+checks existing PyPI artifacts before repairing a missing tag or release.
+
+`deploy.sh` is an emergency-only manual path when GitHub Actions is unavailable.
+Do not use it for ordinary releases.
+
 ## Key Design Principles
 
 - **Immutability**: All core objects are frozen Pydantic models. Use `model_copy()` for updates.

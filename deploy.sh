@@ -1,6 +1,8 @@
 #!/bin/bash
 set -e
 
+# EMERGENCY ONLY: manual PyPI deploy when GitHub Actions is unavailable.
+# Normal releases use a reviewed version-bump PR and publish.yml.
 # Manual deploy script for aceteam-workflow-engine
 # This script builds and uploads the package to PyPI manually.
 # Use this for emergency deploys or when GitHub Actions is unavailable.
