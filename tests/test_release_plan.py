@@ -6,6 +6,8 @@ import hashlib
 import importlib.util
 import io
 import json
+import os
+import shutil
 import subprocess
 import tarfile
 import zipfile
@@ -116,6 +118,56 @@ def test_bump_requires_changelog_and_updates_four_sources(release_tree: Path) ->
         ).read_text()
     )
     assert release_plan.version_order("2.0.0") > release_plan.version_order("2.0.0rc20")
+
+
+@pytest.mark.parametrize(
+    ("flag", "target"),
+    [
+        ("--rc", "2.0.0rc20"),
+        ("--patch", "2.0.1"),
+        ("--minor", "2.1.0"),
+        ("--major", "3.0.0"),
+    ],
+)
+def test_bump_script_accepts_flag_forms(
+    release_tree: Path, monkeypatch: pytest.MonkeyPatch, flag: str, target: str
+) -> None:
+    scripts = release_tree / "scripts"
+    scripts.mkdir()
+    shutil.copy2(SCRIPT, scripts / SCRIPT.name)
+    shutil.copy2(SCRIPT.parent / "bump-version.sh", scripts / "bump-version.sh")
+    if target != "2.0.0rc20":
+        with (release_tree / "CHANGELOG.md").open("a") as changelog:
+            changelog.write(f"\n## [{target}] - 2026-11-19\n\nRelease note.\n")
+
+    # Stub only the lock refresh. The script and release_plan.py run as real CLIs.
+    bin_dir = release_tree / "bin"
+    bin_dir.mkdir()
+    uv = bin_dir / "uv"
+    uv.write_text(
+        "#!/usr/bin/env python3\n"
+        "import re\n"
+        "import sys\n"
+        "from pathlib import Path\n"
+        "if sys.argv[1:] != ['lock']:\n"
+        "    raise SystemExit(2)\n"
+        'version = re.search(r\'^version = "([^"]+)"$\', '
+        "Path('pyproject.toml').read_text(), re.M).group(1)\n"
+        "lock = Path('uv.lock')\n"
+        'lock.write_text(re.sub(r\'(?m)^version = "[^"]+"$\', '
+        "f'version = \"{version}\"', lock.read_text(), count=1))\n"
+    )
+    uv.chmod(0o755)
+    monkeypatch.setenv("PATH", f"{bin_dir}:{os.environ['PATH']}")
+
+    result = subprocess.run(
+        ["bash", str(scripts / "bump-version.sh"), flag],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr
+    assert release_plan.version_sites() == target
 
 
 def test_published_artifacts_must_match_local_build(

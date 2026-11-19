@@ -7,7 +7,7 @@ if [ "$#" -ne 1 ]; then
 fi
 
 cd "$(dirname "$0")/.."
-python3 scripts/release_plan.py bump "$1"
+python3 scripts/release_plan.py bump -- "$1"
 uv lock
 python3 scripts/release_plan.py check
 echo 'Version files and uv.lock updated. Review and commit them in a PR.'
