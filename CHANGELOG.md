@@ -6,6 +6,17 @@ This project uses [PEP 440](https://peps.python.org/pep-0440/) versioning with r
 
 ## [Unreleased]
 
+## [2.0.0rc20] - 2026-11-19
+
+### Fixed
+
+- Union and cast-result caches now distinguish constrained member classes, so a weaker schema cannot erase bounds, patterns or enum values from a later union or satisfy a stricter cast target. Equivalent scalar constraints reuse a stable class, and cached constraint metadata is isolated from later edits (#296, #297).
+- The bundled `append.json` example uses registered `x-value-type` selectors. All three shipped examples now validate with the current engine (#298, #299).
+
+### Internal
+
+- A reviewed version-bump merge now triggers the tested PyPI publish workflow through the existing trusted publisher. The workflow verifies version sites and artifacts before publishing, then creates the tag and GitHub prerelease. `scripts/bump-version.sh` prepares version changes for a PR; `deploy.sh` remains an emergency-only path (#300, #301).
+
 ## [2.0.0rc19] - 2026-09-26
 
 ### Fixed
