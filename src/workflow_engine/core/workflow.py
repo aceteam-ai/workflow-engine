@@ -157,6 +157,11 @@ class Workflow(ImmutableBaseModel):
         typed_input_node = context.node_registry.load(self.input_node)
         if not isinstance(typed_input_node, InputNode):
             raise ValueError(f"Node {typed_input_node.id} is not an InputNode")
+        if typed_input_node.source_node_id is not None:
+            typed_input_node = typed_input_node.model_copy()
+            typed_input_node._cached_data_cls = None
+            typed_input_node._source_node = None
+            typed_input_node._source_data_type = None
         typed_inner_nodes = await gather(
             asyncio.to_thread(context.node_registry.load, node)
             for node in self.inner_nodes
@@ -164,7 +169,11 @@ class Workflow(ImmutableBaseModel):
         typed_output_node = context.node_registry.load(self.output_node)
         if not isinstance(typed_output_node, OutputNode):
             raise ValueError(f"Node {typed_output_node.id} is not an OutputNode")
-        typed_nodes = (typed_input_node, *typed_inner_nodes, typed_output_node)
+        if typed_output_node.source_node_id is not None:
+            typed_output_node = typed_output_node.model_copy()
+            typed_output_node._cached_data_cls = None
+            typed_output_node._source_node = None
+            typed_output_node._source_data_type = None
 
         async def get_input_output_types(
             node: Node,
@@ -176,9 +185,44 @@ class Workflow(ImmutableBaseModel):
             output_type = await node.output_type(context)
             return node.id, (input_type, output_type)
 
-        node_input_output_types = dict(
-            await gather(get_input_output_types(node) for node in typed_nodes)
-        )
+        if any(
+            io_node.source_node_id is not None
+            for io_node in (typed_input_node, typed_output_node)
+        ):
+            inner_types = dict(
+                await gather(get_input_output_types(node) for node in typed_inner_nodes)
+            )
+            inner_nodes_by_id = {node.id: node for node in typed_inner_nodes}
+            for io_node in (typed_input_node, typed_output_node):
+                if io_node.source_node_id is not None:
+                    try:
+                        io_node._source_node = inner_nodes_by_id[io_node.source_node_id]
+                        io_node._source_data_type = inner_types[io_node.source_node_id][
+                            0 if isinstance(io_node, InputNode) else 1
+                        ]
+                    except KeyError as exc:
+                        raise ValueError(
+                            f"Source node {io_node.source_node_id!r} for {io_node.id!r} "
+                            "is not in the workflow"
+                        ) from exc
+            node_input_output_types = dict(
+                await gather(
+                    get_input_output_types(node)
+                    for node in (typed_input_node, typed_output_node)
+                )
+            )
+            node_input_output_types.update(inner_types)
+        else:
+            node_input_output_types = dict(
+                await gather(
+                    get_input_output_types(node)
+                    for node in (
+                        typed_input_node,
+                        *typed_inner_nodes,
+                        typed_output_node,
+                    )
+                )
+            )
         node_input_types = {
             node_id: input_type
             for node_id, (input_type, _) in node_input_output_types.items()
