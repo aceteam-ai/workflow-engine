@@ -6,6 +6,16 @@ This project uses [PEP 440](https://peps.python.org/pep-0440/) versioning with r
 
 ## [Unreleased]
 
+## [2.0.0rc21] - 2026-11-22
+
+### Fixed
+
+- `JSONValue` keeps `0` and `1` as numbers instead of coercing them to booleans. Nested Decimals serialize as JSON numbers when a float round-trips exactly, with a string fallback for values that would lose precision or overflow. Consumers reading JSON output now get numbers where they previously got numeric strings (#292).
+
+### Internal
+
+- Every test has a 180-second timeout through pytest-timeout using the signal method (#288).
+
 ## [2.0.0rc20] - 2026-11-19
 
 ### Fixed
