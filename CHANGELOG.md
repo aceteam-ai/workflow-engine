@@ -6,6 +6,12 @@ This project uses [PEP 440](https://peps.python.org/pep-0440/) versioning with r
 
 ## [Unreleased]
 
+## [2.0.0rc22] - 2026-11-23
+
+### Fixed
+
+- Single-node workflows preserve inferred input defaults, including data-dependent `default_factory` values, through validation and JSON reload. Loading a serialized workflow with inferred defaults requires its source node in the registry. Older engine versions treat data-dependent factory ports as required (#286).
+
 ## [2.0.0rc21] - 2026-11-22
 
 ### Fixed
