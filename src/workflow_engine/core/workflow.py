@@ -609,8 +609,24 @@ class ValidatedWorkflow(ResolvedWorkflow):
             del new_node_output_types[node_id]
             new_node_output_types.update(subgraph.node_output_types)
 
+            # The original node no longer exists after expansion. The IO
+            # schemas are serialized, so future validation must use them
+            # instead of looking up the removed node.
+            input_node = self.input_node
+            if input_node.source_node_id == node_id:
+                input_node = input_node.model_update(source_node_id=None)
+                input_node._source_node = None
+                input_node._source_data_type = None
+            output_node = self.output_node
+            if output_node.source_node_id == node_id:
+                output_node = output_node.model_update(source_node_id=None)
+                output_node._source_node = None
+                output_node._source_data_type = None
+
             return self.model_update(
+                input_node=input_node,
                 inner_nodes=new_inner_nodes,
+                output_node=output_node,
                 edges=new_edges,
                 node_input_types=new_node_input_types,
                 node_output_types=new_node_output_types,

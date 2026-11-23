@@ -491,3 +491,59 @@ async def test_inferred_defaults_follow_namespaced_source_and_model_config(
     )
     with pytest.raises(ValueError, match="Source node 'missing'"):
         await engine.validate(stale)
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_inferred_fields_reject_schema_drift(engine: WorkflowEngine):
+    workflow = await engine.build_single_node_workflow(DefaultsNode)
+    original_fields = workflow.input_node.params.fields.root
+
+    for fields, message in (
+        (
+            FieldSchemaMappingValue.from_fields(
+                required=IntegerValue,
+                literal=JSONValue,
+                generated=JSONValue,
+            ),
+            "field 'required' does not match",
+        ),
+        (
+            FieldSchemaMappingValue(
+                {
+                    **original_fields,
+                    **FieldSchemaMappingValue.from_fields(added=JSONValue).root,
+                }
+            ),
+            "added:",
+        ),
+        (
+            FieldSchemaMappingValue(
+                {
+                    name: field
+                    for name, field in original_fields.items()
+                    if name != "required"
+                }
+            ),
+            "removed:",
+        ),
+    ):
+        changed_input = workflow.input_node.model_update(
+            params=workflow.input_node.params.model_update(fields=fields)
+        )
+        changed = workflow.model_update(input_node=changed_input)
+        with pytest.raises(ValueError, match=message):
+            await engine.validate(changed)
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_expanded_inferred_workflow_can_be_revalidated(engine: WorkflowEngine):
+    workflow = await engine.build_single_node_workflow(DefaultsNode)
+    validated = await engine.validate(workflow)
+    expanded = validated.expand_node("node", validated)
+
+    assert expanded.input_node.source_node_id is None
+    await engine.validate(expanded)
+    restored = Workflow.model_validate_json(expanded.model_dump_json())
+    await engine.validate(restored)
