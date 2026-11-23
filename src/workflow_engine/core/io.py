@@ -4,11 +4,12 @@ from typing import TYPE_CHECKING, ClassVar, Self, Type
 from overrides import override
 from pydantic import Field, PrivateAttr
 
-from .node import Node, NodeTypeInfo, Params
+from .node import Node, NodeTypeInfo, Params, get_id_with_namespace
 from .values import (
     Data,
     FieldDeclaration,
     FieldSchemaMappingValue,
+    get_data_fields,
 )
 
 if TYPE_CHECKING:
@@ -27,6 +28,43 @@ class SchemaParams(Params):
         return cls(fields=FieldSchemaMappingValue.from_fields(**fields))
 
 
+async def _inferred_data_type(
+    source_node: Node,
+    *,
+    side: str,
+    fields: FieldSchemaMappingValue,
+    context: "ValidationContext",
+    source_type: Type[Data] | None = None,
+) -> Type[Data]:
+    if source_type is None:
+        source_type = (
+            await source_node.input_type(context)
+            if side == "input"
+            else await source_node.output_type(context)
+        )
+    source_fields = get_data_fields(source_type)
+    declared_names = set(fields.root)
+    source_names = set(source_fields)
+    if declared_names != source_names:
+        raise ValueError(
+            f"{side} node {source_node.id!r} fields differ from its source "
+            f"schema (added: {sorted(declared_names - source_names)}, "
+            f"removed: {sorted(source_names - declared_names)})"
+        )
+    for name, declared in fields.root.items():
+        source_schema = source_fields[name][0].to_value_schema()
+        # The source model owns defaults, including factories that cannot be
+        # represented in the serialized field schema. Types must still agree.
+        if source_schema.model_dump(exclude={"default"}) != declared.root.model_dump(
+            exclude={"default"}
+        ):
+            raise ValueError(
+                f"{side} node {source_node.id!r} field {name!r} "
+                "does not match its source schema"
+            )
+    return source_type
+
+
 class InputNode(Node[Data, Data, SchemaParams]):
     TYPE_INFO: ClassVar[NodeTypeInfo] = NodeTypeInfo.from_parameter_type(
         display_name="Input Node",
@@ -36,9 +74,31 @@ class InputNode(Node[Data, Data, SchemaParams]):
     )
 
     _cached_data_cls: Type[Data] | None = PrivateAttr(default=None)
+    source_node_id: str | None = None
+    _source_node: Node | None = PrivateAttr(default=None)
+    _source_data_type: Type[Data] | None = PrivateAttr(default=None)
+
+    @override
+    def with_namespace(self, namespace: str) -> Self:
+        node = super().with_namespace(namespace)
+        if node.source_node_id is not None:
+            node = node.model_update(
+                source_node_id=get_id_with_namespace(node.source_node_id, namespace)
+            )
+        return node
 
     @override
     async def dynamic_input_type(self, context: "ValidationContext") -> Type[Data]:
+        if self.source_node_id is not None:
+            if self._source_node is None:
+                raise ValueError(f"Source node {self.source_node_id!r} was not bound")
+            return await _inferred_data_type(
+                self._source_node,
+                side="input",
+                fields=self.params.fields,
+                context=context,
+                source_type=self._source_data_type,
+            )
         if self._cached_data_cls is None:
             self._cached_data_cls = self.params.fields.to_data_schema(
                 "InputData"
@@ -70,9 +130,31 @@ class OutputNode(Node[Data, Data, SchemaParams]):
     )
 
     _cached_data_cls: Type[Data] | None = PrivateAttr(default=None)
+    source_node_id: str | None = None
+    _source_node: Node | None = PrivateAttr(default=None)
+    _source_data_type: Type[Data] | None = PrivateAttr(default=None)
+
+    @override
+    def with_namespace(self, namespace: str) -> Self:
+        node = super().with_namespace(namespace)
+        if node.source_node_id is not None:
+            node = node.model_update(
+                source_node_id=get_id_with_namespace(node.source_node_id, namespace)
+            )
+        return node
 
     @override
     async def dynamic_input_type(self, context: "ValidationContext") -> Type[Data]:
+        if self.source_node_id is not None:
+            if self._source_node is None:
+                raise ValueError(f"Source node {self.source_node_id!r} was not bound")
+            return await _inferred_data_type(
+                self._source_node,
+                side="output",
+                fields=self.params.fields,
+                context=context,
+                source_type=self._source_data_type,
+            )
         if self._cached_data_cls is None:
             self._cached_data_cls = self.params.fields.to_data_schema(
                 "OutputData"
